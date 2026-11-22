@@ -1,0 +1,195 @@
+---
+import Layout from '../layouts/Layout.astro'
+---
+
+<Layout panel="analytics" title="FilaMan - Analytics">
+  <div class="an-page">
+    <div class="fm-list-toolbar">
+      <h1 style="font-weight: 700; margin: 0; font-family: var(--font-serif);" data-i18n="analytics.title">Consumption and costs</h1>
+      <div class="fm-list-controls">
+        <label class="fm-label" style="display: flex; align-items: center; gap: 6px; margin: 0;">
+          <span data-i18n="analytics.range">Period</span>
+          <select id="an-range" class="fm-select">
+            <option value="3m" data-i18n="analytics.range3m">3 months</option>
+            <option value="6m" data-i18n="analytics.range6m">6 months</option>
+            <option value="12m" selected data-i18n="analytics.range12m">12 months</option>
+            <option value="year" data-i18n="analytics.rangeYear">This year</option>
+            <option value="all" data-i18n="analytics.rangeAll">All time</option>
+          </select>
+        </label>
+      </div>
+    </div>
+
+    <div id="an-error" class="fm-alert-error hidden" role="alert"></div>
+    <div id="an-incomplete" class="an-note hidden" role="status"></div>
+
+    <div class="an-kpis">
+      <div class="fm-card an-kpi"><span data-i18n="analytics.kpiConsumption">Consumption</span><strong id="kpi-weight">–</strong></div>
+      <div class="fm-card an-kpi"><span data-i18n="analytics.kpiCost">Cost</span><strong id="kpi-cost">–</strong></div>
+      <div class="fm-card an-kpi"><span data-i18n="analytics.kpiPrints">Prints</span><strong id="kpi-prints">–</strong><small id="kpi-prints-detail"></small></div>
+      <div class="fm-card an-kpi"><span data-i18n="analytics.kpiSuccess">Success rate</span><strong id="kpi-success">–</strong></div>
+      <div class="fm-card an-kpi"><span data-i18n="analytics.kpiCostPerPrint">Cost per print</span><strong id="kpi-cost-per-print">–</strong></div>
+    </div>
+
+    <div id="an-empty" class="fm-card an-empty hidden" data-i18n="analytics.empty">No data in the selected period.</div>
+
+    <div class="an-grid">
+      <section class="fm-card an-section an-wide">
+        <h2 data-i18n="analytics.byMonth">Consumption per month</h2>
+        <div id="chart-month" class="an-columns"></div>
+      </section>
+      <section class="fm-card an-section">
+        <h2 data-i18n="analytics.byMaterial">Consumption by material</h2>
+        <div id="chart-material" class="an-bars"></div>
+      </section>
+      <section class="fm-card an-section">
+        <h2 data-i18n="analytics.byManufacturer">Consumption by manufacturer</h2>
+        <div id="chart-manufacturer" class="an-bars"></div>
+      </section>
+      <section class="fm-card an-section an-wide">
+        <h2 data-i18n="analytics.purchases">Purchases per month</h2>
+        <div id="chart-purchases" class="an-columns"></div>
+      </section>
+      <section class="fm-card an-section an-wide">
+        <h2 data-i18n="analytics.topProjects">Top projects by cost</h2>
+        <div id="chart-projects" class="an-bars"></div>
+      </section>
+    </div>
+  </div>
+
+  <style is:global>
+    .an-page { display: flex; flex-direction: column; gap: 16px; }
+    .an-note { padding: 10px 14px; border-radius: 8px; background: var(--warning-bg); border: 1px solid var(--warning-border); color: var(--warning-text); }
+    .an-kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; }
+    .an-kpi { display: flex; flex-direction: column; gap: 4px; padding: 14px 16px; }
+    .an-kpi span { color: var(--text-muted); font-size: 0.85rem; }
+    .an-kpi strong { font-size: 1.5rem; color: var(--text); }
+    .an-kpi small { color: var(--text-muted); font-size: 0.75rem; }
+    .an-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 16px; }
+    .an-wide { grid-column: 1 / -1; }
+    .an-section { padding: 16px; }
+    .an-section h2 { margin: 0 0 12px; font-size: 1.05rem; color: var(--text); }
+    .an-empty { padding: 20px; text-align: center; color: var(--text-muted); }
+    .an-none { color: var(--text-muted); margin: 0; }
+    .an-columns { display: flex; align-items: flex-end; gap: 6px; height: 180px; overflow-x: auto; padding-bottom: 2px; }
+    .an-col { flex: 1 0 28px; display: flex; flex-direction: column; justify-content: flex-end; align-items: center; height: 100%; min-width: 28px; }
+    .an-col-bar { width: 100%; max-width: 44px; background: var(--accent); border-radius: 4px 4px 0 0; min-height: 0; }
+    .an-col-bar.is-purchase { background: var(--accent-2); }
+    .an-col-label { margin-top: 4px; font-size: 0.7rem; color: var(--text-muted); white-space: nowrap; }
+    .an-col-value { font-size: 0.7rem; color: var(--text); margin-bottom: 2px; white-space: nowrap; }
+    .an-bars { display: flex; flex-direction: column; gap: 8px; }
+    .an-bar-row { display: grid; grid-template-columns: minmax(70px, 140px) 1fr auto; gap: 10px; align-items: center; font-size: 0.85rem; }
+    .an-bar-name { color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .an-bar-track { background: var(--bg-soft); border-radius: 4px; height: 14px; overflow: hidden; }
+    .an-bar-fill { height: 100%; background: var(--accent); border-radius: 4px; }
+    .an-bar-value { color: var(--text-muted); white-space: nowrap; text-align: right; }
+  </style>
+
+  <script>
+    import { t, initI18n, getLang } from '../lib/i18n'
+    import { isAbortError } from '../lib/abort'
+    import { api } from '../lib/api'
+    import { escapeHtml } from '../lib/extra-fields'
+    import { formatPrice, getCurrency, initCurrency } from '../lib/format'
+    import { mountPanel } from '../lib/panel-navigation'
+    import {
+      barPercents, formatDurationHours, formatMonthLabel, formatPercent, hasAnyData, rangeToParams,
+      type AnalyticsRange, type AnalyticsSummary,
+    } from '../lib/analytics'
+
+    mountPanel('analytics', async (panelSignal) => {
+      await initI18n()
+      await initCurrency()
+
+      const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T
+      let requestId = 0
+
+      const money = (value: number | null | undefined) => value == null ? '–' : formatPrice(value, getCurrency())
+      const grams = (value: number) => value >= 1000 ? `${(value / 1000).toFixed(2)} kg` : `${Math.round(value)} g`
+      const label = (name: string) => name === 'other' ? t('analytics.other') : name === 'unknown' ? t('analytics.unknown') : name
+
+      function renderBars(el: HTMLElement, rows: { name: string; value: number; text: string }[]) {
+        if (rows.length === 0 || rows.every(r => r.value <= 0)) {
+          el.innerHTML = `<p class="an-none">${escapeHtml(t('analytics.emptySection'))}</p>`
+          return
+        }
+        const widths = barPercents(rows.map(r => r.value))
+        el.innerHTML = rows.map((r, i) => `
+          <div class="an-bar-row">
+            <span class="an-bar-name" title="${escapeHtml(r.name)}">${escapeHtml(r.name)}</span>
+            <span class="an-bar-track"><span class="an-bar-fill" style="display:block;width:${widths[i].toFixed(1)}%"></span></span>
+            <span class="an-bar-value">${escapeHtml(r.text)}</span>
+          </div>`).join('')
+      }
+
+      function renderColumns(el: HTMLElement, rows: { month: string; value: number; text: string }[], cls = '') {
+        if (rows.length === 0 || rows.every(r => r.value <= 0)) {
+          el.innerHTML = `<p class="an-none">${escapeHtml(t('analytics.emptySection'))}</p>`
+          return
+        }
+        const heights = barPercents(rows.map(r => r.value))
+        const lang = getLang()
+        el.innerHTML = rows.map((r, i) => `
+          <div class="an-col" title="${escapeHtml(`${formatMonthLabel(r.month, lang)}: ${r.text}`)}">
+            <span class="an-col-value">${r.value > 0 ? escapeHtml(r.text) : ''}</span>
+            <span class="an-col-bar ${cls}" style="height:${(heights[i] * 0.78).toFixed(1)}%"></span>
+            <span class="an-col-label">${escapeHtml(formatMonthLabel(r.month, lang))}</span>
+          </div>`).join('')
+      }
+
+      function render(data: AnalyticsSummary) {
+        const jobs = data.print_jobs
+        $('kpi-weight').textContent = grams(data.totals.weight_g)
+        $('kpi-cost').textContent = money(data.totals.cost)
+        $('kpi-prints').textContent = String(jobs.count)
+        $('kpi-prints-detail').textContent = jobs.count > 0
+          ? `${t('analytics.jobsDetail', { completed: jobs.completed, failed: jobs.failed, cancelled: jobs.cancelled })} · ${formatDurationHours(jobs.total_print_time_s)}`
+          : ''
+        $('kpi-success').textContent = formatPercent(jobs.success_rate)
+        $('kpi-cost-per-print').textContent = money(jobs.avg_cost_per_job)
+
+        const incomplete = $('an-incomplete')
+        const unknown = data.totals.cost_unknown_weight_g
+        incomplete.classList.toggle('hidden', !(unknown > 0))
+        if (unknown > 0) incomplete.textContent = t('analytics.costIncomplete', { grams: Math.round(unknown) })
+
+        $('an-empty').classList.toggle('hidden', hasAnyData(data))
+
+        renderColumns($('chart-month'), data.consumption_by_month.map(m => ({
+          month: m.month, value: m.weight_g, text: `${grams(m.weight_g)} · ${money(m.cost)}`,
+        })))
+        renderBars($('chart-material'), data.consumption_by_material.map(m => ({
+          name: label(m.material_type), value: m.weight_g, text: `${grams(m.weight_g)} · ${money(m.cost)}`,
+        })))
+        renderBars($('chart-manufacturer'), data.consumption_by_manufacturer.map(m => ({
+          name: label(m.manufacturer), value: m.weight_g, text: `${grams(m.weight_g)} · ${money(m.cost)}`,
+        })))
+        renderColumns($('chart-purchases'), data.purchases.by_month.map(m => ({
+          month: m.month, value: m.total, text: money(m.total),
+        })), 'is-purchase')
+        renderBars($('chart-projects'), data.top_projects.map(p => ({
+          name: p.name, value: p.cost, text: `${money(p.cost)} · ${t('analytics.prints', { count: p.job_count })}`,
+        })))
+      }
+
+      async function load() {
+        const current = ++requestId
+        const { from, to } = rangeToParams($<HTMLSelectElement>('an-range').value as AnalyticsRange)
+        const error = $('an-error')
+        try {
+          const data = await api.get<AnalyticsSummary>(`/analytics/summary?from=${from}&to=${to}`, { signal: panelSignal })
+          if (current !== requestId) return
+          error.classList.add('hidden')
+          render(data)
+        } catch (e) {
+          if (isAbortError(e) || current !== requestId) return
+          error.textContent = t('analytics.loadFailed')
+          error.classList.remove('hidden')
+        }
+      }
+
+      $<HTMLSelectElement>('an-range').addEventListener('change', load, { signal: panelSignal })
+      await load()
+    })
+  </script>
+</Layout>

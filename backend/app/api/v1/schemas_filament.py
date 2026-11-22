@@ -14,6 +14,7 @@ from app.api.v1.schemas_entity_extra_field import (
     EntityExtraFieldDefinitions,
     optional_entity_definitions_field,
 )
+from app.services.abrasive import effective_abrasive, min_nozzle_mm
 from app.services.extra_field_validation import normalize_numeric_range
 from app.services.filamentdb_field_mapping import normalize_spool_image_file
 from app.utils.colors import normalize_hex_color_if_valid
@@ -216,6 +217,7 @@ class FilamentCreate(FilamentStandardProperties):
     designation: str
     material_type: str
     material_subgroup: str | None = None
+    is_abrasive: bool | None = None
     diameter_mm: FiniteFloat
     manufacturer_color_name: str | None = None
     finish_type: str | None = None
@@ -283,6 +285,7 @@ class FilamentUpdate(FilamentStandardProperties):
     designation: str | None = None
     material_type: str | None = None
     material_subgroup: str | None = None
+    is_abrasive: bool | None = None
     diameter_mm: FiniteFloat | None = None
     manufacturer_color_name: str | None = None
     finish_type: str | None = None
@@ -314,6 +317,7 @@ class FilamentResponse(FilamentStandardProperties):
     designation: str
     material_type: str
     material_subgroup: str | None
+    is_abrasive: bool | None = None
     diameter_mm: float
     manufacturer_color_name: str | None
     finish_type: str | None
@@ -334,6 +338,16 @@ class FilamentResponse(FilamentStandardProperties):
     custom_field_definitions: EntityExtraFieldDefinitions | None = (
         optional_entity_definitions_field(omit_none=True)
     )
+
+    @computed_field
+    @property
+    def abrasive(self) -> bool:
+        return effective_abrasive(self)
+
+    @computed_field
+    @property
+    def min_nozzle_mm(self) -> float | None:
+        return min_nozzle_mm(self)
 
     class Config:
         from_attributes = True

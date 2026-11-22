@@ -95,7 +95,7 @@ type InputAttributes = HTMLAttributes<'input'>
                           </>
                         ) : field.kind === 'select' ? (
                           <select id={id} name={id} class="fm-select">
-                            <option value="">-</option>
+                            <option value="" data-i18n={field.key === 'is_abrasive' ? 'filaments.abrasiveAuto' : undefined}>{field.key === 'is_abrasive' ? t('filaments.abrasiveAuto') : '-'}</option>
                             {field.options?.map(([value, labelKey]) => <option value={value} data-i18n={labelKey}>{t(labelKey)}</option>)}
                           </select>
                         ) : field.kind === 'range' ? (

@@ -1621,6 +1621,22 @@ html[data-theme="light"] .pc-print-prompt-age:not(.is-expiring) {
   gap: 6px;
 }
 
+/* Spool moisture badge */
+.fm-moisture-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  font-size: 0.78rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.fm-moisture-dry { color: var(--success-text); background: var(--success-bg); border-color: var(--success-border); }
+.fm-moisture-fair { color: var(--text-muted); background: var(--bg-soft); }
+.fm-moisture-damp { color: var(--warning-text); background: var(--warning-bg); border-color: var(--warning-border); }
+.fm-moisture-wet { color: var(--error-text); background: var(--error-bg); border-color: var(--error-border); }
+
 /* Sidebar nav items */
 #sidebar-color-library[hidden] { display: none; }
 .fm-nav-item {

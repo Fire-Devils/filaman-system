@@ -73,6 +73,18 @@ import Layout from '../../layouts/Layout.astro'
           >
           </select>
         </div>
+        <div>
+          <label for="printer-nozzle-diameter" class="fm-label"><span data-i18n="printers.nozzleDiameter">Nozzle diameter</span> (mm)</label>
+          <input type="number" id="printer-nozzle-diameter" class="fm-input" step="0.05" min="0.1" />
+        </div>
+        <div>
+          <label for="printer-nozzle-hardened" class="fm-label" data-i18n="printers.nozzleHardened">Hardened nozzle</label>
+          <select id="printer-nozzle-hardened" class="fm-select">
+            <option value="" data-i18n="printers.nozzleHardenedUnknown">Unknown</option>
+            <option value="true" data-i18n="common.yes">Yes</option>
+            <option value="false" data-i18n="common.no">No</option>
+          </select>
+        </div>
         <div id="config-fields" style="display: flex; flex-direction: column; gap: 12px;"></div>
         <div id="modal-error" class="fm-alert-error hidden" role="alert"></div>
     </form>
@@ -98,7 +110,7 @@ import Layout from '../../layouts/Layout.astro'
     const formDialog = bindFormDialog(document.getElementById('modal-container') as HTMLDialogElement, { canClose: () => !formState.busy })
 
     interface SlotSummary { external_spool?: boolean; ams_type?: string; ams_units?: { ams_id: number; tray_count: number }[] }
-    interface PrinterRecord { id: number; name: string; driver_key: string; is_active: boolean; driver_config?: Record<string, unknown> | null; custom_fields?: (Record<string, unknown> & { slot_summary?: SlotSummary | null }) | null }
+    interface PrinterRecord { id: number; name: string; driver_key: string; is_active: boolean; driver_config?: Record<string, unknown> | null; nozzle_diameter_mm?: number | null; nozzle_hardened?: boolean | null; custom_fields?: (Record<string, unknown> & { slot_summary?: SlotSummary | null }) | null }
     interface DriverPlugin { driver_key?: string | null; name: string; is_active: boolean; config_schema?: DriverSchema | null }
     interface DriverHealth extends SlotSummary { running?: boolean; connected?: boolean; ams_count?: number; slot_count?: number }
     const dialogs = window as unknown as AppDialogs
@@ -239,7 +251,7 @@ import Layout from '../../layouts/Layout.astro'
             const resp = await fetch(`/api/v1/printers/${id}`, { credentials: 'include', signal: getAbortSignal() })
             if (resp.ok) {
               const printer: PrinterRecord = await resp.json()
-              if (!panelSignal.aborted) openModal(id, printer.name, printer.driver_key, printer.driver_config || undefined)
+              if (!panelSignal.aborted) openModal(id, printer.name, printer.driver_key, printer.driver_config || undefined, printer)
             }
           } catch {}
         })
@@ -279,7 +291,7 @@ import Layout from '../../layouts/Layout.astro'
       })
     }
     
-    function openModal(id: number | null = null, name: string = '', driver: string = '', config?: Record<string, unknown>) {
+    function openModal(id: number | null = null, name: string = '', driver: string = '', config?: Record<string, unknown>, printer?: PrinterRecord) {
       const title = document.getElementById('modal-title')!
       const idInput = document.getElementById('printer-id') as HTMLInputElement
       const nameInput = document.getElementById('printer-name') as HTMLInputElement
@@ -290,6 +302,8 @@ import Layout from '../../layouts/Layout.astro'
       idInput.value = id ? String(id) : ''
       nameInput.value = name
       driverInput.value = driver
+      ;(document.getElementById('printer-nozzle-diameter') as HTMLInputElement).value = printer?.nozzle_diameter_mm != null ? String(printer.nozzle_diameter_mm) : ''
+      ;(document.getElementById('printer-nozzle-hardened') as HTMLSelectElement).value = printer?.nozzle_hardened == null ? '' : String(printer.nozzle_hardened)
       error.classList.add('hidden')
       
       renderConfigFields(driver, config)
@@ -336,7 +350,14 @@ import Layout from '../../layouts/Layout.astro'
           edited
         )
       }
-      const data: { name: string; driver_key: string; driver_config?: Record<string, unknown> } = { name, driver_key }
+      const nozzleDiameter = (document.getElementById('printer-nozzle-diameter') as HTMLInputElement).value
+      const nozzleHardened = (document.getElementById('printer-nozzle-hardened') as HTMLSelectElement).value
+      const data: { name: string; driver_key: string; driver_config?: Record<string, unknown>; nozzle_diameter_mm: number | null; nozzle_hardened: boolean | null } = {
+        name,
+        driver_key,
+        nozzle_diameter_mm: nozzleDiameter ? Number(nozzleDiameter) : null,
+        nozzle_hardened: nozzleHardened === '' ? null : nozzleHardened === 'true',
+      }
       if (driver_config) data.driver_config = driver_config
       
       error.classList.add('hidden')

@@ -81,6 +81,7 @@ import InventoryFilterReset from '../../components/InventoryFilterReset.astro'
           <th data-i18n="spools.material" data-sort="material" class="sortable col-material">Material</th>
           <th data-i18n="filaments.colors" data-sort="colors" class="sortable col-colors">Colors</th>
           <th data-i18n="spools.status" data-sort="status" class="sortable col-status">Status</th>
+          <th data-i18n="moisture.column" class="col-moisture">Moisture</th>
           <th data-i18n="spools.remaining" data-sort="remaining_weight_g" class="sortable col-remaining">Remaining</th>
           <th data-i18n="spools.colRemainingPercent" data-sort="remaining_percent" class="sortable col-remaining_percent">Remaining %</th>
           <th data-i18n="spools.colRemainingLength" data-sort="remaining_length_m" class="sortable col-remaining_length_m">Estimated remaining length (m)</th>
@@ -115,6 +116,7 @@ import InventoryFilterReset from '../../components/InventoryFilterReset.astro'
     <button class="fm-btn fm-btn-outline" id="bulk-btn-empty-weight" data-i18n="spools.bulkSetEmptyWeight">Set Empty Spool Weight</button>
     <button class="fm-btn fm-btn-outline" id="bulk-btn-core-weight" data-i18n="spools.bulkSetCoreWeight">Set Core Weight</button>
     <button class="fm-btn fm-btn-outline" id="bulk-btn-price" data-i18n="spools.bulkSetPrice">Set Price</button>
+    <button class="fm-btn fm-btn-outline" id="bulk-btn-dried" data-i18n="moisture.bulkMarkDried">Mark as dried</button>
     <button class="fm-btn fm-btn-outline" id="bulk-btn-labels" data-i18n="spools.bulkLabel">Print Labels</button>
     <button class="fm-btn fm-btn-danger" id="bulk-btn-delete" data-i18n="spools.bulkDelete">Delete</button>
   </div>
@@ -212,6 +214,7 @@ import InventoryFilterReset from '../../components/InventoryFilterReset.astro'
     import { colorFilterFromIds } from '../../lib/color-library-links'
     import type { AppDialogs } from '../../lib/form-dialog'
     import { mountPanel } from '../../lib/panel-navigation'
+    import { moistureBadgeClass, moistureLabelKey, parseMoisture } from '../../lib/moisture'
     import { readHideSealed, sealedExclusionStatusIds, writeHideSealed } from '../../lib/sealed-spools'
     import { mountSpoolLinkBanner } from '../../lib/spool-link-banner'
 
@@ -257,6 +260,7 @@ import InventoryFilterReset from '../../components/InventoryFilterReset.astro'
       purchase_price: number | null
       purchase_date: string | null
       last_used_at: string | null
+      moisture?: unknown
       rfid_uid: string | null
       rfid_uid_2?: string | null
       custom_fields: Record<string, unknown> | null
@@ -814,6 +818,7 @@ import InventoryFilterReset from '../../components/InventoryFilterReset.astro'
           <td class="col-material" style="padding: 12px; color: var(--text-muted);">${getMaterialType(s)}</td>
           <td class="col-colors" style="padding: 12px;">${colorDots || '-'}</td>
           <td class="col-status" style="padding: 12px;">${getStatusLabel(s.status_id)}</td>
+          <td class="col-moisture" style="padding: 12px;">${renderMoistureBadge(s.moisture)}</td>
           <td class="col-remaining" style="padding: 12px; font-family: monospace; ${weightStyle}">
             ${remainingWeight !== null ? remainingWeight.toFixed(0) + 'g' : '-'}
           </td>
@@ -837,6 +842,12 @@ import InventoryFilterReset from '../../components/InventoryFilterReset.astro'
       `
     }
     
+    function renderMoistureBadge(value: unknown): string {
+      const moisture = parseMoisture(value)
+      if (!moisture) return '<span style="color: var(--text-muted);">-</span>'
+      return `<span class="${moistureBadgeClass(moisture.level)}" title="${escapeHtml(t('moisture.daysSinceOpened', { days: moisture.days_exposed }))}">${escapeHtml(t(moistureLabelKey(moisture.level)))}</span>`
+    }
+
     function renderSpools(spools: Spool[], append = false) {
       const tbody = document.getElementById('spools-table')!
       if (spools.length === 0) {
@@ -1149,6 +1160,7 @@ import InventoryFilterReset from '../../components/InventoryFilterReset.astro'
       {
         heading: t('common.columnsExtended'),
         columns: [
+          { key: 'moisture', label: t('moisture.column') },
           { key: 'remaining_percent', label: t('spools.colRemainingPercent') },
           { key: 'remaining_length_m', label: t('spools.colRemainingLength') },
           { key: 'price', label: t('spools.colPrice') },
@@ -1475,6 +1487,36 @@ import InventoryFilterReset from '../../components/InventoryFilterReset.astro'
       )
       if (value === null) return
       await bulkPatch({ status_id: Number(value) })
+    })
+
+    // Mark as dried
+    document.getElementById('bulk-btn-dried')?.addEventListener('click', async () => {
+      const count = selectedSpoolIds.size
+      if (count === 0) return
+      const confirmed = await dialogWindow.__fmConfirm(
+        t('moisture.bulkConfirm', { count }),
+        { title: t('moisture.bulkMarkDried'), okLabel: t('common.confirm'), isDanger: false }
+      )
+      if (!confirmed) return
+      try {
+        const res = await fetch('/api/v1/spools/dry', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': getCsrfToken() },
+          credentials: 'include',
+          signal: getAbortSignal(),
+          body: JSON.stringify({ spool_ids: [...selectedSpoolIds] })
+        })
+        if (!res.ok) throw new Error('API error')
+        if (panelSignal.aborted) return
+        const { count: done } = await res.json()
+        await dialogWindow.__fmSuccess(t('moisture.bulkSuccess', { count: done }))
+        if (panelSignal.aborted) return
+        selectedSpoolIds.clear()
+        updateBulkBar()
+        loadSpools()
+      } catch (error) {
+        if (!isAbortError(error) && !panelSignal.aborted) dialogWindow.__fmAlert(t('moisture.bulkError'))
+      }
     })
 
     // Set Threshold

@@ -1,9 +1,12 @@
+from datetime import datetime, timezone
+
 from fastapi import APIRouter, Query
 from pydantic import BaseModel, Field
-from sqlalchemy import case, func, select
+from sqlalchemy import case, func, or_, select
 
 from app.api.deps import DBSession, PrincipalDep
 from app.models import Filament, Location, Manufacturer, Spool, SpoolStatus
+from app.services.spool_moisture import EXCLUDED_STATUS_KEYS, compute_moisture
 
 router = APIRouter(prefix="/dashboard", tags=["dashboard"])
 
@@ -51,6 +54,17 @@ class LowStockFilament(BaseModel):
     spool_count: int
 
 
+class MoistureAttentionSpool(BaseModel):
+    spool_id: int
+    filament_designation: str
+    filament_type: str
+    manufacturer_name: str
+    level: str
+    days_exposed: int
+    sensitivity: str
+    reference_at: datetime
+
+
 class EmptySpool(BaseModel):
     spool_id: int
     filament_designation: str
@@ -69,9 +83,51 @@ class DashboardStatsResponse(BaseModel):
     low_stock_spools: list[LowStockSpool]
     low_stock_filaments: list[LowStockFilament] = []
     empty_spools: list[EmptySpool]
+    moisture_attention: list[MoistureAttentionSpool] = []
     filament_types: list[FilamentTypeCount]
     spool_count_total: int | None = Field(None, exclude_if=lambda value: value is None)
     filament_count_total: int | None = Field(None, exclude_if=lambda value: value is None)
+
+
+MOISTURE_ATTENTION_LIMIT = 20
+
+
+async def _moisture_attention(db) -> list[MoistureAttentionSpool]:
+    """Spools whose moisture level is damp or wet, most exposed first."""
+    rows = await db.execute(
+        select(
+            Spool.id,
+            Spool.opened_at,
+            Spool.last_dried_at,
+            SpoolStatus.key,
+            Filament.designation,
+            Filament.material_type,
+            Filament.material_subgroup,
+            Manufacturer.name,
+        )
+        .join(SpoolStatus, Spool.status_id == SpoolStatus.id)
+        .join(Filament, Spool.filament_id == Filament.id)
+        .join(Manufacturer, Filament.manufacturer_id == Manufacturer.id)
+        .where(SpoolStatus.key.notin_(tuple(EXCLUDED_STATUS_KEYS)))
+        .where(or_(Spool.opened_at.isnot(None), Spool.last_dried_at.isnot(None)))
+    )
+    now = datetime.now(timezone.utc)
+    found = []
+    for (spool_id, opened, dried, status_key, designation, mtype, msub, mname) in rows.all():
+        moisture = compute_moisture(status_key, mtype, msub, opened, dried, now)
+        if moisture is None or moisture["level"] not in ("damp", "wet"):
+            continue
+        found.append(
+            MoistureAttentionSpool(
+                spool_id=spool_id,
+                filament_designation=designation,
+                filament_type=mtype,
+                manufacturer_name=mname,
+                **moisture,
+            )
+        )
+    found.sort(key=lambda item: (-item.days_exposed, item.spool_id))
+    return found[:MOISTURE_ATTENTION_LIMIT]
 
 
 @router.get("/locations", response_model=list[LocationStat])
@@ -409,6 +465,8 @@ async def get_dashboard_stats(
         FilamentTypeCount(material_type=row[0], count=row[1]) for row in types_res.all()
     ]
 
+    moisture_attention = await _moisture_attention(db)
+
     totals = {}
     if include_totals:
         totals = {
@@ -427,6 +485,7 @@ async def get_dashboard_stats(
         low_stock_spools=low_stock_spools,
         low_stock_filaments=low_stock_filaments,
         empty_spools=empty_spools,
+        moisture_attention=moisture_attention,
         filament_types=filament_types,
         **totals,
     )

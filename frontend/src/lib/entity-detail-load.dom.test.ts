@@ -13,7 +13,7 @@ function detailLoader(entity: 'spool' | 'filament') {
   return new Function('runtime', `
     const { fetchSequential, cachedFetchAllPages, CACHE_KEYS, getAbortSignal, isAbortError,
       renderSpool, renderFilament, renderFilamentEditor, openSpoolExtraFields, openFilamentExtraFields,
-      initPrinterSetup, loadEvents, setupActions, loadSpools,
+      initPrinterSetup, loadEvents, loadPrintJobs, setupActions, loadSpools,
       getCsrfToken, getCsrfTokenGlobal, t, extraFieldsDialogRequested, editMode } = runtime;
     const id = '16';
     const detailUrl = '/api/v1/filaments/' + id + '?include_record_token=true';
@@ -49,7 +49,7 @@ async function loadDetail(entity: 'spool' | 'filament', failedTarget: string | n
     getAbortSignal: noop, isAbortError: () => false, t: (key: string) => key,
     renderSpool: render, renderFilament: render, renderFilamentEditor: render,
     openSpoolExtraFields: openDialog, openFilamentExtraFields: openDialog,
-    initPrinterSetup: () => ({ refresh: async () => {} }), loadEvents: noop, setupActions: noop,
+    initPrinterSetup: () => ({ refresh: async () => {} }), loadEvents: noop, loadPrintJobs: noop, setupActions: noop,
     loadSpools: noop, getCsrfToken: noop, getCsrfTokenGlobal: noop,
     extraFieldsDialogRequested: !editMode, editMode,
   })

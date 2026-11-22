@@ -1,6 +1,26 @@
 {
   "versions": [
     {
+      "version": "UNRELEASED",
+      "date": "",
+      "changes": {
+        "de": [
+          { "type": "feature", "text": "Neues Druckjob-Log: Drucke mit Projekten erfassen, Filament beim Abschließen automatisch von den Spulen abbuchen und Kosten je Druck und Projekt sehen (inkl. Foto, MCP-Tools und Backup)." },
+          { "type": "feature", "text": "Slicer-Link: Ein Skript für PrusaSlicer, OrcaSlicer, BambuStudio und Cura meldet geslicte Jobs automatisch als offenen Druckjob an FilaMan; der Verbrauch wird erst nach deiner Bestätigung gebucht." },
+          { "type": "feature", "text": "Feuchte-Tracking für Spulen: FilaMan merkt sich, wann eine Spule geöffnet oder zuletzt getrocknet wurde, zeigt je nach Material einen Feuchte-Status (Trocken, Okay, Feucht, Nass) und empfiehlt auf dem Dashboard, welche Spulen getrocknet werden sollten. Trocknungen lassen sich einzeln oder per Bulk-Aktion protokollieren." },
+          { "type": "feature", "text": "Neue Analyse-Seite: Verbrauch und Kosten nach Monat, Material und Hersteller, dazu Käufe, Druckstatistik und Top-Projekte; auch per MCP-Tool get_usage_analytics abrufbar." },
+          { "type": "feature", "text": "Warnungen bei abrasivem Filament (z. B. CF, GF, Glow, Holz, Metall): Filamente lassen sich als abrasiv markieren oder werden automatisch erkannt, Drucker haben Düsendurchmesser und gehärtete Düse, und betroffene Slots zeigen eine Warnung." }
+        ],
+        "en": [
+          { "type": "feature", "text": "New print job log: record prints with projects, deduct filament from spools automatically when completing a job and see costs per print and project (incl. photo, MCP tools and backup)." },
+          { "type": "feature", "text": "Slicer-Link: a script for PrusaSlicer, OrcaSlicer, BambuStudio and Cura reports sliced jobs to FilaMan as an open print job; consumption is only booked once you confirm it." },
+          { "type": "feature", "text": "Spool moisture tracking: FilaMan records when a spool was opened or last dried, shows a material-based moisture status (Dry, Fair, Damp, Wet) and recommends on the dashboard which spools should be dried. Drying can be logged for one spool or in bulk." },
+          { "type": "feature", "text": "New analytics page: consumption and costs by month, material and manufacturer, plus purchases, print statistics and top projects; also available through the MCP tool get_usage_analytics." },
+          { "type": "feature", "text": "Warnings for abrasive filament (e.g. CF, GF, glow, wood, metal): filaments can be marked abrasive or are detected automatically, printers store nozzle diameter and hardened nozzle, and affected slots show a warning." }
+        ]
+      }
+    },
+    {
       "version": "2.3.1",
       "date": "",
       "changes": {

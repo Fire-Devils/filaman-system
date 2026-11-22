@@ -309,8 +309,40 @@ TOOLS: tuple[Tool, ...] = (
     Tool("list_printers", "List printers.", _schema(_PAGING), _get("/printers", "page", "page_size")),
     Tool("get_printer", "Get one printer including its slots and loaded spools.",
          _schema({"printer_id": _INT}, ["printer_id"]), _get("/printers/{printer_id}")),
+    Tool(
+        "list_print_jobs",
+        "List the print job log (pending jobs first, then newest). Filter by status "
+        "(pending, completed, failed, cancelled), project, printer, spool and a time range (ISO dates).",
+        _schema({
+            "status": {"type": "string", "enum": ["pending", "completed", "failed", "cancelled"]},
+            "project_id": _INT,
+            "printer_id": _INT,
+            "spool_id": _INT,
+            "from": {"type": "string", "description": "ISO date/time, jobs started at or after"},
+            "to": {"type": "string", "description": "ISO date/time, jobs started at or before"},
+            **_PAGING,
+        }),
+        _get("/print-jobs", "status", "project_id", "printer_id", "spool_id", "from", "to", "page", "page_size"),
+    ),
+    Tool(
+        "list_print_projects",
+        "List print projects with job count, total weight (g) and total cost of completed and failed jobs.",
+        _schema({"include_archived": {"type": "boolean"}}),
+        _get("/print-projects", "include_archived"),
+    ),
     Tool("get_dashboard_stats", "Inventory totals: spool counts, total and remaining weight, value.",
          _schema(), _get("/dashboard/stats")),
+    Tool(
+        "get_usage_analytics",
+        "Filament consumption and cost analytics for a period (default last 12 months): consumption by month, "
+        "material and manufacturer, purchases, print job statistics, top projects and totals. Costs exclude "
+        "consumption without a known price (see totals.cost_unknown_weight_g).",
+        _schema({
+            "from": {"type": "string", "description": "Start date YYYY-MM-DD"},
+            "to": {"type": "string", "description": "End date YYYY-MM-DD"},
+        }),
+        _get("/analytics/summary", "from", "to"),
+    ),
     Tool(
         "list_spool_events",
         "List spool history events (measurements, consumption, moves, status changes), newest first.",
@@ -497,6 +529,33 @@ TOOLS: tuple[Tool, ...] = (
         _schema({"spool_id": _INT, "delta_weight_g": {"type": "number", "exclusiveMinimum": 0}, "note": _NOTE},
                 ["spool_id", "delta_weight_g"]),
         _post("/spools/{spool_id}/consumptions", "delta_weight_g", "note"),
+        write=True,
+    ),
+    Tool(
+        "create_print_job",
+        "Log a print. Each usage names a spool (spool_id) or a printer slot (slot_no, needs printer_id) and "
+        "the grams used. By default the job stays pending (no filament is booked yet); complete true books the "
+        "consumption on the spools right away and snapshots the cost. success false marks the print as failed "
+        "(the filament is gone anyway).",
+        _schema({
+            "name": {"type": "string", "minLength": 1, "maxLength": 255},
+            "project_id": _INT,
+            "printer_id": _INT,
+            "usages": {"type": "array", "items": _schema({
+                "spool_id": _INT,
+                "slot_no": {"type": "integer", "minimum": 0},
+                "planned_weight_g": {"type": "number", "minimum": 0},
+            }, ["planned_weight_g"])},
+            "notes": {"type": "string"},
+            "print_time_s": {"type": "integer", "minimum": 0},
+            "started_at": {"type": "string", "description": "ISO date/time"},
+            "finished_at": {"type": "string", "description": "ISO date/time"},
+            "source": {"type": "string", "enum": ["manual", "slicer_link", "api"]},
+            "complete": {"type": "boolean"},
+            "success": {"type": "boolean"},
+        }, ["name", "usages"]),
+        _post("/print-jobs", "name", "project_id", "printer_id", "usages", "notes", "print_time_s",
+              "started_at", "finished_at", "source", "complete", "success"),
         write=True,
     ),
     Tool(

@@ -1,0 +1,559 @@
+---
+import FormDialog from '../../components/FormDialog.astro'
+import Layout from '../../layouts/Layout.astro'
+---
+
+<Layout panel="print-jobs" title="FilaMan - Print Jobs">
+  <div class="fm-list-toolbar">
+    <h1 style="font-weight: 700; margin: 0; font-family: var(--font-serif);" data-i18n="printJobs.title">Print Jobs</h1>
+    <div class="fm-list-controls">
+      <button id="btn-new-project" class="fm-btn fm-btn-outline hidden" type="button" data-i18n="printJobs.newProject">New project</button>
+      <button id="btn-new-job" class="fm-btn fm-btn-primary" type="button" data-i18n="printJobs.logPrint">Log print</button>
+    </div>
+  </div>
+
+  <div class="filter-bar" role="tablist" style="margin-bottom: 12px;">
+    <button id="tab-jobs" class="fm-btn fm-btn-primary" type="button" role="tab" aria-selected="true" data-i18n="printJobs.tabJobs">Prints</button>
+    <button id="tab-projects" class="fm-btn fm-btn-outline" type="button" role="tab" aria-selected="false" data-i18n="printJobs.tabProjects">Projects</button>
+  </div>
+
+  <section id="jobs-panel">
+    <div class="filter-bar">
+      <select id="filter-status" class="fm-select" aria-label="Status" data-i18n-aria-label="common.status">
+        <option value="" data-i18n="printJobs.allStatuses">All statuses</option>
+        <option value="pending" data-i18n="printJobs.status.pending">Open</option>
+        <option value="completed" data-i18n="printJobs.status.completed">Completed</option>
+        <option value="failed" data-i18n="printJobs.status.failed">Failed</option>
+        <option value="cancelled" data-i18n="printJobs.status.cancelled">Discarded</option>
+      </select>
+      <select id="filter-project" class="fm-select" aria-label="Project" data-i18n-aria-label="printJobs.project"></select>
+      <select id="filter-printer" class="fm-select" aria-label="Printer" data-i18n-aria-label="printJobs.printer"></select>
+      <label class="fm-label" style="display: flex; align-items: center; gap: 6px; margin: 0;">
+        <span data-i18n="printJobs.from">From</span>
+        <input id="filter-from" type="date" class="fm-input" />
+      </label>
+      <label class="fm-label" style="display: flex; align-items: center; gap: 6px; margin: 0;">
+        <span data-i18n="printJobs.to">To</span>
+        <input id="filter-to" type="date" class="fm-input" />
+      </label>
+      <button id="filter-clear" class="fm-btn fm-btn-outline" type="button" data-i18n="common.clearAllFilters">Clear all filters</button>
+    </div>
+    <div class="fm-card fm-table-scroll" style="padding: 0;">
+      <table class="fm-table fm-admin-table">
+        <thead>
+          <tr>
+            <th data-i18n="common.name">Name</th>
+            <th data-i18n="printJobs.project">Project</th>
+            <th data-i18n="printJobs.printer">Printer</th>
+            <th data-i18n="common.status">Status</th>
+            <th data-i18n="printJobs.date">Date</th>
+            <th data-i18n="printJobs.weight">Weight</th>
+            <th data-i18n="printJobs.cost">Cost</th>
+            <th style="text-align: right;" data-i18n="common.actions">Actions</th>
+          </tr>
+        </thead>
+        <tbody id="jobs-table">
+          <tr><td colspan="8" style="text-align: center; color: var(--text-muted);" data-i18n="common.loading">Loading...</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div id="jobs-pagination" style="display: flex; gap: 12px; align-items: center; margin-top: 16px;"></div>
+  </section>
+
+  <section id="projects-panel" class="hidden">
+    <div class="fm-card fm-table-scroll" style="padding: 0;">
+      <table class="fm-table fm-admin-table">
+        <thead>
+          <tr>
+            <th data-i18n="common.name">Name</th>
+            <th data-i18n="printJobs.jobCount">Prints</th>
+            <th data-i18n="printJobs.weight">Weight</th>
+            <th data-i18n="printJobs.cost">Cost</th>
+            <th style="text-align: right;" data-i18n="common.actions">Actions</th>
+          </tr>
+        </thead>
+        <tbody id="projects-table">
+          <tr><td colspan="5" style="text-align: center; color: var(--text-muted);" data-i18n="common.loading">Loading...</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <FormDialog id="job-dialog" titleId="job-dialog-title" titleKey="printJobs.logPrint" title="Log print" wide>
+    <Fragment slot="actions">
+      <button type="submit" form="job-form" id="job-submit" class="fm-btn fm-btn-primary" data-i18n="common.save">Save</button>
+      <button type="button" data-dialog-close class="fm-btn fm-btn-outline" data-i18n="common.cancel">Cancel</button>
+    </Fragment>
+    <form id="job-form" class="fm-compact-form">
+      <div>
+        <label for="job-name" class="fm-label" data-i18n="common.name">Name *</label>
+        <input type="text" id="job-name" required maxlength="255" class="fm-input" />
+      </div>
+      <div>
+        <label for="job-project" class="fm-label" data-i18n="printJobs.project">Project</label>
+        <select id="job-project" class="fm-select"></select>
+        <input type="text" id="job-new-project" maxlength="255" class="fm-input hidden" style="margin-top: 6px;" placeholder="New project name" data-i18n-placeholder="printJobs.newProjectName" />
+      </div>
+      <div>
+        <label for="job-printer" class="fm-label" data-i18n="printJobs.printer">Printer</label>
+        <select id="job-printer" class="fm-select"></select>
+      </div>
+      <fieldset style="border: 0; padding: 0; margin: 0;">
+        <legend class="fm-label" data-i18n="printJobs.spools">Spools and grams</legend>
+        <div id="job-usage-rows" style="display: grid; gap: 8px;"></div>
+        <button type="button" id="job-add-row" class="fm-btn fm-btn-outline" style="margin-top: 8px;" data-i18n="printJobs.addSpool">Add spool</button>
+      </fieldset>
+      <div>
+        <label for="job-notes" class="fm-label" data-i18n="common.note">Note</label>
+        <textarea id="job-notes" rows="2" class="fm-input"></textarea>
+      </div>
+      <div>
+        <label for="job-photo" class="fm-label" data-i18n="printJobs.photo">Photo</label>
+        <input type="file" id="job-photo" accept="image/jpeg,image/png,image/webp" class="fm-input" />
+      </div>
+      <label class="fm-label" style="display: flex; align-items: center; gap: 8px;">
+        <input type="checkbox" id="job-complete" checked />
+        <span data-i18n="printJobs.bookNow">Book filament now (print is finished)</span>
+      </label>
+      <label id="job-success-wrap" class="fm-label" style="display: flex; align-items: center; gap: 8px;">
+        <input type="checkbox" id="job-success" checked />
+        <span data-i18n="printJobs.printSucceeded">Print succeeded</span>
+      </label>
+      <div id="job-error" class="fm-alert-error hidden" role="alert"></div>
+    </form>
+  </FormDialog>
+
+  <FormDialog id="complete-dialog" titleId="complete-dialog-title" titleKey="printJobs.completeTitle" title="Complete print">
+    <Fragment slot="actions">
+      <button type="submit" form="complete-form" id="complete-submit" class="fm-btn fm-btn-primary" data-i18n="printJobs.complete">Complete</button>
+      <button type="button" data-dialog-close class="fm-btn fm-btn-outline" data-i18n="common.cancel">Cancel</button>
+    </Fragment>
+    <form id="complete-form" class="fm-compact-form">
+      <p id="complete-name" style="font-weight: 600; margin: 0;"></p>
+      <p style="color: var(--text-muted); margin: 0;" data-i18n="printJobs.completeHint">Adjust the grams actually used per spool. They are deducted from the spools.</p>
+      <div id="complete-rows" style="display: grid; gap: 8px;"></div>
+      <label class="fm-label" style="display: flex; align-items: center; gap: 8px;">
+        <input type="checkbox" id="complete-success" checked />
+        <span data-i18n="printJobs.printSucceeded">Print succeeded</span>
+      </label>
+      <div id="complete-error" class="fm-alert-error hidden" role="alert"></div>
+    </form>
+  </FormDialog>
+
+  <FormDialog id="project-dialog" titleId="project-dialog-title" titleKey="printJobs.newProject" title="New project">
+    <Fragment slot="actions">
+      <button type="submit" form="project-form" id="project-submit" class="fm-btn fm-btn-primary" data-i18n="common.save">Save</button>
+      <button type="button" data-dialog-close class="fm-btn fm-btn-outline" data-i18n="common.cancel">Cancel</button>
+    </Fragment>
+    <form id="project-form" class="fm-compact-form">
+      <div>
+        <label for="project-name" class="fm-label" data-i18n="common.name">Name *</label>
+        <input type="text" id="project-name" required maxlength="255" class="fm-input" />
+      </div>
+      <div>
+        <label for="project-description" class="fm-label" data-i18n="printJobs.description">Description</label>
+        <textarea id="project-description" rows="3" class="fm-input"></textarea>
+      </div>
+      <label class="fm-label" style="display: flex; align-items: center; gap: 8px;">
+        <input type="checkbox" id="project-archived" />
+        <span data-i18n="printJobs.archived">Archived</span>
+      </label>
+      <div id="project-error" class="fm-alert-error hidden" role="alert"></div>
+    </form>
+  </FormDialog>
+
+  <script>
+    import type { AppDialogs } from '../../lib/form-dialog'
+    import { bindFormDialog } from '../../lib/form-dialog'
+    import { t, initI18n } from '../../lib/i18n'
+    import { isAbortError } from '../../lib/abort'
+    import { api, request } from '../../lib/api'
+    import { escapeHtml } from '../../lib/extra-fields'
+    import { formatPrice, getCurrency, initCurrency } from '../../lib/format'
+    import { mountPanel } from '../../lib/panel-navigation'
+    import {
+      buildCompletePayload, buildCreatePayload, formatGrams, statusPillStyle,
+      type PrintJob, type PrintProject,
+    } from '../../lib/print-jobs'
+
+    mountPanel('print-jobs', async (panelSignal) => {
+    await initI18n()
+    await initCurrency()
+
+    interface SpoolOption { id: number; remaining_weight_g: number | null; filament?: { designation?: string; manufacturer?: { name?: string } | null } | null }
+    interface Paginated<T> { items: T[]; total: number; page: number; page_size: number }
+
+    const dialogs = window as unknown as AppDialogs
+    const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T
+    const pageSize = 50
+    let page = 1
+    let projects: PrintProject[] = []
+    let printers: { id: number; name: string }[] = []
+    let spools: SpoolOption[] = []
+    let jobs: PrintJob[] = []
+    let completing: PrintJob | null = null
+    let editingProject: PrintProject | null = null
+    let jobRequest = 0
+
+    const jobDialog = bindFormDialog($<HTMLDialogElement>('job-dialog'))
+    const completeDialog = bindFormDialog($<HTMLDialogElement>('complete-dialog'))
+    const projectDialog = bindFormDialog($<HTMLDialogElement>('project-dialog'))
+
+    const money = (value: number | null) => value == null ? '–' : formatPrice(value, getCurrency())
+    const spoolLabel = (s: SpoolOption) =>
+      `#${s.id} ${[s.filament?.manufacturer?.name, s.filament?.designation].filter(Boolean).join(' ')}${s.remaining_weight_g != null ? ` (${Math.round(s.remaining_weight_g)} g)` : ''}`
+    function showError(el: HTMLElement, error: unknown) {
+      el.textContent = error instanceof Error ? error.message : t('printJobs.failedSave')
+      el.classList.remove('hidden')
+    }
+
+    async function loadLookups() {
+      const [projectData, printerData, spoolData] = await Promise.all([
+        api.get<PrintProject[]>('/print-projects', { signal: panelSignal }),
+        api.get<Paginated<{ id: number; name: string }>>('/printers?page_size=200', { signal: panelSignal }),
+        api.get<Paginated<SpoolOption>>('/spools?page_size=200', { signal: panelSignal }),
+      ])
+      projects = projectData
+      printers = printerData.items
+      spools = spoolData.items
+      fillSelect($<HTMLSelectElement>('filter-project'), projects, t('printJobs.allProjects'))
+      fillSelect($<HTMLSelectElement>('filter-printer'), printers, t('printJobs.allPrinters'))
+    }
+
+    function fillSelect(select: HTMLSelectElement, items: { id: number; name: string }[], emptyLabel: string, extra = '') {
+      const current = select.value
+      select.innerHTML = `<option value="">${escapeHtml(emptyLabel)}</option>${extra}`
+        + items.map(item => `<option value="${item.id}">${escapeHtml(item.name)}</option>`).join('')
+      select.value = current
+    }
+
+    // ---------------------------------------------------------------- jobs
+
+    function renderJobs() {
+      const tbody = $('jobs-table')
+      if (jobs.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="8" style="text-align: center; color: var(--text-muted);">${t('printJobs.noJobs')}</td></tr>`
+        return
+      }
+      tbody.innerHTML = jobs.map(job => {
+        const when = job.started_at || job.created_at
+        const actions = job.status === 'pending'
+          ? `<button class="fm-btn fm-btn-primary" type="button" data-action="complete" data-id="${job.id}">${t('printJobs.complete')}</button>
+             <button class="fm-btn fm-btn-outline" type="button" data-action="discard" data-id="${job.id}">${t('printJobs.discard')}</button>`
+          : ''
+        return `<tr>
+          <td><a href="/print-jobs/${job.id}">${escapeHtml(job.name)}</a></td>
+          <td>${escapeHtml(job.project_name || '–')}</td>
+          <td>${escapeHtml(job.printer_name || '–')}</td>
+          <td><span class="fm-pill" style="${statusPillStyle(job.status)}">${t(`printJobs.status.${job.status}`)}</span></td>
+          <td style="font-size: .85rem; color: var(--text-muted);">${new Date(when).toLocaleString()}</td>
+          <td style="font-family: monospace;">${formatGrams(job.total_weight_g)}</td>
+          <td>${money(job.total_cost)}</td>
+          <td style="text-align: right; white-space: nowrap;">${actions}</td>
+        </tr>`
+      }).join('')
+    }
+
+    function renderPagination(total: number) {
+      const pages = Math.max(1, Math.ceil(total / pageSize))
+      $('jobs-pagination').innerHTML = `
+        <button class="fm-btn fm-btn-outline" type="button" id="page-prev" ${page <= 1 ? 'disabled' : ''}>&larr;</button>
+        <span>${page} / ${pages} (${total})</span>
+        <button class="fm-btn fm-btn-outline" type="button" id="page-next" ${page >= pages ? 'disabled' : ''}>&rarr;</button>`
+      $('page-prev').addEventListener('click', () => { page -= 1; void loadJobs() })
+      $('page-next').addEventListener('click', () => { page += 1; void loadJobs() })
+    }
+
+    async function loadJobs() {
+      const request = ++jobRequest
+      const params = new URLSearchParams({ page: String(page), page_size: String(pageSize) })
+      for (const [id, key] of [['filter-status', 'status'], ['filter-project', 'project_id'], ['filter-printer', 'printer_id']] as const) {
+        const value = $<HTMLSelectElement>(id).value
+        if (value) params.set(key, value)
+      }
+      const from = $<HTMLInputElement>('filter-from').value
+      const to = $<HTMLInputElement>('filter-to').value
+      if (from) params.set('from', new Date(`${from}T00:00:00`).toISOString())
+      if (to) params.set('to', new Date(`${to}T23:59:59`).toISOString())
+      try {
+        const data = await api.get<Paginated<PrintJob>>(`/print-jobs?${params}`, { signal: panelSignal })
+        if (panelSignal.aborted || request !== jobRequest) return
+        jobs = data.items
+        renderJobs()
+        renderPagination(data.total)
+      } catch (error) {
+        if (panelSignal.aborted || isAbortError(error) || request !== jobRequest) return
+        $('jobs-table').innerHTML = `<tr><td colspan="8" style="text-align: center; color: var(--error-text);">${t('printJobs.failedLoad')}</td></tr>`
+      }
+    }
+
+    function applyFilters() { page = 1; void loadJobs() }
+    for (const id of ['filter-status', 'filter-project', 'filter-printer', 'filter-from', 'filter-to']) {
+      $(id).addEventListener('change', applyFilters)
+    }
+    $('filter-clear').addEventListener('click', () => {
+      for (const id of ['filter-status', 'filter-project', 'filter-printer', 'filter-from', 'filter-to']) {
+        ($(id) as HTMLInputElement | HTMLSelectElement).value = ''
+      }
+      applyFilters()
+    })
+
+    $('jobs-table').addEventListener('click', async (event) => {
+      const button = (event.target as HTMLElement).closest<HTMLButtonElement>('button[data-action]')
+      if (!button) return
+      const job = jobs.find(item => item.id === Number(button.dataset.id))
+      if (!job) return
+      if (button.dataset.action === 'complete') openComplete(job)
+      if (button.dataset.action === 'discard') {
+        if (!await dialogs.__fmConfirm(t('printJobs.discardConfirm', { name: job.name }), { isDanger: true, okLabel: t('printJobs.discard') })) return
+        try {
+          await api.post(`/print-jobs/${job.id}/cancel`, undefined, { signal: panelSignal })
+          await loadJobs()
+        } catch (error) {
+          if (!isAbortError(error)) await dialogs.__fmAlert(error instanceof Error ? error.message : t('printJobs.failedSave'))
+        }
+      }
+    })
+
+    // ---------------------------------------------------------------- complete dialog
+
+    function openComplete(job: PrintJob) {
+      completing = job
+      $('complete-name').textContent = job.name
+      $('complete-error').classList.add('hidden')
+      $<HTMLInputElement>('complete-success').checked = true
+      $('complete-rows').innerHTML = job.usages.map(usage => `
+        <label style="display: grid; grid-template-columns: 1fr 7rem; gap: 8px; align-items: center;">
+          <span>${escapeHtml(usage.spool_name || (usage.slot_no != null ? `${t('printJobs.slot')} ${usage.slot_no}` : '–'))}${usage.spool_id ? ` <small style="color: var(--text-muted);">#${usage.spool_id}</small>` : ''}</span>
+          <input class="fm-input complete-grams" inputmode="decimal" data-usage-id="${usage.id}" value="${usage.planned_weight_g}" aria-label="${t('printJobs.usedGrams')}" />
+        </label>`).join('')
+      completeDialog.open()
+    }
+
+    $('complete-form').addEventListener('submit', async (event) => {
+      event.preventDefault()
+      if (!completing) return
+      const error = $('complete-error')
+      error.classList.add('hidden')
+      const rows = Array.from(document.querySelectorAll<HTMLInputElement>('.complete-grams'))
+        .map(input => ({ usageId: Number(input.dataset.usageId), value: input.value }))
+      const payload = buildCompletePayload($<HTMLInputElement>('complete-success').checked, rows)
+      if (!payload) { showError(error, new Error(t('printJobs.invalidWeight'))); return }
+      const submit = $<HTMLButtonElement>('complete-submit')
+      submit.disabled = true
+      try {
+        await api.post(`/print-jobs/${completing.id}/complete`, payload, { signal: panelSignal })
+        completeDialog.close()
+        await Promise.all([loadJobs(), loadProjects()])
+      } catch (err) {
+        if (!isAbortError(err)) showError(error, err)
+      } finally {
+        submit.disabled = false
+      }
+    })
+
+    // ---------------------------------------------------------------- capture dialog
+
+    function addUsageRow(spoolId = '', grams = '') {
+      const row = document.createElement('div')
+      row.className = 'job-usage-row'
+      row.style.cssText = 'display: grid; grid-template-columns: 1fr 7rem auto; gap: 8px; align-items: center;'
+      row.innerHTML = `
+        <select class="fm-select usage-spool" aria-label="${t('printJobs.spool')}">
+          <option value="">${t('printJobs.selectSpool')}</option>
+          ${spools.map(s => `<option value="${s.id}">${escapeHtml(spoolLabel(s))}</option>`).join('')}
+        </select>
+        <input class="fm-input usage-grams" inputmode="decimal" placeholder="g" aria-label="${t('printJobs.usedGrams')}" />
+        <button type="button" class="fm-btn fm-btn-outline usage-remove" aria-label="${t('common.delete')}">&times;</button>`
+      row.querySelector<HTMLSelectElement>('.usage-spool')!.value = spoolId
+      row.querySelector<HTMLInputElement>('.usage-grams')!.value = grams
+      row.querySelector('.usage-remove')!.addEventListener('click', () => row.remove())
+      $('job-usage-rows').appendChild(row)
+    }
+
+    function syncJobProjectSelect() {
+      $('job-new-project').classList.toggle('hidden', $<HTMLSelectElement>('job-project').value !== 'new')
+    }
+
+    function openJobDialog() {
+      $<HTMLFormElement>('job-form').reset()
+      $('job-error').classList.add('hidden')
+      fillSelect($<HTMLSelectElement>('job-project'), projects, t('printJobs.noProject'), `<option value="new">${t('printJobs.createProject')}</option>`)
+      fillSelect($<HTMLSelectElement>('job-printer'), printers, t('printJobs.noPrinter'))
+      $('job-usage-rows').innerHTML = ''
+      addUsageRow()
+      syncJobProjectSelect()
+      syncSuccessVisibility()
+      jobDialog.open()
+    }
+
+    function syncSuccessVisibility() {
+      $('job-success-wrap').classList.toggle('hidden', !$<HTMLInputElement>('job-complete').checked)
+    }
+
+    $('btn-new-job').addEventListener('click', openJobDialog)
+    $('job-add-row').addEventListener('click', () => addUsageRow())
+    $('job-project').addEventListener('change', syncJobProjectSelect)
+    $('job-complete').addEventListener('change', syncSuccessVisibility)
+
+    $('job-form').addEventListener('submit', async (event) => {
+      event.preventDefault()
+      const error = $('job-error')
+      error.classList.add('hidden')
+      const rows = Array.from(document.querySelectorAll<HTMLElement>('.job-usage-row')).map(row => ({
+        spoolId: row.querySelector<HTMLSelectElement>('.usage-spool')!.value,
+        grams: row.querySelector<HTMLInputElement>('.usage-grams')!.value,
+      }))
+      const projectChoice = $<HTMLSelectElement>('job-project').value
+      const payload = buildCreatePayload({
+        name: $<HTMLInputElement>('job-name').value,
+        projectId: projectChoice,
+        newProjectName: $<HTMLInputElement>('job-new-project').value,
+        printerId: $<HTMLSelectElement>('job-printer').value,
+        notes: $<HTMLTextAreaElement>('job-notes').value,
+        complete: $<HTMLInputElement>('job-complete').checked,
+        success: $<HTMLInputElement>('job-success').checked,
+        rows,
+      })
+      if (!payload) { showError(error, new Error(t('printJobs.invalidForm'))); return }
+      const submit = $<HTMLButtonElement>('job-submit')
+      submit.disabled = true
+      try {
+        if (projectChoice === 'new') {
+          const name = $<HTMLInputElement>('job-new-project').value.trim()
+          if (!name) throw new Error(t('printJobs.invalidForm'))
+          const created = await api.post<PrintProject>('/print-projects', { name }, { signal: panelSignal })
+          payload.project_id = created.id
+        }
+        const job = await api.post<PrintJob>('/print-jobs', payload, { signal: panelSignal })
+        const photo = $<HTMLInputElement>('job-photo').files?.[0]
+        if (photo) {
+          const form = new FormData()
+          form.append('file', photo)
+          await request(`/print-jobs/${job.id}/photo`, { method: 'POST', body: form, signal: panelSignal })
+        }
+        jobDialog.close()
+        await Promise.all([loadJobs(), loadProjects()])
+        await loadLookups()
+      } catch (err) {
+        if (!isAbortError(err)) showError(error, err)
+      } finally {
+        submit.disabled = false
+      }
+    })
+
+    // ---------------------------------------------------------------- projects
+
+    async function loadProjects() {
+      try {
+        projects = await api.get<PrintProject[]>('/print-projects', { signal: panelSignal })
+        fillSelect($<HTMLSelectElement>('filter-project'), projects, t('printJobs.allProjects'))
+        renderProjects()
+      } catch (error) {
+        if (isAbortError(error)) return
+        $('projects-table').innerHTML = `<tr><td colspan="5" style="text-align: center; color: var(--error-text);">${t('printJobs.failedLoad')}</td></tr>`
+      }
+    }
+
+    function renderProjects() {
+      const tbody = $('projects-table')
+      if (projects.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="5" style="text-align: center; color: var(--text-muted);">${t('printJobs.noProjects')}</td></tr>`
+        return
+      }
+      tbody.innerHTML = projects.map(project => `<tr>
+        <td><strong>${escapeHtml(project.name)}</strong>${project.is_archived ? ` <span class="fm-pill" style="${statusPillStyle('cancelled')}">${t('printJobs.archived')}</span>` : ''}
+          ${project.description ? `<div style="color: var(--text-muted); font-size: .85rem;">${escapeHtml(project.description)}</div>` : ''}</td>
+        <td>${project.job_count}</td>
+        <td style="font-family: monospace;">${formatGrams(project.total_weight_g)}</td>
+        <td>${money(project.total_cost)}</td>
+        <td style="text-align: right; white-space: nowrap;">
+          <button class="fm-btn fm-btn-outline" type="button" data-action="show-jobs" data-id="${project.id}">${t('printJobs.showPrints')}</button>
+          <button class="fm-btn fm-btn-outline" type="button" data-action="edit-project" data-id="${project.id}">${t('common.edit')}</button>
+          <button class="fm-btn fm-btn-outline" type="button" data-action="delete-project" data-id="${project.id}">${t('common.delete')}</button>
+        </td></tr>`).join('')
+    }
+
+    function openProjectDialog(project: PrintProject | null) {
+      editingProject = project
+      $('project-error').classList.add('hidden')
+      $<HTMLInputElement>('project-name').value = project?.name ?? ''
+      $<HTMLTextAreaElement>('project-description').value = project?.description ?? ''
+      $<HTMLInputElement>('project-archived').checked = project?.is_archived ?? false
+      projectDialog.open()
+    }
+
+    $('btn-new-project').addEventListener('click', () => openProjectDialog(null))
+
+    $('project-form').addEventListener('submit', async (event) => {
+      event.preventDefault()
+      const body = {
+        name: $<HTMLInputElement>('project-name').value.trim(),
+        description: $<HTMLTextAreaElement>('project-description').value.trim() || null,
+        is_archived: $<HTMLInputElement>('project-archived').checked,
+      }
+      if (!body.name) return
+      const submit = $<HTMLButtonElement>('project-submit')
+      submit.disabled = true
+      try {
+        if (editingProject) await api.patch(`/print-projects/${editingProject.id}`, body, { signal: panelSignal })
+        else await api.post('/print-projects', body, { signal: panelSignal })
+        projectDialog.close()
+        await loadProjects()
+      } catch (err) {
+        if (!isAbortError(err)) showError($('project-error'), err)
+      } finally {
+        submit.disabled = false
+      }
+    })
+
+    $('projects-table').addEventListener('click', async (event) => {
+      const button = (event.target as HTMLElement).closest<HTMLButtonElement>('button[data-action]')
+      if (!button) return
+      const project = projects.find(item => item.id === Number(button.dataset.id))
+      if (!project) return
+      if (button.dataset.action === 'edit-project') openProjectDialog(project)
+      if (button.dataset.action === 'show-jobs') {
+        $<HTMLSelectElement>('filter-project').value = String(project.id)
+        showTab('jobs')
+        applyFilters()
+      }
+      if (button.dataset.action === 'delete-project') {
+        if (!await dialogs.__fmConfirm(t('printJobs.deleteProjectConfirm', { name: project.name }), { isDanger: true, okLabel: t('common.delete') })) return
+        try {
+          await api.delete(`/print-projects/${project.id}`, { signal: panelSignal })
+          await Promise.all([loadProjects(), loadJobs()])
+        } catch (error) {
+          if (!isAbortError(error)) await dialogs.__fmAlert(error instanceof Error ? error.message : t('printJobs.failedSave'))
+        }
+      }
+    })
+
+    // ---------------------------------------------------------------- tabs
+
+    function showTab(tab: 'jobs' | 'projects') {
+      const jobsActive = tab === 'jobs'
+      $('jobs-panel').classList.toggle('hidden', !jobsActive)
+      $('projects-panel').classList.toggle('hidden', jobsActive)
+      $('btn-new-job').classList.toggle('hidden', !jobsActive)
+      $('btn-new-project').classList.toggle('hidden', jobsActive)
+      for (const [id, active] of [['tab-jobs', jobsActive], ['tab-projects', !jobsActive]] as const) {
+        const button = $(id)
+        button.className = `fm-btn ${active ? 'fm-btn-primary' : 'fm-btn-outline'}`
+        button.setAttribute('aria-selected', String(active))
+      }
+    }
+    $('tab-jobs').addEventListener('click', () => showTab('jobs'))
+    $('tab-projects').addEventListener('click', () => showTab('projects'))
+
+    try {
+      await loadLookups()
+    } catch (error) {
+      if (isAbortError(error)) return
+      console.error('Failed to load print job lookups:', error)
+    }
+    renderProjects()
+    await loadJobs()
+    })
+  </script>
+</Layout>

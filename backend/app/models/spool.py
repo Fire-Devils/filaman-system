@@ -2,6 +2,7 @@ from datetime import datetime
 from typing import Any
 
 from sqlalchemy import JSON, Float, ForeignKey, Integer, String, Text, func
+from sqlalchemy import inspect as sa_inspect
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base, TimestampMixin, TZDateTime
@@ -66,6 +67,9 @@ class Spool(Base, TimestampMixin):
 
     stocked_in_at: Mapped[datetime | None] = mapped_column(TZDateTime(), nullable=True)
     last_used_at: Mapped[datetime | None] = mapped_column(TZDateTime(), nullable=True)
+    # Moisture tracking: first time the spool left "new" and last drying run.
+    opened_at: Mapped[datetime | None] = mapped_column(TZDateTime(), nullable=True)
+    last_dried_at: Mapped[datetime | None] = mapped_column(TZDateTime(), nullable=True)
 
     initial_total_weight_g: Mapped[float | None] = mapped_column(Float, nullable=True)
     empty_spool_weight_g: Mapped[float | None] = mapped_column(Float, nullable=True)
@@ -100,6 +104,24 @@ class Spool(Base, TimestampMixin):
     printer_params: Mapped[list["SpoolPrinterParam"]] = relationship(
         back_populates="spool", cascade="all, delete-orphan"
     )
+
+    @property
+    def moisture(self) -> dict[str, Any] | None:
+        """Moisture status; None unless status and filament are already loaded."""
+        from app.services.spool_moisture import compute_moisture
+
+        unloaded = sa_inspect(self).unloaded
+        if "status" in unloaded or "filament" in unloaded:
+            return None
+        if self.status is None or self.filament is None:
+            return None
+        return compute_moisture(
+            self.status.key,
+            self.filament.material_type,
+            self.filament.material_subgroup,
+            self.opened_at,
+            self.last_dried_at,
+        )
 
 
 class SpoolEvent(Base):

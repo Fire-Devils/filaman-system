@@ -45,7 +45,7 @@ export function getStaticPaths() {
     }
 
     interface SlotAssignment { present?: boolean; spool_id?: number | null; spool_name?: string | null; material_type?: string | null; color_hex?: string | null; tray_color?: string | null; tray_type?: string | null; tray_info_idx?: string | null; setting_id?: string | null; cali_idx?: number | null; nozzle_temp_min?: number | null; nozzle_temp_max?: number | null }
-    interface PrinterRecord { id: number; name: string; driver_key: string; is_active: boolean; driver_config?: Record<string, unknown> | null; slots?: { slot_no: number; is_active?: boolean; name?: string | null; assignment?: SlotAssignment | null }[] }
+    interface PrinterRecord { id: number; name: string; driver_key: string; is_active: boolean; driver_config?: Record<string, unknown> | null; nozzle_diameter_mm?: number | null; nozzle_hardened?: boolean | null; slots?: { slot_no: number; warnings?: { code: string; level: string; nozzle_diameter_mm?: number; min_nozzle_mm?: number }[]; is_active?: boolean; name?: string | null; assignment?: SlotAssignment | null }[] }
     interface DriverHealth { running?: boolean; connected?: boolean; printer_model?: string; external_spool?: boolean; ams_type?: string; sync_actions?: { action: string; label: string; label_de?: string; variant?: string }[]; ams_units?: { ams_id: number; tray_count: number; serial?: string; humidity?: number | null; temp?: number | null }[] }
     interface DebugEntry { ts: string; dir: string; topic: string; payload: unknown }
     const dialogs = window as unknown as AppDialogs
@@ -268,6 +268,13 @@ export function getStaticPaths() {
               }
             }
 
+            const warningsHtml = (s.warnings ?? []).map((w) => {
+              const text = w.code === 'abrasive_soft_nozzle'
+                ? t(w.level === 'warning' ? 'printers.warnAbrasiveSoft' : 'printers.warnAbrasiveUnknown')
+                : t('printers.warnNozzleTooSmall').replace('{min}', String(w.min_nozzle_mm ?? '')).replace('{diameter}', String(w.nozzle_diameter_mm ?? ''))
+              return `<div class="slot-warning" role="alert" style="margin-top:6px;font-size:0.8rem;color:#b45309;">⚠ ${escapeHtml(text)}</div>`
+            }).join('')
+
             return `
               <div class="printer-item">
                 <div style="display:flex;justify-content:space-between;align-items:center;">
@@ -275,6 +282,7 @@ export function getStaticPaths() {
                   ${presentBadge}
                 </div>
                 ${occupiedHtml}
+                ${warningsHtml}
                 ${trayDetailsHtml}
               </div>`
           })
@@ -418,6 +426,8 @@ export function getStaticPaths() {
         <div class="fm-settings-stack">
           <dl class="printer-metadata">
             <div><dt>${t('printers.driver')}</dt><dd>${escapeHtml(printer.driver_key)}</dd></div>
+            <div><dt>${t('printers.nozzleDiameter')}</dt><dd>${printer.nozzle_diameter_mm != null ? escapeHtml(`${printer.nozzle_diameter_mm} mm`) : '—'}</dd></div>
+            <div><dt>${t('printers.nozzleHardened')}</dt><dd>${printer.nozzle_hardened == null ? t('printers.nozzleHardenedUnknown') : printer.nozzle_hardened ? t('common.yes') : t('common.no')}</dd></div>
             <div><dt>${t('common.status')}</dt><dd>
               <span style="padding: 2px 8px; font-size: 0.75rem; border-radius: 999px; background: var(--bg-soft); color: ${printer.is_active ? 'var(--success-text)' : 'var(--error-text)'};">
                 ${printer.is_active ? t('common.active') : t('common.inactive')}

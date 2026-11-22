@@ -37,6 +37,9 @@ const { id } = Astro.params
       <button id="btn-status" class="fm-btn fm-btn-outline" style="border-color: var(--accent-3); color: var(--accent-3);">
         <svg aria-hidden="true"><use href="/icons.svg?v=2#icon-change-status"></use></svg><span data-i18n="spools.changeStatus">Change Status</span>
       </button>
+      <button id="btn-dry" class="fm-btn fm-btn-outline">
+        <span data-i18n="moisture.markDried">Dried</span>
+      </button>
       <button id="btn-move" class="fm-btn fm-btn-outline">
         <svg aria-hidden="true"><use href="/icons.svg?v=2#icon-move"></use></svg><span data-i18n="spools.move">Move</span>
       </button>
@@ -129,6 +132,25 @@ const { id } = Astro.params
     </div>
   </div>
 
+  <div id="print-jobs-section" class="hidden" style="margin-top: 32px;">
+    <h2 style="font-weight: 600; margin-bottom: 16px;" data-i18n="spools.printJobs">Prints</h2>
+    <div class="fm-card" style="padding: 0;">
+      <table class="fm-table">
+        <thead>
+          <tr style="background: var(--bg-soft);">
+            <th data-i18n="common.name">Name</th>
+            <th data-i18n="printJobs.project">Project</th>
+            <th data-i18n="common.status">Status</th>
+            <th data-i18n="printJobs.date">Date</th>
+            <th data-i18n="printJobs.usedGrams">Used</th>
+            <th data-i18n="printJobs.cost">Cost</th>
+          </tr>
+        </thead>
+        <tbody id="print-jobs-table"></tbody>
+      </table>
+    </div>
+  </div>
+
   <style is:global>
     @keyframes slot-pulse-white {
       0%, 100% { box-shadow: 0 0 0 2px rgba(255,255,255,0.3); }
@@ -171,13 +193,15 @@ const { id } = Astro.params
     import { getAbortSignal, isAbortError } from '../../../lib/abort'
     import { createDetailScrollIdentity } from '../../../lib/detail-scroll-identity'
     import { formatSpoolMetrics, renderSpoolReel, spoolRemainingWeight } from '../../../lib/spool-reel'
-    import { getFilamentColors, buildFilamentDetailSections, buildFilamentHeaderName, buildFilamentHeroStyle, formatHeaderId, renderFilamentHeaderColors, renderFilamentSpoolImage, renderFilamentDetailRow, safeExternalUrl } from '../../../lib/filament-detail'
+    import { renderAbrasiveBadge, getFilamentColors, buildFilamentDetailSections, buildFilamentHeaderName, buildFilamentHeroStyle, formatHeaderId, renderFilamentHeaderColors, renderFilamentSpoolImage, renderFilamentDetailRow, safeExternalUrl } from '../../../lib/filament-detail'
     import { buildSpoolDetailSections, buildSpoolUpdatePayload, formatSpoolDate, renderSpoolFieldInput, type SpoolDetailRow } from '../../../lib/spool-detail'
+    import { formatGrams, statusPillStyle, type PrintJob } from '../../../lib/print-jobs'
     import { formatPrice, formatRfidUid, getCurrency, initCurrency, initRfidDisplayFormat } from '../../../lib/format'
     import { createFilamentDbLookup, type LookupInstance, checkFilamentDbActive } from '../../../lib/filamentdb-lookup'
     import { changedNativeFields, createDetailEditSession, setFormFieldValue } from '../../../lib/detail-edit'
     import { captureDetailEditPosition } from '../../../lib/detail-edit-position'
     import { initPrinterSetup } from '../../../lib/printer-setup'
+    import { buildDryPayload, dryDialogDefaults, moistureBadgeClass, moistureLabelKey, parseMoisture, referenceKind } from '../../../lib/moisture'
     import {
       isBuiltInLabelField,
       scopeLabelExtraField,
@@ -303,6 +327,7 @@ const { id } = Astro.params
           t, getCsrfToken, getAbortSignal, isAbortError,
         })
         loadEvents()
+        loadPrintJobs()
         setupActions()
       } catch (error) {
         if (isAbortError(error)) return
@@ -734,6 +759,16 @@ const { id } = Astro.params
       if (printBtn) printBtn.href = printUrl
     }
 
+    function renderMoistureFact(): string {
+      const moisture = parseMoisture(spool.moisture)
+      if (!moisture) return ''
+      const text = t(
+        referenceKind(moisture, spool.last_dried_at) === 'dried' ? 'moisture.daysSinceDried' : 'moisture.daysSinceOpened',
+        { days: moisture.days_exposed },
+      )
+      return `<span aria-hidden="true">·</span><span class="${moistureBadgeClass(moisture.level)}" title="${escapeExtraFieldHtml(text)}">${escapeExtraFieldHtml(t(moistureLabelKey(moisture.level)))} · ${escapeExtraFieldHtml(text)}</span>`
+    }
+
     function renderSpool() {
       spoolDraftObserver?.disconnect()
       spoolProfileLookup?.destroy()
@@ -794,7 +829,8 @@ const { id } = Astro.params
             </div>
             <div class="filament-hero-body">
               ${renderFilamentHeaderColors(spool.filament || {}, t('filaments.soldAs'))}
-              <div class="spool-hero-facts"><span>${escapeExtraFieldHtml(getStatusLabel(spool.status_id))}</span><span aria-hidden="true">·</span><span>${escapeExtraFieldHtml(getLocationName(spool.location_id))}</span></div>
+              ${renderAbrasiveBadge(spool.filament || {}, t, false)}
+              <div class="spool-hero-facts"><span>${escapeExtraFieldHtml(getStatusLabel(spool.status_id))}</span><span aria-hidden="true">·</span><span>${escapeExtraFieldHtml(getLocationName(spool.location_id))}</span>${renderMoistureFact()}</div>
               <div class="spool-hero-summary">${renderRemainingSummary()}</div>
             </div>
           </div>
@@ -920,6 +956,38 @@ const { id } = Astro.params
       }
     }
     
+    async function loadPrintJobs() {
+      try {
+        const response = await fetch(`/api/v1/spools/${id}/print-jobs?page_size=50`, {
+          credentials: 'include',
+          signal: getAbortSignal(),
+        })
+        if (!response.ok) throw new Error('Failed to fetch print jobs')
+        const data = await response.json()
+        const section = document.getElementById('print-jobs-section')
+        const tbody = document.getElementById('print-jobs-table')
+        if (!section || !tbody) return
+        // Only show the section for spools that were used in a print.
+        section.classList.toggle('hidden', data.items.length === 0)
+        const currency = getCurrency()
+        tbody.innerHTML = data.items.map((job: PrintJob) => {
+          const usage = job.usages.find(item => item.spool_id === Number(id))
+          const used = usage?.used_weight_g ?? usage?.planned_weight_g ?? null
+          return `<tr>
+            <td style="padding: 12px;"><a href="/print-jobs/${job.id}">${escapeExtraFieldHtml(job.name)}</a></td>
+            <td style="padding: 12px;">${escapeExtraFieldHtml(job.project_name || '–')}</td>
+            <td style="padding: 12px;"><span class="fm-pill" style="${statusPillStyle(job.status)}">${t(`printJobs.status.${job.status}`)}</span></td>
+            <td style="padding: 12px; font-size: 0.85rem; color: var(--text-muted);">${new Date(job.started_at || job.created_at).toLocaleString()}</td>
+            <td style="padding: 12px; font-family: monospace;">${formatGrams(used)}</td>
+            <td style="padding: 12px;">${usage?.cost != null ? formatPrice(usage.cost, currency) : '–'}</td>
+          </tr>`
+        }).join('')
+      } catch (error) {
+        if (isAbortError(error)) return
+        console.error('Failed to load print jobs:', error)
+      }
+    }
+
     async function loadEvents() {
       try {
         const response = await fetch(`/api/v1/spools/${id}/events?page_size=50`, {
@@ -983,6 +1051,7 @@ const { id } = Astro.params
       document.getElementById('btn-adjustment')?.addEventListener('click', () => showModal('adjustment'))
       document.getElementById('btn-status')?.addEventListener('click', () => showModal('status'))
       document.getElementById('btn-move')?.addEventListener('click', () => showModal('move'))
+      document.getElementById('btn-dry')?.addEventListener('click', () => showModal('dry'))
 
       // Print Label button
       document.getElementById('btn-print-label')?.addEventListener('click', () => {
@@ -1294,6 +1363,7 @@ const { id } = Astro.params
         adjustment: t('spools.modalAdjust'),
         status: t('spools.modalChangeStatus'),
         move: t('spools.modalMove'),
+        dry: t('moisture.dryDialogTitle'),
       }
       title.textContent = titles[type as keyof typeof titles]
       
@@ -1358,6 +1428,25 @@ const { id } = Astro.params
             </div>
           </div>
         `
+      } else if (type === 'dry') {
+        const defaults = dryDialogDefaults(spool?.filament)
+        fields.innerHTML = `
+          <div style="display: grid; gap: 12px;">
+            <p style="margin: 0; color: var(--text-muted); font-size: 0.85rem;">${t('moisture.dryHint')}</p>
+            <div>
+              <label class="fm-label">${t('moisture.dryTemp')}</label>
+              <input type="number" id="field-dry-temp" min="0" max="300" step="1" class="fm-input" value="${escapeExtraFieldHtml(defaults.temp)}">
+            </div>
+            <div>
+              <label class="fm-label">${t('moisture.dryHours')}</label>
+              <input type="number" id="field-dry-hours" min="0.1" max="240" step="0.5" class="fm-input" value="${escapeExtraFieldHtml(defaults.hours)}">
+            </div>
+            <div>
+              <label class="fm-label">${t('common.note')}</label>
+              <input type="text" id="field-note" class="fm-input">
+            </div>
+          </div>
+        `
       } else if (type === 'move') {
         fields.innerHTML = `
           <div style="display: grid; gap: 12px;">
@@ -1415,6 +1504,13 @@ const { id } = Astro.params
           url = `/api/v1/spools/${id}/status`
           body.status = (document.getElementById('field-status') as HTMLInputElement).value
           body.note = (document.getElementById('field-note') as HTMLInputElement).value || null
+        } else if (type === 'dry') {
+          url = `/api/v1/spools/${id}/dry`
+          Object.assign(body, buildDryPayload({
+            temp: (document.getElementById('field-dry-temp') as HTMLInputElement).value,
+            hours: (document.getElementById('field-dry-hours') as HTMLInputElement).value,
+            note: (document.getElementById('field-note') as HTMLInputElement).value,
+          }))
         } else if (type === 'move') {
           url = `/api/v1/spools/${id}/move`
           const locId = (document.getElementById('field-location') as HTMLInputElement).value

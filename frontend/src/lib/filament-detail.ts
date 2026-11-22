@@ -58,6 +58,9 @@ interface FilamentDetailData {
   [key: string]: unknown
   material_type?: string | null
   material_subgroup?: string | null
+  is_abrasive?: boolean | null
+  abrasive?: boolean | null
+  min_nozzle_mm?: number | null
   finish_type?: string | null
   diameter_mm?: number | null
   density_g_cm3?: number | null
@@ -217,7 +220,9 @@ export function buildFilamentDetailSections(
     key: section.key,
     titleKey: section.key === 'spool' ? display.spoolTitleKey ?? section.titleKey : section.titleKey,
     rows: section.fields.filter(field => !field.editOnly).map(field => {
-      const raw = filament[field.key]
+      const raw = field.key === 'is_abrasive'
+        ? (filament.is_abrasive === true ? 'true' : filament.is_abrasive === false ? 'false' : '')
+        : filament[field.key]
       let value = raw
       if (field.display && display[field.display] != null) value = display[field.display]
       else if (field.display === 'price') value = undefined
@@ -228,8 +233,25 @@ export function buildFilamentDetailSections(
         const labelKey = field.options.find(([option]) => option === raw)?.[1]
         value = labelKey ? display.translate(labelKey) : raw
       }
+      if (field.key === 'is_abrasive' && raw === '' && display.translate && typeof filament.abrasive === 'boolean') {
+        // Auto-detected: say so and show the detected result.
+        value = `${display.translate('filaments.abrasiveAuto')} (${display.translate(filament.abrasive ? 'common.yes' : 'common.no')})`
+      }
       const suffix = field.unit ? `${field.unit === '%' ? '' : ' '}${field.unit}` : ''
       return row(field.labelKey, value, suffix, field.link ? raw as string | null : undefined)
     }),
   }))
+}
+
+export function renderAbrasiveBadge(
+  filament: object,
+  translate: (key: string) => string,
+  withMinNozzle = true,
+): string {
+  const { abrasive, min_nozzle_mm: minNozzle } = filament as { abrasive?: boolean | null; min_nozzle_mm?: number | null }
+  if (!abrasive) return ''
+  const min = withMinNozzle && minNozzle != null
+    ? ` · ${escapeHtml(translate('filaments.minNozzle'))}: ${escapeHtml(String(minNozzle))} mm`
+    : ''
+  return `<span class="abrasive-badge" role="note" style="display:inline-block;margin-top:6px;padding:2px 8px;border-radius:999px;font-size:.75rem;background:color-mix(in srgb, #d97706 18%, transparent);color:#b45309;border:1px solid #d97706">⚠ ${escapeHtml(translate('filaments.abrasiveBadge'))}${min}</span>`
 }

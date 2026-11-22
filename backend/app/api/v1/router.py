@@ -7,6 +7,7 @@ from app.api.mcp_plugin_tools import load_plugin_read_tools
 from app.api.v1.admin import router as admin_router
 from app.api.v1.app_settings_admin import public_router as app_settings_public_router
 from app.api.v1.app_settings_admin import router as app_settings_admin_router
+from app.api.v1.analytics import router as analytics_router
 from app.api.v1.dashboard import router as dashboard_router
 from app.api.v1.devices import router as devices_router
 from app.api.v1.display import router as display_router
@@ -20,8 +21,12 @@ from app.api.v1.me import router as me_router
 from app.api.v1.me_api_keys import router as me_api_keys_router
 from app.api.v1.oidc_admin import public_router as oidc_public_router
 from app.api.v1.oidc_admin import router as oidc_admin_router
+from app.api.v1.print_jobs import router as print_jobs_router
+from app.api.v1.print_jobs import router_projects as print_projects_router
+from app.api.v1.print_jobs import router_spool_jobs as spool_print_jobs_router
 from app.api.v1.printer_params import router_filament_params, router_spool_params
 from app.api.v1.printers import router as printers_router
+from app.api.v1.slicer_link import router as slicer_link_router
 from app.api.v1.spool_link_suggestions import router as spool_link_suggestions_router
 from app.api.v1.spoolman import router as spoolman_router
 from app.api.v1.spools import (
@@ -52,6 +57,7 @@ api_router.include_router(router)
 api_router.include_router(router_colors)
 api_router.include_router(router_filaments)
 api_router.include_router(dashboard_router)
+api_router.include_router(analytics_router)
 api_router.include_router(router_locations)
 api_router.include_router(router_spools)
 api_router.include_router(router_spool_measurements)
@@ -62,6 +68,10 @@ api_router.include_router(label_presets_router)
 api_router.include_router(label_assets_router)
 api_router.include_router(labels_router)
 api_router.include_router(printers_router)
+api_router.include_router(print_jobs_router)
+api_router.include_router(print_projects_router)
+api_router.include_router(spool_print_jobs_router)
+api_router.include_router(slicer_link_router)
 api_router.include_router(admin_router)
 api_router.include_router(devices_router)
 api_router.include_router(display_router)

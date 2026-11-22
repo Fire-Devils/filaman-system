@@ -18,6 +18,9 @@ CONSUMPTION_AGGREGATION_WINDOW_MINUTES = 5
 # Sentinel for "argument not supplied" in set_rfid_uids (None means "clear").
 _UNSET: Any = object()
 
+# Moving a spool from 'new' to one of these starts its moisture exposure.
+OPENING_STATUS_KEYS = frozenset({"opened", "active", "drying"})
+
 
 class RfidSlotsFullError(Exception):
     """Both RFID slots of the spool are taken and replacing was not allowed."""
@@ -419,6 +422,21 @@ class SpoolService:
                     },
                 )
 
+    @staticmethod
+    def mark_opened(
+        spool: Spool,
+        old_status_key: str | None,
+        new_status_key: str | None,
+        at: datetime,
+    ) -> None:
+        """Set opened_at on the first move from 'new' to opened/active/drying."""
+        if (
+            old_status_key == "new"
+            and new_status_key in OPENING_STATUS_KEYS
+            and spool.opened_at is None
+        ):
+            spool.opened_at = at
+
     async def _handle_auto_opened(
         self,
         spool: Spool,
@@ -430,6 +448,7 @@ class SpoolService:
             if opened_status:
                 old_status_id = spool.status_id
                 spool.status_id = opened_status.id
+                self.mark_opened(spool, "new", "opened", event_at)
                 await self._create_event(
                     spool_id=spool.id,
                     event_type="opened",
@@ -798,6 +817,10 @@ class SpoolService:
             raise ValueError(f"Status not found: {status_key}")
 
         old_status_id = spool.status_id
+        old_status = await self.db.get(SpoolStatus, old_status_id)
+        self.mark_opened(
+            spool, old_status.key if old_status else None, status_key, event_at
+        )
 
         event = await self._create_event(
             spool_id=spool.id,
@@ -848,6 +871,12 @@ class SpoolService:
                 continue
 
             old_status_id = spool.status_id
+            self.mark_opened(
+                spool,
+                spool.status.key if spool.status else None,
+                status_key,
+                event_at,
+            )
             await self._create_event(
                 spool_id=spool.id,
                 event_type=status_key,
@@ -863,6 +892,43 @@ class SpoolService:
 
         await self.db.commit()
         return count
+
+    async def record_drying(
+        self,
+        spool: Spool,
+        principal: Principal | None = None,
+        source: str = "ui",
+        temp_c: float | None = None,
+        duration_hours: float | None = None,
+        note: str | None = None,
+        dried_at: datetime | None = None,
+        commit: bool = True,
+    ) -> SpoolEvent:
+        """Log a drying run: sets last_dried_at and creates a 'dried' event."""
+        when = dried_at or datetime.now(timezone.utc)
+        if when.tzinfo is None:
+            when = when.replace(tzinfo=timezone.utc)
+        meta = {
+            key: value
+            for key, value in (("temp_c", temp_c), ("duration_hours", duration_hours))
+            if value is not None
+        }
+        event = await self._create_event(
+            spool_id=spool.id,
+            event_type="dried",
+            event_at=when,
+            user_id=principal.user_id if principal else None,
+            device_id=principal.device_id if principal else None,
+            source=source,
+            note=note,
+            meta=meta or None,
+        )
+        # A back-dated entry must not move the reference point backwards.
+        if spool.last_dried_at is None or when > spool.last_dried_at:
+            spool.last_dried_at = when
+        if commit:
+            await self.db.commit()
+        return event
 
     async def move_location(
         self,

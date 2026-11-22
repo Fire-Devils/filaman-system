@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field, FiniteFloat, computed_field
 
@@ -112,10 +112,19 @@ class SpoolUpdate(BaseModel):
     spool_width_mm: FiniteFloat | None = None
     spool_material: str | None = None
     low_weight_threshold_g: int | None = None
+    opened_at: datetime | None = None
+    last_dried_at: datetime | None = None
     custom_fields: dict[str, Any] | None = None
     custom_field_definitions: EntityExtraFieldDefinitions | None = (
         optional_entity_definitions_field()
     )
+
+
+class MoistureStatus(BaseModel):
+    level: Literal["dry", "fair", "damp", "wet"]
+    days_exposed: int
+    reference_at: datetime
+    sensitivity: Literal["high", "medium", "low"]
 
 
 class SpoolMetrics(BaseModel):
@@ -139,6 +148,9 @@ class SpoolResponse(BaseModel):
     purchase_price: float | None
     stocked_in_at: datetime | None
     last_used_at: datetime | None
+    opened_at: datetime | None = None
+    last_dried_at: datetime | None = None
+    moisture: MoistureStatus | None = None
     initial_total_weight_g: float | None
     empty_spool_weight_g: float | None
     spool_core_weight_g: float | None
@@ -191,6 +203,17 @@ class StatusChangeRequest(BaseModel):
     event_at: datetime | None = None
     note: str | None = None
     meta: dict[str, Any] | None = None
+
+
+class DryRequest(BaseModel):
+    temp_c: float | None = Field(None, ge=0, le=300)
+    duration_hours: float | None = Field(None, gt=0, le=240)
+    note: str | None = None
+    dried_at: datetime | None = None
+
+
+class BulkDryRequest(DryRequest):
+    spool_ids: list[int] = Field(..., min_length=1)
 
 
 class BulkStatusChangeRequest(BaseModel):
