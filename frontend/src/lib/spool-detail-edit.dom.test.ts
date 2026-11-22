@@ -47,7 +47,7 @@ it.each([0, 2])('uses persisted spool values after printer failure, even with %i
   const functions = parsed.statements.filter(node => isFunctionDeclaration(node) && ['setupInlineEditor', 'bindSpoolContentActions', 'exitEditMode', 'refreshSpoolSnapshot', 'updateSpoolActionState', 'runSpoolAction'].includes(node.name?.text || '')).map(node => node.getText(parsed)).join('\n')
   const runtime = new Function('runtime', `
     const { initial, buildSpoolUpdatePayload, prepareExtraFieldUpdate, editSession, changedNativeFields, setFormFieldValue, loadEntitySystemFields } = runtime;
-    let pendingSpoolActions=0, changingSpoolEdit=false, spoolEditGeneration=0, remainingRequest=0, filamentSystemFieldMap={}, spool=initial, editing=true, spoolNeedsRefresh=false, spoolDraftObserver=null, spoolProfileLookup=null, updatePrinterSaveState=()=>{};
+    let pendingSpoolActions=0, changingSpoolEdit=false, spoolEditGeneration=0, remainingRequest=0, filamentSystemFieldMap={}, spool=initial, editing=true, spoolMissing=false, spoolNeedsRefresh=false, spoolDraftObserver=null, spoolProfileLookup=null, updatePrinterSaveState=()=>{};
     const id='17', CACHE_KEYS={FILAMENTS:'filaments'}; let spoolSystemFieldMap={};
     const getAbortSignal=()=>undefined, isAbortError=()=>false, getCsrfToken=()=>'', t=value=>value, invalidateCachePrefix=()=>{};
     const cachedFetchAllPages=async()=>({items:[]}), captureDetailEditPosition=()=>()=>{};

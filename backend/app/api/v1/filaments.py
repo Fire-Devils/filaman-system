@@ -36,7 +36,6 @@ from app.api.v1.schemas_filament import (
     ResolveFilamentFromTagRequest,
     ResolveFilamentFromTagResponse,
 )
-from app.core.cache import response_cache
 from app.services.bambu_idx import clear_bambu_idx_for_filament
 from app.core.config import MANUFACTURER_LOGO_DIR, settings
 from app.core.db_utils import get_next_available_id
@@ -807,11 +806,13 @@ async def resolve_filament_from_tag(
     await db.commit()
     await db.refresh(filament)
 
+    notices = []
     if manufacturer_created:
-        await event_bus.publish({"event": "manufacturers_changed"})
+        notices.append({"event": "manufacturers_changed"})
     if filament_created or filament_updated:
-        await event_bus.publish({"event": "filaments_changed"})
-        response_cache.delete("filament_types")
+        notices.append({"event": "filaments_changed"})
+    if notices:
+        await event_bus.publish(*notices)
 
     temperature_range = _tag_temperature_range(filament)
     return ResolveFilamentFromTagResponse(
@@ -858,25 +859,16 @@ class FilamentFilterOptionsResponse(BaseModel):
 @router_filaments.get("/types", response_model=list[str])
 async def list_filament_types(db: DBSession, principal: PrincipalDep):
     """Return all known filament types: defaults merged with distinct types from DB, sorted."""
-    cached = response_cache.get("filament_types")
-    if cached is not None:
-        return cached
-
     result = await db.execute(select(Filament.material_type).distinct())
     db_types = {row[0] for row in result.all() if row[0]}
 
     all_types = sorted(set(DEFAULT_FILAMENT_TYPES) | db_types)
-    response_cache.set("filament_types", all_types, ttl=600)
     return all_types
 
 
 @router_filaments.get("/filter-options", response_model=FilamentFilterOptionsResponse)
 async def list_filament_filter_options(db: DBSession, principal: PrincipalDep):
     """Return only values used by at least one filament."""
-    cached = response_cache.get("filter_options:filaments")
-    if cached is not None:
-        return cached
-
     facet_result = await db.execute(
         select(
             Filament.manufacturer_id,
@@ -974,7 +966,6 @@ async def list_filament_filter_options(db: DBSession, principal: PrincipalDep):
         ],
         has_empty_colors=has_empty_colors,
     )
-    response_cache.set("filter_options:filaments", payload, ttl=300)
     return payload
 
 
@@ -1175,7 +1166,6 @@ async def create_filament(
 
     await db.commit()
     await event_bus.publish({"event": "filaments_changed"})
-    response_cache.delete("filament_types")
 
     # Reload with relationships
     result = await db.execute(
@@ -1263,7 +1253,6 @@ async def update_filaments_bulk(
 
     await db.commit()
     await event_bus.publish({"event": "filaments_changed"})
-    response_cache.delete("filament_types")
     return {"success": True, "count": count}
 
 
@@ -1305,7 +1294,6 @@ async def delete_filaments_bulk(
 
     await db.commit()
     await event_bus.publish({"event": "filaments_changed"})
-    response_cache.delete("filament_types")
     return {"success": True, "count": count}
 
 
@@ -1340,7 +1328,6 @@ async def update_filament(
     await db.commit()
     await db.refresh(filament)
     await event_bus.publish({"event": "filaments_changed"})
-    response_cache.delete("filament_types")
     return filament
 
 
@@ -1394,7 +1381,6 @@ async def replace_filament_colors(
             detail={"code": "color_update_failed", "message": str(e)},
         )
     await event_bus.publish({"event": "filaments_changed"})
-    response_cache.delete("filament_types")
 
     # Reload with color relationships
     result = await db.execute(
@@ -1446,7 +1432,6 @@ async def delete_filament(
     await db.delete(filament)
     await db.commit()
     await event_bus.publish({"event": "filaments_changed"})
-    response_cache.delete("filament_types")
 
 
 class DefaultFilamentSlicerProfileBody(BaseModel):

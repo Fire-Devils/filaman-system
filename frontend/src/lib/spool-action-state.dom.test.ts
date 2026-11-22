@@ -22,15 +22,15 @@ const build = new Function('runtime', `
  const invalidateCachePrefix=()=>{},renderDetailExtraFieldRows=()=>'',updateScrollIdentity=()=>{},queueOverviewReload=()=>{},updateSpoolPrintData=()=>{},loadEvents=()=>{},printLabel=()=>{};
  const captureDetailEditPosition=()=>()=>{},checkFilamentDbActive=async()=>false;
  const createEntityExtraFieldEditor=()=>({setSystemFieldKeys(){},setData(){},getSnapshot(){return ''}}),collectExtraFieldPayload=()=>({customFields:{},customFieldDefinitions:{}});
- const initPrinterSetup=()=>({isSaving:()=>false,isDirty:()=>!!runtime.afterNativeSave,setEditing:async()=>{},refresh:async()=>{},save:async fn=>{await fn();await runtime.afterNativeSave?.();},setFilament:async()=>{}});
- let pendingSpoolActions=0, remainingRequest=0, changingSpoolEdit=false, spoolEditGeneration=0;let currentRfidSpoolId=null;let spool=null,statuses=[],locations=[],activeDevices=[],spoolSystemFieldMap={},filamentSystemFieldMap={},editing=false,extraFieldsDialogRequested=false,printerSetup=null,spoolNeedsRefresh=false,spoolDraftObserver=null,spoolProfileLookup=null,updatePrinterSaveState=()=>{},detailActionHandlersBound=false;
+ const initPrinterSetup=()=>({isSaving:()=>false,isDirty:()=>!!runtime.afterNativeSave,setEditing:async()=>{},refresh:async()=>{},save:async fn=>{await fn();await runtime.afterNativeSave?.();},setFilament:runtime.setFilament || (async()=>{})});
+ let pendingSpoolActions=0, remainingRequest=0, changingSpoolEdit=false, spoolEditGeneration=0;let currentRfidSpoolId=null;let spoolMissing=false;let spool=null,statuses=[],locations=[],activeDevices=[],spoolSystemFieldMap={},filamentSystemFieldMap={},editing=new URLSearchParams(window.location.search).get('edit') === '1',extraFieldsDialogRequested=false,printerSetup=null,spoolNeedsRefresh=false,spoolDraftObserver=null,spoolProfileLookup=null,updatePrinterSaveState=()=>{},detailActionHandlersBound=false;
  ${transpileModule(production, { compilerOptions: { target: ScriptTarget.ES2022 } }).outputText}
  return {loadData,refreshRemainingWeight,handleImportTrayToSpool,handleImportTrayToSpoolAndFilament,editing:()=>editing};
 `);
 afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); document.body.innerHTML = ''; });
-async function setup(override?: (input: string, init?: RequestInit) => Promise<Response> | undefined, afterNativeSave?: () => Promise<void>) {
+async function setup(override?: (input: string, init?: RequestInit) => Promise<Response> | undefined, afterNativeSave?: () => Promise<void>, initialPath = '/spools/17', setFilament?: () => Promise<void>) {
     vi.stubGlobal('Option', function (text: string, value: string) { const option = document.createElement('option'); option.textContent = text; option.value = value; return option; });
-    history.replaceState(null, '', '/spools/17');
+    history.replaceState(null, '', initialPath);
     document.body.innerHTML = '<div id="rfid-modal"><div id="rfid-text"></div><div id="rfid-device-select-container"><select id="rfid-device-select"></select></div><div id="rfid-status"></div><div id="rfid-warning"></div><div id="rfid-slot-choice"></div><button id="rfid-confirm"></button><button id="rfid-cancel"></button></div><main><div class="detail-page-toolbar"><div id="spool-page-actions"></div></div><div id="spool-content"></div><div id="actions-section"><button id="btn-measurement"></button><button id="btn-adjustment"></button><button id="btn-status"></button><button id="btn-move"></button><a id="btn-print-label"></a></div><div id="printer-setup"></div><div id="modal-container" class="hidden"><div id="modal-title"></div><form id="modal-form"><div id="modal-fields"></div><div id="modal-error"></div><button id="modal-submit" type="submit"></button><button id="modal-cancel" type="button"></button></form></div><div id="delete-modal"></div><input id="delete-permanent-checkbox" type="checkbox"><div id="delete-permanent-warning"></div><button id="btn-delete-confirm"></button><button id="btn-delete-cancel"></button></main>';
     const f = { id: 3, manufacturer: { name: 'Brand' }, designation: 'Before filament', material_type: 'PLA', diameter_mm: 1.75, colors: [] };
     const saved = { id: 17, filament_id: 3, filament: f, status_id: 1, remaining_weight_g: 500, initial_total_weight_g: 1200, empty_spool_weight_g: 200, spool_core_weight_g: 0, lot_number: 'Saved lot', rfid_uid: 'AABBCCDD', custom_fields: {}, custom_field_definitions: {}, metrics: { remaining_percent: 50, remaining_length_m: 168 } };
@@ -44,7 +44,7 @@ async function setup(override?: (input: string, init?: RequestInit) => Promise<R
         const url = new URL(input, 'http://localhost');
         return Promise.resolve(Response.json(url.pathname === '/api/v1/spools/17' ? saved : url.pathname.endsWith('/statuses') ? [{ id: 1, key: 'opened', label: 'Opened' }] : url.pathname.endsWith('/devices/active') ? [{ id: 1, name: 'Fixture RFID' }] : []));
     }));
-    const runtime = build({ changedNativeFields, setFormFieldValue, editSession: createDetailEditSession('/api/v1/spools/17?include_metrics=true', () => 'spools.failedLoadSingle'), fetchSequential, ...detail, ...filament, ...reel, escapeExtraFieldHtml: escapeHtml, isIntegrationExtraFieldPath, renderSystemFieldRow, prepareExtraFieldUpdate, loadEntitySystemFields, afterNativeSave, filaments: [f, { ...f, id: 4, designation: 'After filament' }] });
+    const runtime = build({ changedNativeFields, setFormFieldValue, editSession: createDetailEditSession('/api/v1/spools/17?include_metrics=true', () => 'spools.failedLoadSingle'), fetchSequential, ...detail, ...filament, ...reel, escapeExtraFieldHtml: escapeHtml, isIntegrationExtraFieldPath, renderSystemFieldRow, prepareExtraFieldUpdate, loadEntitySystemFields, afterNativeSave, setFilament, filaments: [f, { ...f, id: 4, designation: 'After filament' }] });
     await runtime.loadData();
     return { runtime, saved, hasPending: () => !!resolvePost, resolvePost: (response: Response) => resolvePost(response) };
 }
@@ -118,7 +118,7 @@ it('ignores a canceled RFID status response after a newer draft begins', async (
     expect(input.value).toBe('Later draft');
     expect(fixture.runtime.editing()).toBe(true);
 });
-it('ignores older live-weight responses after a newer full snapshot', async () => {
+it.each([200, 404])('ignores older live-weight responses after a newer full snapshot (%s)', async status => {
     let hold = false, finishOld!: (response: Response) => void;
     const fixture = await setup((input, init) => {
         if (hold && !init?.method && new URL(input, 'http://localhost').pathname === '/api/v1/spools/17') {
@@ -126,7 +126,7 @@ it('ignores older live-weight responses after a newer full snapshot', async () =
             return new Promise<Response>(resolve => { finishOld = resolve; });
         }
     });
-    const old = Response.json(fixture.saved);
+    const old = Response.json(fixture.saved, { status });
     hold = true;
     const oldRead = fixture.runtime.refreshRemainingWeight();
     expect(finishOld).toBeDefined();
@@ -308,4 +308,100 @@ it('retains RFID edits made while the native save response was pending', async (
     form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
     await vi.waitFor(() => expect(reload).toHaveBeenCalledOnce());
     expect(patches[1]).toMatchObject({ rfid_uid: 'FFEEDDCC', rfid_uid_2: '55667788' });
+});
+
+it('shows confirmed deletion instead of retaining old weight and actions', async () => {
+    let missing = false;
+    const fixture = await setup((input, init) => missing && !init?.method && new URL(input, 'http://localhost').pathname === '/api/v1/spools/17' ? Promise.resolve(Response.json({}, { status: 404 })) : undefined);
+    missing = true;
+    await fixture.runtime.refreshRemainingWeight();
+    expect(document.getElementById('spool-content')!.textContent).toContain('spools.notFound');
+    expect(document.querySelector('.spool-remaining-grams')).toBeNull();
+    expect(document.getElementById('btn-edit-spool')).toBeNull();
+    expect(document.getElementById('actions-section')).toBeNull();
+});
+
+it('retains a draft on confirmed deletion, then shows missing after Cancel', async () => {
+    let missing = false;
+    const fixture = await setup((input, init) => missing && !init?.method && new URL(input, 'http://localhost').pathname === '/api/v1/spools/17' ? Promise.resolve(Response.json({}, { status: 404 })) : undefined);
+    document.getElementById('btn-edit-spool')!.click();
+    await vi.waitFor(() => expect(document.querySelector('[name="lot_number"]')).not.toBeNull());
+    const draft = document.querySelector<HTMLInputElement>('[name="lot_number"]')!;
+    draft.value = 'Unsaved lot';
+    draft.dispatchEvent(new Event('input', { bubbles: true }));
+    missing = true;
+    await fixture.runtime.refreshRemainingWeight();
+    expect(document.querySelector('[name="lot_number"]')).toBe(draft);
+    expect(draft.value).toBe('Unsaved lot');
+    document.getElementById('btn-cancel-edit')!.click();
+    await vi.waitFor(() => expect(document.getElementById('spool-content')!.textContent).toContain('spools.notFound'));
+    expect(document.getElementById('btn-edit-spool')).toBeNull();
+});
+
+
+it('lets a pending action settle before applying confirmed deletion', async () => {
+    let missing = false;
+    const fixture = await setup((input, init) => missing && !init?.method && new URL(input, 'http://localhost').pathname === '/api/v1/spools/17' ? Promise.resolve(Response.json({}, { status: 404 })) : undefined);
+    document.getElementById('btn-measurement')!.click();
+    (document.getElementById('field-weight') as HTMLInputElement).value = '900';
+    document.getElementById('modal-form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+    expect(fixture.hasPending()).toBe(true);
+    missing = true;
+    await fixture.runtime.refreshRemainingWeight();
+    expect(document.querySelector('.spool-remaining-grams')!.textContent).toBe('500 g');
+    expect((document.getElementById('field-weight') as HTMLInputElement).value).toBe('900');
+    fixture.resolvePost(Response.json({ detail: { message: 'Spool not found' } }, { status: 404 }));
+    await vi.waitFor(() => expect(document.getElementById('spool-content')!.textContent).toContain('spools.notFound'));
+    expect(document.getElementById('btn-edit-spool')).toBeNull();
+});
+
+
+it('shows missing for a deleted spool opened through a direct edit link', async () => {
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+    await setup((input, init) => !init?.method && new URL(input, 'http://localhost').pathname === '/api/v1/spools/17' ? Promise.resolve(Response.json({}, { status: 404 })) : undefined, undefined, '/spools/17?edit=1');
+    expect(document.getElementById('spool-content')!.textContent).toContain('spools.notFound');
+    expect(document.getElementById('btn-edit-spool')).toBeNull();
+    expect(error).not.toHaveBeenCalled();
+});
+
+it.each([200, 404, 'network'])('applies live deletion before an older Edit snapshot completes (%s)', async outcome => {
+    let holdEdit = false;
+    let editStarted = false;
+    let finishEdit!: (response: Response) => void;
+    let failEdit!: (error: Error) => void;
+    const fixture = await setup((input, init) => {
+        if (init?.method || new URL(input, 'http://localhost').pathname !== '/api/v1/spools/17') return;
+        if (holdEdit) {
+            holdEdit = false;
+            editStarted = true;
+            return new Promise<Response>((resolve, reject) => { finishEdit = resolve; failEdit = reject; });
+        }
+        if (editStarted) return Promise.resolve(Response.json({}, { status: 404 }));
+    });
+    holdEdit = true;
+    document.getElementById('btn-edit-spool')!.click();
+    expect(finishEdit).toBeDefined();
+    await fixture.runtime.refreshRemainingWeight();
+    expect(document.querySelector('.spool-remaining-grams')!.textContent).toBe('500 g');
+    if (outcome === 'network') failEdit(new Error('Offline'));
+    else finishEdit(Response.json(fixture.saved, { status: Number(outcome) }));
+    await vi.waitFor(() => expect(document.getElementById('spool-content')!.textContent).toContain('spools.notFound'));
+    expect(document.getElementById('btn-edit-spool')).toBeNull();
+});
+
+
+it('shows deletion confirmed while entering Edit waits for updated printer profiles', async () => {
+    let missing = false;
+    let release!: () => void;
+    const fixture = await setup((input, init) => missing && !init?.method && new URL(input, 'http://localhost').pathname === '/api/v1/spools/17' ? Promise.resolve(Response.json({}, { status: 404 })) : undefined, undefined, '/spools/17', () => new Promise<void>(resolve => { release = resolve; }));
+    fixture.saved.filament_id = 4;
+    fixture.saved.filament = { ...fixture.saved.filament, id: 4, designation: 'Reassigned filament' };
+    document.getElementById('btn-edit-spool')!.click();
+    await vi.waitFor(() => expect(release).toBeDefined());
+    missing = true;
+    await fixture.runtime.refreshRemainingWeight();
+    release();
+    await vi.waitFor(() => expect(document.getElementById('spool-content')!.textContent).toContain('spools.notFound'));
+    expect(fixture.runtime.editing()).toBe(false);
+    expect(document.querySelector('[name="lot_number"]')).toBeNull();
 });

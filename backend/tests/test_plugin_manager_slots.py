@@ -510,9 +510,9 @@ async def health_env(db_session, db_engine, slots_env, monkeypatch):
     bus = EventBus()
     published = []
 
-    async def publish(payload):
-        published.append(payload)
-        await bus.publish(payload)
+    async def publish(*payloads):
+        published.extend(payloads)
+        await bus.publish(*payloads)
 
     monkeypatch.setattr("app.plugins.manager.event_bus.publish", publish)
     commits = Mock()

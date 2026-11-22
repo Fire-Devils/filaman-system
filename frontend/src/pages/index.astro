@@ -699,7 +699,7 @@ import FormDialog from '../components/FormDialog.astro'
     panelSignal.addEventListener('abort', () => clearTimeout(_dashboardReloadTimer ?? undefined), { once: true })
     window.addEventListener('filaman:data-changed', (e: Event) => {
       const { event } = (e as CustomEvent<{ event?: string }>).detail ?? {}
-      if (event === 'spools_changed' || event === 'filaments_changed') {
+      if (event === 'resync' || event === 'spools_changed' || event === 'filaments_changed') {
         if (_dashboardReloadTimer) clearTimeout(_dashboardReloadTimer)
         _dashboardReloadTimer = setTimeout(() => loadDashboardData(), 300)
       }

@@ -26,6 +26,7 @@ from app.api.v1.router import api_router, mount_deferred_plugin_routers
 from app.core.async_tasks import finish_on_cancel
 from app.core.config import MANUFACTURER_LOGO_DIR, settings
 from app.core.database import async_session_maker
+from app.core.event_bus import event_bus
 from app.core.logging_config import setup_logging
 from app.core.middleware import AuthMiddleware, CsrfMiddleware, RequestIdMiddleware
 from app.core.primary_socket import serve_primary_socket
@@ -422,32 +423,33 @@ async def lifespan(app: FastAPI):
     else:
         logger.info("Skipping in-app migrations (RUN_MIGRATIONS_IN_APP is false)")
 
-    # Only the elected worker seeds the database and starts drivers.
-    _is_primary = _try_primary_lock()
-    if _is_primary:
-        logger.info("Primary worker – running seeds and starting plugins")
+    async with event_bus.run():
+        # Only the elected worker seeds the database and starts drivers.
+        _is_primary = _try_primary_lock()
+        if _is_primary:
+            logger.info("Primary worker – running seeds and starting plugins")
+            try:
+                async with async_session_maker() as db:
+                    await run_all_seeds(db)
+            except BaseException:
+                _release_primary_lock()
+                raise
+            await _start_primary_drivers(app, initial=True)
+        else:
+            logger.info("Secondary worker – skipping seeds and plugin start")
+
+        # Start the driver watchdog in every worker (handles health checks
+        # for the primary and automatic takeover for secondary workers).
+        watchdog_task = asyncio.create_task(_driver_watchdog())
+        display_task = asyncio.create_task(_display_snapshot_loop())
+
         try:
-            async with async_session_maker() as db:
-                await run_all_seeds(db)
-        except BaseException:
-            _release_primary_lock()
-            raise
-        await _start_primary_drivers(app, initial=True)
-    else:
-        logger.info("Secondary worker – skipping seeds and plugin start")
-
-    # Start the driver watchdog in every worker (handles health checks
-    # for the primary and automatic takeover for secondary workers).
-    watchdog_task = asyncio.create_task(_driver_watchdog())
-    display_task = asyncio.create_task(_display_snapshot_loop())
-
-    try:
-        logger.info("FilaMan backend started")
-        yield
-    finally:
-        logger.info("Shutting down FilaMan backend...")
-        await finish_on_cancel(_shutdown_workers(watchdog_task, display_task))
-        logger.info("FilaMan backend stopped")
+            logger.info("FilaMan backend started")
+            yield
+        finally:
+            logger.info("Shutting down FilaMan backend...")
+            await finish_on_cancel(_shutdown_workers(watchdog_task, display_task))
+            logger.info("FilaMan backend stopped")
 
 
 async def _shutdown_workers(*tasks: asyncio.Task[None]) -> None:
