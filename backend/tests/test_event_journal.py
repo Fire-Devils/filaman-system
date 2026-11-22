@@ -109,13 +109,40 @@ async def test_retention_gap_requests_one_resync(tmp_path, monkeypatch):
         assert json.loads(await asyncio.wait_for(anext(messages), 2)) == {"event": "after-gap"}
 
 
-async def test_journal_rejects_untrusted_runtime_directory(tmp_path, monkeypatch):
+async def test_journal_rejects_untrusted_runtime_directory(tmp_path, monkeypatch, caplog):
     directory = tmp_path / "public"
     directory.mkdir(mode=0o755)
     monkeypatch.setattr(primary_socket, "_runtime_dir", directory)
-    with pytest.raises(PermissionError):
-        async with EventBus().run():
-            pytest.fail("Untrusted runtime directory must not be used")
+    bus = EventBus()
+    async with bus.run(), bus.subscribe() as messages:
+        assert bus._journal is None
+        assert "Could not create shared event journal" in caplog.text
+        await bus.publish({"event": "local-only"})
+        assert json.loads(await asyncio.wait_for(anext(messages), 2)) == {"event": "local-only"}
+    assert list(directory.iterdir()) == []
+
+
+async def test_unexpected_poll_error_keeps_reading_notices(tmp_path, monkeypatch, caplog):
+    directory = tmp_path / "private"
+    directory.mkdir(mode=0o700)
+    monkeypatch.setattr(primary_socket, "_runtime_dir", directory)
+    bus = EventBus()
+    consume = bus._consume
+    failures = iter([KeyError("records")])
+
+    def flaky(state):
+        failure = next(failures, None)
+        if failure is not None:
+            raise failure
+        consume(state)
+
+    monkeypatch.setattr(bus, "_consume", flaky)
+    async with bus.run(), bus.subscribe() as messages:
+        other = EventBus()
+        async with other.run():
+            await other.publish({"event": "after-error"})
+        assert json.loads(await asyncio.wait_for(anext(messages), 3)) == {"event": "after-error"}
+    assert "Unexpected error while reading shared event notices" in caplog.text
 
 
 @pytest.mark.parametrize("damage", ["missing", "corrupt"])

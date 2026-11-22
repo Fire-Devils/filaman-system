@@ -38,7 +38,13 @@ class EventBus:
 
     @asynccontextmanager
     async def run(self) -> AsyncIterator[None]:
-        journal = EventJournal()
+        try:
+            journal = EventJournal()
+        except OSError as error:
+            # Without a shared journal, notices stay process-local instead of blocking startup.
+            logger.warning("Could not create shared event journal, using process-local notices: %s", error)
+            yield
+            return
         try:
             state = await journal.exchange()
             self._generation = state["generation"]
@@ -75,6 +81,9 @@ class EventBus:
                     self._consume(await self._journal.exchange())
                 except (OSError, ValueError) as error:
                     logger.warning("Could not read shared event notices: %s", error)
+                except Exception:
+                    # Keep polling: a dead reader would silently cut this worker off from other workers' notices.
+                    logger.exception("Unexpected error while reading shared event notices")
 
     async def publish(self, event: dict[str, Any], *following: dict[str, Any]) -> None:
         """Settle a committed mutation's notices together before propagating cancellation."""
