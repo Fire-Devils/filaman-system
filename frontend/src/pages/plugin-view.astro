@@ -54,18 +54,10 @@ import Layout from '../layouts/Layout.astro'
   }
 
   if (isValidPluginSlug(slug)) {
-    syncPluginTheme(frame, signal)
-    frame.addEventListener('load', () => {
-      try {
-        const embedded = frame.contentDocument
-        if (!embedded) return
-        // The plugin page names itself, and the tab should say so rather than
-        // reading "Plugin" for every one of them.
-        if (embedded.title) document.title = embedded.title
-        keepFilaManLinksOutOfTheFrame(embedded)
-      } catch {
-        /* A page that cannot be read keeps the shell's title and its links. */
-      }
+    syncPluginTheme(frame, signal, embedded => {
+      // Initialize navigation before a plugin with pending resources becomes usable.
+      if (embedded.title) document.title = embedded.title
+      keepFilaManLinksOutOfTheFrame(embedded)
     })
     frame.src = `${PLUGIN_PAGE_PREFIX}${slug}`
   } else {

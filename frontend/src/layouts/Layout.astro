@@ -32,13 +32,36 @@ const panel = pagePanel ?? (Astro.url.pathname.replace(/\/$/, '') === '/settings
     {panel && <ClientRouter fallback="swap" />}
     <script is:inline>
       (function() {
-        const t = localStorage.getItem('theme') || 'brand';
-        document.documentElement.setAttribute('data-theme', t);
-        const l = localStorage.getItem('lang') || 'en';
+        const read = key => { try { return localStorage.getItem(key); } catch { return null; } };
+        const validTheme = value => ['brand', 'light', 'dark'].includes(value);
+        const cached = read('filaman-theme-cache') || read('theme');
+        document.documentElement.dataset.theme = validTheme(cached) ? cached : 'brand';
+        // Nested pickers inherit old plugins' selected theme before their first paint.
+        try {
+          if (window.parent !== window) {
+            const parentRoot = window.parent.document.documentElement;
+            const inherit = () => {
+              const theme = parentRoot.dataset.theme;
+              if (validTheme(theme) && document.documentElement.dataset.theme !== theme) {
+                document.documentElement.dataset.theme = theme;
+              }
+            };
+            const observer = new MutationObserver(inherit);
+            const observe = () => {
+              observer.observe(parentRoot, { attributes: true, attributeFilter: ['data-theme'] });
+              observer.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+              inherit();
+            };
+            observe();
+            window.addEventListener('pagehide', () => observer.disconnect());
+            window.addEventListener('pageshow', observe);
+          }
+        } catch { /* A cross-origin parent cannot supply its theme. */ }
+        const l = read('lang') || 'en';
         document.documentElement.setAttribute('lang', l);
         
         // Sidebar state
-        const s = localStorage.getItem('sidebar-collapsed');
+        const s = read('sidebar-collapsed');
         const isCompact = window.innerWidth < 1280;
         if (s === 'true' || isCompact) {
           document.documentElement.classList.add('sidebar-collapsed');

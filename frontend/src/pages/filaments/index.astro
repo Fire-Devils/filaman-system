@@ -10,6 +10,7 @@ const { compactPicker = false } = Astro.props
 
 <Layout panel="filaments" title="FilaMan - Filaments" embedded={compactPicker}>
   <style>
+    :global(body[data-embedded]), :global(body[data-embedded] #fm-page) { background: var(--bg-elevated); }
     :global(#fm-page:has([data-filament-picker])) { grid-template-columns: minmax(0, 1fr); }
     :global(#fm-page:has([data-filament-picker]) > .fm-main) { padding: 0; }
     :global(#fm-page:has([data-filament-picker]) :is(.fm-sidebar, .fm-sidebar-backdrop, .fm-list-toolbar, #bulk-action-bar)) { display: none !important; }

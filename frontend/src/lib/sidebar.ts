@@ -96,6 +96,10 @@ export function setupSidebar(highlightActiveNav: () => void) {
 
   function applyTheme(theme: ColorMode) {
     document.documentElement.dataset.theme = theme
+    // Presentation cache only; account preferences remain authoritative.
+    if (window.parent === window) {
+      try { localStorage.setItem('filaman-theme-cache', theme) } catch { /* Storage may be blocked. */ }
+    }
     themeButtons().forEach(button => {
       const selected = button.dataset.theme === theme
       button.classList.toggle('active', selected)

@@ -44,3 +44,6 @@ jobs:
         run: node scripts/check-plugin-page-layout.mjs
         env:
           CHROME_EXECUTABLE_PATH: /usr/bin/google-chrome
+      - run: node scripts/check-plugin-theme-paint.mjs
+        env:
+          CHROME_EXECUTABLE_PATH: /usr/bin/google-chrome
