@@ -1,6 +1,18 @@
 {
   "versions": [
     {
+      "version": "UNRELEASED",
+      "date": "",
+      "changes": {
+        "de": [
+          { "type": "fix", "text": "Plugin-Katalog: Spoolman API 1.2.10 bucht von Moonraker gemeldeten Verbrauch jetzt auch bei Filamenten ohne hinterlegte Dichte ab. Bisher ging der Verbrauch verloren, obwohl die API Standardwerte anzeigte; jetzt werden dieselben Standardwerte (1,24 g/cm³, 1,75 mm) verwendet." }
+        ],
+        "en": [
+          { "type": "fix", "text": "Plugin catalog: Spoolman API 1.2.10 now books usage reported by Moonraker for filaments without a stored density. Previously that usage was lost even though the API showed default values; the same defaults (1.24 g/cm³, 1.75 mm) are now used." }
+        ]
+      }
+    },
+    {
       "version": "2.2.5",
       "date": "",
       "changes": {
