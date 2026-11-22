@@ -1,11 +1,12 @@
 """SSE stream endpoint — pushes real-time events to connected frontends."""
 
 import anyio
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from starlette.requests import Request
 from starlette.responses import StreamingResponse
 from starlette.types import Send
 
+from app.api.deps import require_auth
 from app.core.event_bus import event_bus
 
 router = APIRouter(prefix="/events", tags=["Events"])
@@ -22,7 +23,7 @@ class EventStreamResponse(StreamingResponse):
                 await self.body_iterator.aclose()
 
 
-@router.get("/stream")
+@router.get("/stream", dependencies=[Depends(require_auth)])
 async def event_stream(request: Request) -> StreamingResponse:
     """Server-Sent Events endpoint.
 
