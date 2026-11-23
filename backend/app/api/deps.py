@@ -10,6 +10,7 @@ from sqlalchemy.orm import selectinload
 from app.core.database import async_session_maker
 from app.core.security import Principal
 from app.models import Role, User
+from app.services.material_presets import ensure_preset_cache
 
 logger = logging.getLogger(__name__)
 
@@ -17,6 +18,7 @@ logger = logging.getLogger(__name__)
 async def get_db():
     session = async_session_maker()
     try:
+        await ensure_preset_cache(session)
         yield session
     finally:
         try:

@@ -17,6 +17,7 @@ from app.api.v1.filaments import router, router_colors, router_filaments
 from app.api.v1.label_assets import router as label_assets_router
 from app.api.v1.label_presets import router as label_presets_router
 from app.api.v1.labels import router as labels_router
+from app.api.v1.material_presets_admin import router as material_presets_admin_router
 from app.api.v1.me import router as me_router
 from app.api.v1.me_api_keys import router as me_api_keys_router
 from app.api.v1.oidc_admin import public_router as oidc_public_router
@@ -93,6 +94,7 @@ api_router.include_router(
 api_router.include_router(events_router)
 api_router.include_router(oidc_admin_router)
 api_router.include_router(app_settings_admin_router)
+api_router.include_router(material_presets_admin_router)
 api_router.include_router(oidc_public_router)
 api_router.include_router(app_settings_public_router)
 api_router.include_router(filamentdb_router)

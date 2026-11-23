@@ -191,6 +191,7 @@ class FilamentStandardProperties(BaseModel):
     is_discontinued: bool = False
     drying_temp_c: FiniteFloat | None = None
     drying_time_hours: FiniteFloat | None = None
+    drying_interval_days: int | None = Field(None, gt=0)
     softening_temp_c: FiniteFloat | None = None
     cooling_fan_range_percent: NumericRange | None = None
     chamber_temp_c: FiniteFloat | None = None

@@ -6,6 +6,7 @@ from sqlalchemy import case, func, or_, select
 
 from app.api.deps import DBSession, PrincipalDep
 from app.models import Filament, Location, Manufacturer, Spool, SpoolStatus
+from app.services.material_presets import load_presets, match_preset
 from app.services.spool_moisture import EXCLUDED_STATUS_KEYS, compute_moisture
 
 router = APIRouter(prefix="/dashboard", tags=["dashboard"])
@@ -103,6 +104,7 @@ async def _moisture_attention(db) -> list[MoistureAttentionSpool]:
             Filament.designation,
             Filament.material_type,
             Filament.material_subgroup,
+            Filament.drying_interval_days,
             Manufacturer.name,
         )
         .join(SpoolStatus, Spool.status_id == SpoolStatus.id)
@@ -112,9 +114,16 @@ async def _moisture_attention(db) -> list[MoistureAttentionSpool]:
         .where(or_(Spool.opened_at.isnot(None), Spool.last_dried_at.isnot(None)))
     )
     now = datetime.now(timezone.utc)
+    presets = await load_presets(db)
     found = []
-    for (spool_id, opened, dried, status_key, designation, mtype, msub, mname) in rows.all():
-        moisture = compute_moisture(status_key, mtype, msub, opened, dried, now)
+    for (spool_id, opened, dried, status_key, designation, mtype, msub, fil_interval, mname) in rows.all():
+        interval = fil_interval
+        if interval is None:
+            preset = match_preset(presets, mtype, msub)
+            interval = preset.drying_interval_days if preset is not None else None
+        moisture = compute_moisture(
+            status_key, mtype, msub, opened, dried, now, interval_days=interval
+        )
         if moisture is None or moisture["level"] not in ("damp", "wet"):
             continue
         found.append(

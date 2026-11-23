@@ -1,7 +1,7 @@
 from typing import Literal
 
 from fastapi import APIRouter
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import select
 
 from app.api.deps import DBSession, RequirePermission
@@ -18,6 +18,7 @@ class AppSettingsResponse(BaseModel):
     rfid_protocol: str
     rfid_display_colons: bool = False
     default_spool_core_weight_g: float | None = None
+    default_empty_spool_weight_g: float | None = None
     bambu_unmatched_profile_fallback: str = "generic"
     filament_lookup_source: str = "filamandb"
     mcp_enabled: bool = False
@@ -48,6 +49,7 @@ class AppSettingsUpdate(BaseModel):
     rfid_protocol: Literal["openspool", "filaman"] | None = None
     rfid_display_colons: bool | None = None
     default_spool_core_weight_g: float | None = None
+    default_empty_spool_weight_g: float | None = Field(None, ge=0)
     bambu_unmatched_profile_fallback: Literal["generic", "bambu"] | None = None
     filament_lookup_source: Literal["filamandb", "disabled"] | None = None
     mcp_enabled: bool | None = None
@@ -66,6 +68,7 @@ def _to_response(settings_row: AppSettings) -> AppSettingsResponse:
         rfid_protocol=settings_row.rfid_protocol,
         rfid_display_colons=settings_row.rfid_display_colons,
         default_spool_core_weight_g=settings_row.default_spool_core_weight_g,
+        default_empty_spool_weight_g=settings_row.default_empty_spool_weight_g,
         bambu_unmatched_profile_fallback=settings_row.bambu_unmatched_profile_fallback,
         filament_lookup_source=_available_lookup_source(settings_row.filament_lookup_source),
         mcp_enabled=settings_row.mcp_enabled,
@@ -87,6 +90,7 @@ async def get_app_settings(
             rfid_extended_data_enabled=False,
             rfid_protocol="openspool",
             rfid_display_colons=False,
+            default_empty_spool_weight_g=250.0,
             filament_lookup_source="filamandb",
         )
 
@@ -105,7 +109,7 @@ async def update_app_settings(
         settings_row = AppSettings(id=1)
         db.add(settings_row)
 
-    NULLABLE_SETTINGS = {"default_spool_core_weight_g"}
+    NULLABLE_SETTINGS = {"default_spool_core_weight_g", "default_empty_spool_weight_g"}
     update_data = data.model_dump(exclude_unset=True)
     update_data = {k: v for k, v in update_data.items() if v is not None or k in NULLABLE_SETTINGS}
     for key, value in update_data.items():
@@ -137,6 +141,7 @@ async def get_public_app_settings(db: DBSession):
             rfid_extended_data_enabled=False,
             rfid_protocol="openspool",
             rfid_display_colons=False,
+            default_empty_spool_weight_g=250.0,
             filament_lookup_source="filamandb",
         )
     else:

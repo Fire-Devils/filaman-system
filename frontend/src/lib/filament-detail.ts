@@ -77,6 +77,7 @@ interface FilamentDetailData {
   softening_temp_c?: number | null
   drying_temp_c?: number | null
   drying_time_hours?: number | null
+  drying_interval_days?: number | null
   cooling_fan_range_percent?: unknown
   max_volumetric_speed_mm3_s?: number | null
   flow_ratio?: number | null

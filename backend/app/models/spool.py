@@ -115,12 +115,20 @@ class Spool(Base, TimestampMixin):
             return None
         if self.status is None or self.filament is None:
             return None
+        from app.services.material_presets import cached_interval_days
+
+        interval = self.filament.drying_interval_days
+        if interval is None:
+            interval = cached_interval_days(
+                self.filament.material_type, self.filament.material_subgroup
+            )
         return compute_moisture(
             self.status.key,
             self.filament.material_type,
             self.filament.material_subgroup,
             self.opened_at,
             self.last_dried_at,
+            interval_days=interval,
         )
 
 
