@@ -150,6 +150,15 @@ async def test_latest_and_download(auth_client, device_token):
     assert r.headers["content-type"] == "application/octet-stream"
     assert int(r.headers["content-length"]) == len(data)
 
+    # Resume after a broken connection (the ESP sends a Range header)
+    r = await client.get(
+        f"/api/v1/devices/firmware/{fw['sha256']}.bin",
+        headers={**dh(token), "Range": "bytes=10-", "Accept-Encoding": "identity"},
+    )
+    assert r.status_code == 206
+    assert r.content == data[10:]
+    assert int(r.headers["content-length"]) == len(data) - 10
+
 
 @pytest.mark.asyncio
 async def test_download_unknown_and_invalid_sha(auth_client, device_token):
@@ -207,6 +216,35 @@ async def test_heartbeat_with_and_without_firmware(auth_client, device_token):
     assert r.status_code == 200
     item = (await client.get("/api/v1/admin/devices")).json()["items"][0]
     assert item["firmware_version"] == "1.2.3" and item["firmware_project"] == ESP32
+
+
+@pytest.mark.asyncio
+async def test_heartbeat_with_target_version_marks_started_update_ok(auth_client, device_token):
+    """The ok report before the reboot can get lost; the heartbeat of the new version settles it."""
+    client, _ = auth_client
+    token, _ = device_token
+    await client.post(
+        "/api/v1/devices/ota-report",
+        json={"from_version": "1.0.0", "to_version": "1.1.0", "result": "started"},
+        headers=dh(token),
+    )
+    # Still the old version: stays "started"
+    await client.post(
+        "/api/v1/devices/heartbeat",
+        json={"ip_address": "10.0.0.5", "firmware_version": "1.0.0", "firmware_project": ESP32},
+        headers=dh(token),
+    )
+    item = (await client.get("/api/v1/admin/devices")).json()["items"][0]
+    assert item["last_ota_result"] == "started"
+
+    await client.post(
+        "/api/v1/devices/heartbeat",
+        json={"ip_address": "10.0.0.5", "firmware_version": "1.1.0", "firmware_project": ESP32},
+        headers=dh(token),
+    )
+    item = (await client.get("/api/v1/admin/devices")).json()["items"][0]
+    assert item["last_ota_result"] == "ok"
+    assert (item["last_ota_from"], item["last_ota_to"]) == ("1.0.0", "1.1.0")
 
 
 @pytest.mark.asyncio

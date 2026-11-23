@@ -219,6 +219,16 @@ async def device_heartbeat(
     device.last_seen_at = datetime.now(timezone.utc)
     if data.firmware_version:
         device.firmware_version = data.firmware_version
+        # The "ok" report right before the device reboots can get lost. Running the
+        # target version is proof enough that the update went through.
+        if (
+            device.last_ota_result == "started"
+            and device.last_ota_to
+            and data.firmware_version == device.last_ota_to
+        ):
+            device.last_ota_result = "ok"
+            device.last_ota_error = None
+            device.last_ota_at = datetime.now(timezone.utc)
     if data.firmware_project:
         device.firmware_project = data.firmware_project
     await db.commit()
