@@ -84,6 +84,7 @@ import FormDialog from '../../components/FormDialog.astro'
     #token-display { font-family: monospace; }
     /* Kein Umbruch mitten im Wort (global: overflow-wrap:anywhere); breite Tabelle scrollt statt zu quetschen. */
     .fm-devices-table :global(td) { overflow-wrap: normal; white-space: nowrap; }
+    .fm-devices-table :global(.fm-ota-error) { display: block; margin-top: 2px; max-width: 22rem; color: var(--error-text); white-space: normal; overflow-wrap: anywhere; }
   </style>
   <script>
     import { t, initI18n, translatePage } from '../../lib/i18n'
@@ -148,7 +149,8 @@ import FormDialog from '../../components/FormDialog.astro'
         const otaColor = device.last_ota_result === 'ok' ? 'var(--accent-2)' : device.last_ota_result === 'failed' || device.last_ota_result === 'rolled_back' ? 'var(--error-text)' : 'var(--text-muted)'
         const otaCell = device.last_ota_result
           ? `<span class="fm-pill" style="color:${otaColor};border-color:${otaColor}" title="${escapeHtml(device.last_ota_error || '')}">${escapeHtml(t(otaKey[device.last_ota_result] || device.last_ota_result))}</span>
-             <small style="display:block;margin-top:4px;color:var(--text-muted)">${escapeHtml([device.last_ota_from, device.last_ota_to].filter(Boolean).join(' → '))}${device.last_ota_at ? ` · ${escapeHtml(new Date(device.last_ota_at).toLocaleString())}` : ''}</small>`
+             <small style="display:block;margin-top:4px;color:var(--text-muted)">${escapeHtml([device.last_ota_from, device.last_ota_to].filter(Boolean).join(' → '))}${device.last_ota_at ? ` · ${escapeHtml(new Date(device.last_ota_at).toLocaleString())}` : ''}</small>
+             ${device.last_ota_error && (device.last_ota_result === 'failed' || device.last_ota_result === 'rolled_back') ? `<small class="fm-ota-error">${escapeHtml(device.last_ota_error)}</small>` : ''}`
           : '—'
         const firmwareCell = device.firmware_version
           ? `${escapeHtml(device.firmware_version)}${device.firmware_project ? `<br><small style="color:var(--text-muted)">${escapeHtml(device.firmware_project)}</small>` : ''}`
