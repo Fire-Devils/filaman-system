@@ -1227,6 +1227,7 @@
     "firmwareUpdateImport": "Jetzt importieren",
     "firmwareGithubLoading": "Lade von GitHub...",
     "firmwareAutoImport": "Neue Versionen automatisch von GitHub laden (alle 6 h)",
+    "firmwareKeepLatestOnly": "Nur aktuelle und letzte Firmware behalten (ältere automatisch löschen)",
     "firmwareGithubRelease": "Release",
     "firmwareGithubNoAssets": "Keine passenden Firmware-Dateien im Release gefunden",
     "firmwareGithubFailed": "Laden von GitHub fehlgeschlagen",

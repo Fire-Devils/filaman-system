@@ -1226,6 +1226,7 @@
     "firmwareUpdateImport": "Importer maintenant",
     "firmwareGithubLoading": "Chargement depuis GitHub...",
     "firmwareAutoImport": "Charger automatiquement les nouvelles versions depuis GitHub (toutes les 6 h)",
+    "firmwareKeepLatestOnly": "Ne conserver que le firmware actuel et le dernier (supprimer automatiquement les plus anciens)",
     "firmwareGithubRelease": "Version",
     "firmwareGithubNoAssets": "Aucun fichier de firmware correspondant dans la version",
     "firmwareGithubFailed": "Échec du chargement depuis GitHub",

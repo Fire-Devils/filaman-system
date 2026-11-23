@@ -1,6 +1,7 @@
 """Parsing and storage of ESP firmware images for OTA updates."""
 
 import hashlib
+import logging
 import os
 import re
 import tempfile
@@ -12,7 +13,9 @@ from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import DATA_DIR
-from app.models import DeviceFirmware
+from app.models import AppSettings, DeviceFirmware
+
+logger = logging.getLogger(__name__)
 
 MAX_FIRMWARE_BYTES = 2_097_152
 ESP_IMAGE_MAGIC = 0xE9
@@ -146,3 +149,41 @@ async def import_firmware(
     if old_sha and not await _sha_in_use(db, old_sha):
         delete_firmware_file(old_sha)
     return entry, result
+
+
+async def prune_firmware(db: AsyncSession) -> int:
+    """Delete old images if ``firmware_keep_latest_only`` is on; return the number removed.
+
+    Per project the current image and the highest other version are kept. Projects
+    without a current image are left alone.
+    """
+    from app.services.plugin_service import version_key
+
+    row = (await db.execute(select(AppSettings).where(AppSettings.id == 1))).scalar_one_or_none()
+    if row is None or not row.firmware_keep_latest_only:
+        return 0
+    entries = list((await db.execute(select(DeviceFirmware))).scalars().all())
+    by_project: dict[str, list[DeviceFirmware]] = {}
+    for entry in entries:
+        by_project.setdefault(entry.project, []).append(entry)
+    doomed: list[DeviceFirmware] = []
+    for project, items in by_project.items():
+        current = next((e for e in items if e.is_current), None)
+        if current is None:
+            continue
+        others = [e for e in items if e.id != current.id]
+        if not others:
+            continue
+        keep = max(others, key=lambda e: (version_key(e.version), e.id))
+        doomed.extend(e for e in others if e.id != keep.id)
+    if not doomed:
+        return 0
+    doomed_ids = {e.id for e in doomed}
+    kept_shas = {e.sha256 for e in entries if e.id not in doomed_ids}
+    for entry in doomed:
+        logger.info("Pruning firmware %s %s", entry.project, entry.version)
+        await db.delete(entry)
+    await db.commit()
+    for sha in {e.sha256 for e in doomed} - kept_shas:
+        delete_firmware_file(sha)
+    return len(doomed)

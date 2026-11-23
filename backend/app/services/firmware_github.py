@@ -143,6 +143,7 @@ async def import_latest_release(db: AsyncSession) -> dict:
                     item["message"] = _detail(exc)
                     continue
                 item.update(status=state, message="")
+            await fw.prune_firmware(db)
             return {"release": tag, "results": results}
     except (httpx.HTTPError, ValueError) as exc:
         raise GithubUnavailableError(f"GitHub nicht erreichbar ({type(exc).__name__})") from exc

@@ -5,9 +5,11 @@
       "date": "",
       "changes": {
         "de": [
+          { "type": "feature", "text": "Neuer Schalter unter Admin > Geräte: „Nur aktuelle und letzte Firmware behalten“ löscht ältere ESP-Firmware-Versionen automatisch nach Upload und GitHub-Import (Standard: aus)." },
           { "type": "feature", "text": "Hinweis auf neue Waagen-Firmware: Liegt auf GitHub eine neuere ESP-Firmware als in FilaMan, zeigt die Admin-Übersicht einen Hinweis und die Geräte-Seite ein Banner mit Knopf „Jetzt importieren“. Es wird nichts automatisch installiert." }
         ],
         "en": [
+          { "type": "feature", "text": "New switch under Admin > Devices: \"Keep only the current and the latest firmware\" automatically deletes older ESP firmware versions after upload and GitHub import (default: off)." },
           { "type": "feature", "text": "Hint for new scale firmware: when GitHub has newer ESP firmware than FilaMan, the admin overview shows a notice and the devices page a banner with an \"Import now\" button. Nothing is installed automatically." }
         ]
       }

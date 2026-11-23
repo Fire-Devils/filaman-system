@@ -70,6 +70,17 @@ The app setting `firmware_auto_import` (default off, toggle on the same page) ru
 import 5 minutes after start and then every 6 hours, in the primary worker only. Errors are
 logged and retried at the next run.
 
+## Keep only the latest firmware
+
+The app setting `firmware_keep_latest_only` (default off, toggle on the same page) limits the
+stored images. Per project the `is_current` image and, additionally, the highest version among
+the remaining images are kept; everything older is deleted (database row, and the file unless
+another entry uses the same sha256). Projects without a current image are never touched and
+the current image is never deleted. Pruning runs after an admin upload, after a GitHub import
+(manual and automatic, once per release) and when the setting is switched on, but not on
+set-current or delete. Example: with 3.5.0 and 3.5.1 (current), uploading 3.5.2 keeps 3.5.2
+and 3.5.1; switching back to 3.5.1 keeps 3.5.1 and 3.5.2.
+
 ## Update hint
 
 `GET /api/v1/admin/system/version-check` additionally returns `firmware_updates`: per project

@@ -58,6 +58,7 @@ async def upload_firmware(
 ):
     data = await file.read(fw.MAX_FIRMWARE_BYTES + 1)
     entry, _ = await fw.import_firmware(db, data, skip_identical=False)
+    await fw.prune_firmware(db)
     return entry
 
 

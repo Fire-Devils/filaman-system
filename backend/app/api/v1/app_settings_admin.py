@@ -24,6 +24,7 @@ class AppSettingsResponse(BaseModel):
     mcp_enabled: bool = False
     mcp_write_enabled: bool = False
     firmware_auto_import: bool = False
+    firmware_keep_latest_only: bool = False
 
 
 class AppSettingsUpdate(BaseModel):
@@ -56,6 +57,7 @@ class AppSettingsUpdate(BaseModel):
     mcp_enabled: bool | None = None
     mcp_write_enabled: bool | None = None
     firmware_auto_import: bool | None = None
+    firmware_keep_latest_only: bool | None = None
 
 
 def _available_lookup_source(value: str) -> str:
@@ -76,6 +78,7 @@ def _to_response(settings_row: AppSettings) -> AppSettingsResponse:
         mcp_enabled=settings_row.mcp_enabled,
         mcp_write_enabled=settings_row.mcp_write_enabled,
         firmware_auto_import=settings_row.firmware_auto_import,
+        firmware_keep_latest_only=settings_row.firmware_keep_latest_only,
     )
 
 
@@ -115,11 +118,16 @@ async def update_app_settings(
     NULLABLE_SETTINGS = {"default_spool_core_weight_g", "default_empty_spool_weight_g"}
     update_data = data.model_dump(exclude_unset=True)
     update_data = {k: v for k, v in update_data.items() if v is not None or k in NULLABLE_SETTINGS}
+    was_pruning = bool(settings_row.firmware_keep_latest_only)
     for key, value in update_data.items():
         setattr(settings_row, key, value)
 
     await db.commit()
     await db.refresh(settings_row)
+    if settings_row.firmware_keep_latest_only and not was_pruning:
+        from app.services.firmware_service import prune_firmware
+
+        await prune_firmware(db)
 
     response_cache.delete("app_settings_public")
 
