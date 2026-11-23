@@ -54,21 +54,6 @@ import FormSection from '../../components/FormSection.astro'
         <p class="fm-field-hint" data-i18n="admin.rfidDisplayColonsHint">Display hexadecimal UIDs as XX:XX:XX. This does not change stored values or matching.</p>
       </div>
     </FormSection>
-    <FormSection titleKey="admin.defaultsTitle" title="Defaults" class="fm-settings-wide">
-      <p class="fm-field-hint" data-i18n="admin.defaultsDesc">Global defaults. Individual spools and filaments can override them.</p>
-      <div class="fm-settings-row"><label for="default-empty-spool-weight" data-i18n="admin.defaultEmptySpoolWeightLabel">Default empty spool weight (g)</label>
-        <div class="fm-settings-number"><input type="number" id="default-empty-spool-weight" step="1" min="0" placeholder="250" class="fm-input" aria-describedby="default-empty-hint" /><span>g</span></div>
-      </div>
-      <p class="fm-field-hint" id="default-empty-hint" data-i18n="admin.defaultEmptySpoolWeightHint">Used for new filaments without an empty spool weight, when the manufacturer has none either.</p>
-      <div class="fm-settings-row"><label for="default-spool-core-weight" data-i18n="spools.spoolCoreWeightLabel">Core / Adapter Weight</label>
-        <div class="fm-settings-number"><input type="number" id="default-spool-core-weight" step="1" min="0" placeholder="0" class="fm-input" aria-describedby="default-core-hint" /><span>g</span></div>
-      </div>
-      <p class="fm-field-hint" id="default-core-hint">
-          <span data-i18n="admin.defaultCoreWeightHint">Extra weight added on top of the empty spool weight when calculating remaining filament from a scale reading. Use this for cardboard inner tubes, spool holders, or scale adapters that are always present when weighing a spool.</span>
-          <br><strong data-i18n="admin.defaultCoreWeightFormulaLabel">Formula:</strong> <span data-i18n="admin.defaultCoreWeightFormula">Remaining = Scale reading − Empty spool weight − Core/adapter weight.</span>
-          <br><span data-i18n="admin.defaultCoreWeightDisableHint">Leave blank or set to 0 to disable.</span>
-        </p>
-    </FormSection>
     <FormSection titleKey="admin.slicerProfileFallbackTitle" title="Slicer Profile Fallback">
       <p class="fm-field-hint" data-i18n="admin.slicerProfileFallbackDesc">Determines which profile is sent to a Bambu printer's AMS slot when no specific slicer profile resolves for a filament (e.g. a third-party filament with no matching cloud profile for the connected printer model).</p>
       <div class="fm-settings-row"><label for="bambu-unmatched-fallback" data-i18n="admin.slicerFallbackLabel">Default for unmatched filament</label><select id="bambu-unmatched-fallback" class="fm-select" style="max-width: 320px;">
@@ -107,6 +92,21 @@ import FormSection from '../../components/FormSection.astro'
         <p class="fm-field-hint" data-i18n="admin.mcpOtherClients">Other clients (e.g. n8n, LM Studio, Open WebUI): transport "Streamable HTTP", the server address above and the header "Authorization: ApiKey &lt;API-KEY&gt;".</p>
         <p class="fm-field-hint" data-i18n="admin.mcpWebLimitation">Web connectors in claude.ai or ChatGPT need an OAuth sign-in and a public HTTPS address. This is not supported yet; use a desktop or command-line client instead.</p>
       </div>
+    </FormSection>
+    <FormSection titleKey="admin.defaultsTitle" title="Defaults" class="fm-settings-wide">
+      <p class="fm-field-hint" data-i18n="admin.defaultsDesc">Global defaults. Individual spools and filaments can override them.</p>
+      <div class="fm-settings-row"><label for="default-empty-spool-weight" data-i18n="admin.defaultEmptySpoolWeightLabel">Default empty spool weight (g)</label>
+        <div class="fm-settings-number"><input type="number" id="default-empty-spool-weight" step="1" min="0" placeholder="250" class="fm-input" aria-describedby="default-empty-hint" /><span>g</span></div>
+      </div>
+      <p class="fm-field-hint" id="default-empty-hint" data-i18n="admin.defaultEmptySpoolWeightHint">Used for new filaments without an empty spool weight, when the manufacturer has none either.</p>
+      <div class="fm-settings-row"><label for="default-spool-core-weight" data-i18n="spools.spoolCoreWeightLabel">Core / Adapter Weight</label>
+        <div class="fm-settings-number"><input type="number" id="default-spool-core-weight" step="1" min="0" placeholder="0" class="fm-input" aria-describedby="default-core-hint" /><span>g</span></div>
+      </div>
+      <p class="fm-field-hint" id="default-core-hint">
+          <span data-i18n="admin.defaultCoreWeightHint">Extra weight added on top of the empty spool weight when calculating remaining filament from a scale reading. Use this for cardboard inner tubes, spool holders, or scale adapters that are always present when weighing a spool.</span>
+          <br><strong data-i18n="admin.defaultCoreWeightFormulaLabel">Formula:</strong> <span data-i18n="admin.defaultCoreWeightFormula">Remaining = Scale reading − Empty spool weight − Core/adapter weight.</span>
+          <br><span data-i18n="admin.defaultCoreWeightDisableHint">Leave blank or set to 0 to disable.</span>
+        </p>
     </FormSection>
   </form>
   <div class="fm-settings-grid">
