@@ -452,6 +452,7 @@ export function createFilamentFormController(options: {
       image_url: serialize(input('image_url').value.trim()),
       drying_temp_c: serialize(numberValue('drying_temp_c')),
       drying_time_hours: serialize(numberValue('drying_time_hours')),
+      drying_interval_days: serialize(numberValue('drying_interval_days')),
       softening_temp_c: serialize(numberValue('softening_temp_c')),
       chamber_temp_c: serialize(numberValue('chamber_temp_c')),
       cooling_fan_range_percent: serialize(rangeValue('cooling_fan')),
@@ -1058,6 +1059,7 @@ export function createFilamentFormController(options: {
       ['image_url', 'image_url'],
       ['drying_temp_c', 'drying_temp_c'],
       ['drying_time_hours', 'drying_time_hours'],
+      ['drying_interval_days', 'drying_interval_days'],
       ['softening_temp_c', 'softening_temp_c'],
       ['chamber_temp_c', 'chamber_temp_c'],
       ['max_volumetric_speed_mm3_s', 'max_volumetric_speed_mm3_s'],
@@ -1146,7 +1148,7 @@ export function createFilamentFormController(options: {
     ]
     const optionalNumbers = [
       'raw_material_weight_g', 'default_spool_weight_g', 'low_stock_threshold_g', 'spool_outer_diameter_mm', 'spool_width_mm',
-      'price', 'density_g_cm3', 'drying_temp_c', 'drying_time_hours', 'softening_temp_c',
+      'price', 'density_g_cm3', 'drying_temp_c', 'drying_time_hours', 'drying_interval_days', 'softening_temp_c',
       'chamber_temp_c', 'max_volumetric_speed_mm3_s', 'flow_ratio', 'pressure_advance_k',
     ]
     for (const key of optionalText) {

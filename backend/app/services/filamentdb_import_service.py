@@ -17,6 +17,7 @@ from app.models.filament import Color, Filament, FilamentColor, Manufacturer
 from app.services.bambu_idx import clear_bambu_idx_for_filament
 from app.services.extra_field_validation import normalize_numeric_range
 from app.services.filamentdb_field_mapping import standard_filamentdb_fields
+from app.services.material_presets import apply_defaults_to_new_filament
 from app.services.spoolman_projection import catalog_promotion_aliases
 from app.utils.search import FUZZY_MATCH_THRESHOLD, fuzzy_token_score
 
@@ -1428,6 +1429,9 @@ class FilamentDBImportService:
                 color_mode=color_mode,
                 multi_color_style=multi_color_style,
                 custom_fields=custom if custom else None,
+            )
+            await apply_defaults_to_new_filament(
+                self.db, new_fil, await self.db.get(Manufacturer, filaman_mfr_id)
             )
             self.db.add(new_fil)
             await self.db.flush()

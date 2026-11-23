@@ -72,6 +72,7 @@ export const filamentSections: FilamentSection[] = [
     key: 'drying', titleKey: 'filaments.dryingInfo', fields: [
       { key: 'drying_temp_c', labelKey: 'filaments.dryingTemperatureLabel', kind: 'number', unit: '°C', step: 'any' },
       { key: 'drying_time_hours', labelKey: 'filaments.dryingTimeLabel', kind: 'number', unit: 'h', step: 'any' },
+      { key: 'drying_interval_days', labelKey: 'filaments.dryingIntervalLabel', kind: 'number', unit: 'd', step: '1', min: 1 },
     ],
   },
   {

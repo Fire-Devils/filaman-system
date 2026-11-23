@@ -54,8 +54,12 @@ import FormSection from '../../components/FormSection.astro'
         <p class="fm-field-hint" data-i18n="admin.rfidDisplayColonsHint">Display hexadecimal UIDs as XX:XX:XX. This does not change stored values or matching.</p>
       </div>
     </FormSection>
-    <FormSection titleKey="admin.spoolWeightDefaultsTitle" title="Spool Weight Defaults">
-      <p class="fm-field-hint" data-i18n="admin.spoolWeightDefaultsDesc">Global weight settings applied to all spools. Individual spools can override these on their Edit page.</p>
+    <FormSection titleKey="admin.defaultsTitle" title="Defaults" class="fm-settings-wide">
+      <p class="fm-field-hint" data-i18n="admin.defaultsDesc">Global defaults. Individual spools and filaments can override them.</p>
+      <div class="fm-settings-row"><label for="default-empty-spool-weight" data-i18n="admin.defaultEmptySpoolWeightLabel">Default empty spool weight (g)</label>
+        <div class="fm-settings-number"><input type="number" id="default-empty-spool-weight" step="1" min="0" placeholder="250" class="fm-input" aria-describedby="default-empty-hint" /><span>g</span></div>
+      </div>
+      <p class="fm-field-hint" id="default-empty-hint" data-i18n="admin.defaultEmptySpoolWeightHint">Used for new filaments without an empty spool weight, when the manufacturer has none either.</p>
       <div class="fm-settings-row"><label for="default-spool-core-weight" data-i18n="spools.spoolCoreWeightLabel">Core / Adapter Weight</label>
         <div class="fm-settings-number"><input type="number" id="default-spool-core-weight" step="1" min="0" placeholder="0" class="fm-input" aria-describedby="default-core-hint" /><span>g</span></div>
       </div>
@@ -105,6 +109,35 @@ import FormSection from '../../components/FormSection.astro'
       </div>
     </FormSection>
   </form>
+  <div class="fm-settings-grid">
+    <FormSection titleKey="admin.materialPresetsTitle" title="Material presets" class="fm-settings-wide" id="presets-title">
+      <p class="fm-field-hint" data-i18n="admin.materialPresetsDesc">Default values per material. They are filled into new filaments when a field is empty; values you enter always win. The drying interval also controls the moisture hint of spools.</p>
+      <div id="presets-message" class="hidden" role="status"></div>
+      <div class="fm-table-scroll">
+        <table class="fm-table fm-admin-table" aria-labelledby="presets-title">
+          <thead><tr>
+            <th data-i18n="admin.presetMaterial">Material</th>
+            <th data-i18n="admin.presetNozzleMin">Nozzle min (°C)</th>
+            <th data-i18n="admin.presetNozzleMax">Nozzle max (°C)</th>
+            <th data-i18n="admin.presetBedMin">Bed min (°C)</th>
+            <th data-i18n="admin.presetBedMax">Bed max (°C)</th>
+            <th data-i18n="admin.presetFlow">Flow ratio</th>
+            <th data-i18n="admin.presetDryTemp">Drying (°C)</th>
+            <th data-i18n="admin.presetDryHours">Drying (h)</th>
+            <th data-i18n="admin.presetInterval">Interval (days)</th>
+            <th data-i18n="admin.presetDensity">Density (g/cm³)</th>
+            <th><span class="fm-sr-only" data-i18n="admin.presetActions">Actions</span></th>
+          </tr></thead>
+          <tbody id="presets-body"></tbody>
+        </table>
+      </div>
+      <div class="fm-settings-row" style="display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px;">
+        <button type="button" id="preset-add" class="fm-btn" data-i18n="admin.presetAdd">Add material</button>
+        <button type="button" id="preset-reset" class="fm-btn" data-i18n="admin.presetReset">Reset to defaults</button>
+        <button type="button" id="preset-apply" class="fm-btn fm-btn-primary" data-i18n="admin.presetApply">Fill missing values on all filaments</button>
+      </div>
+    </FormSection>
+  </div>
 </div>
   <script>
     import { t, initI18n } from '../../lib/i18n'
@@ -112,6 +145,7 @@ import FormSection from '../../components/FormSection.astro'
     import { getAbortSignal } from '../../lib/abort'
     import { initCurrency } from '../../lib/format'
     import { copyText } from '../../lib/clipboard'
+    import { initMaterialPresets } from '../../lib/material-presets'
 
     interface McpClient { key: string; name: string; file?: string; snippet: string }
 
@@ -200,6 +234,7 @@ import FormSection from '../../components/FormSection.astro'
       const rfidProtocolSection = document.getElementById('rfid-protocol-section')!
       const rfidDisplayColonsInput = document.getElementById('rfid-display-colons') as HTMLInputElement
       const defaultSpoolCoreWeightInput = document.getElementById('default-spool-core-weight') as HTMLInputElement
+      const defaultEmptySpoolWeightInput = document.getElementById('default-empty-spool-weight') as HTMLInputElement
       const bambuUnmatchedFallbackSelect = document.getElementById('bambu-unmatched-fallback') as HTMLSelectElement
       const mcpEnabledInput = document.getElementById('mcp-enabled') as HTMLInputElement
       const mcpWriteInput = document.getElementById('mcp-write-enabled') as HTMLInputElement
@@ -255,6 +290,7 @@ import FormSection from '../../components/FormSection.astro'
           rfidDisplayColonsInput.checked = data.rfid_display_colons === true
           updateRfidProtocolVisibility()
           defaultSpoolCoreWeightInput.value = data.default_spool_core_weight_g != null ? String(data.default_spool_core_weight_g) : ''
+          defaultEmptySpoolWeightInput.value = data.default_empty_spool_weight_g != null ? String(data.default_empty_spool_weight_g) : ''
           bambuUnmatchedFallbackSelect.value = data.bambu_unmatched_profile_fallback || 'generic'
           mcpEnabledInput.checked = data.mcp_enabled === true
           mcpWriteInput.checked = data.mcp_write_enabled === true
@@ -268,6 +304,8 @@ import FormSection from '../../components/FormSection.astro'
         showMessage(t('admin.appSettingsLoadFailed'), true)
       }
 
+      initMaterialPresets()
+
       // Save settings
       form.addEventListener('submit', async (e) => {
         e.preventDefault()
@@ -277,6 +315,7 @@ import FormSection from '../../components/FormSection.astro'
         saveBtn.textContent = t('admin.appSettingsSaving')
 
         const rawCoreWeight = defaultSpoolCoreWeightInput.value.trim()
+        const rawEmptyWeight = defaultEmptySpoolWeightInput.value.trim()
         const payload = {
           login_disabled: loginDisabledInput.checked,
           currency: currencySelect.value,
@@ -284,6 +323,7 @@ import FormSection from '../../components/FormSection.astro'
           rfid_protocol: rfidProtocolSelect.value,
           rfid_display_colons: rfidDisplayColonsInput.checked,
           default_spool_core_weight_g: rawCoreWeight !== '' ? parseFloat(rawCoreWeight) : null,
+          default_empty_spool_weight_g: rawEmptyWeight !== '' ? parseFloat(rawEmptyWeight) : null,
           bambu_unmatched_profile_fallback: bambuUnmatchedFallbackSelect.value,
           mcp_enabled: mcpEnabledInput.checked,
           mcp_write_enabled: mcpEnabledInput.checked && mcpWriteInput.checked,

@@ -40,6 +40,7 @@ from app.services.bambu_idx import clear_bambu_idx_for_filament
 from app.core.config import MANUFACTURER_LOGO_DIR, settings
 from app.core.db_utils import get_next_available_id
 from app.core.event_bus import event_bus
+from app.services.material_presets import apply_defaults_to_new_filament
 from app.models import (
     Color,
     Filament,
@@ -743,6 +744,7 @@ async def resolve_filament_from_tag(
             diameter_mm=diameter,
             color_mode="single",
         )
+        await apply_defaults_to_new_filament(db, filament, manufacturer)
         db.add(filament)
         await db.flush()
         filament_created = True
@@ -1151,6 +1153,7 @@ async def create_filament(
     filament_data = data.model_dump(exclude={"colors"})
     next_id = await get_next_available_id(db, Filament)
     filament = Filament(id=next_id, **filament_data)
+    await apply_defaults_to_new_filament(db, filament, manufacturer)
     db.add(filament)
     await db.flush()  # get filament.id
 

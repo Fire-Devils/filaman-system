@@ -112,6 +112,7 @@ class Filament(Base, TimestampMixin):
     )
     drying_temp_c: Mapped[float | None] = mapped_column(Float, nullable=True)
     drying_time_hours: Mapped[float | None] = mapped_column(Float, nullable=True)
+    drying_interval_days: Mapped[int | None] = mapped_column(Integer, nullable=True)
     softening_temp_c: Mapped[float | None] = mapped_column(Float, nullable=True)
     cooling_fan_range_percent: Mapped[dict[str, int | float | None] | None] = (
         mapped_column(JSON, nullable=True)

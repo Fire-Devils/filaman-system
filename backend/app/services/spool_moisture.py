@@ -70,8 +70,20 @@ def _aware(value: datetime) -> datetime:
     return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
 
 
-def moisture_level(sensitivity: str, days_exposed: int) -> str:
-    dry, fair, damp = THRESHOLD_DAYS[sensitivity]
+def interval_thresholds(interval_days: int) -> tuple[int, int, int]:
+    """Dry / fair / damp upper bounds derived from a drying interval in days."""
+    dry = max(1, round(interval_days * 0.2))
+    fair = max(dry + 1, round(interval_days * 0.5))
+    return dry, fair, interval_days
+
+
+def moisture_level(
+    sensitivity: str, days_exposed: int, interval_days: int | None = None
+) -> str:
+    if interval_days is not None and interval_days > 0:
+        dry, fair, damp = interval_thresholds(interval_days)
+    else:
+        dry, fair, damp = THRESHOLD_DAYS[sensitivity]
     if days_exposed <= dry:
         return "dry"
     if days_exposed <= fair:
@@ -88,12 +100,14 @@ def compute_moisture(
     opened_at: datetime | None,
     last_dried_at: datetime | None,
     now: datetime | None = None,
+    interval_days: int | None = None,
 ) -> dict[str, Any] | None:
     """Moisture status or None when it does not apply.
 
     Reference point is the later of opened_at and last_dried_at. None when no
     reference exists or the spool is new, empty or archived. days_exposed is
-    the number of full days since the reference (never negative).
+    the number of full days since the reference (never negative). When
+    interval_days is set it replaces the sensitivity-based thresholds.
     """
     if status_key is None or status_key in EXCLUDED_STATUS_KEYS:
         return None
@@ -105,7 +119,7 @@ def compute_moisture(
     days = max(0, int((current - reference).total_seconds() // 86400))
     sensitivity = material_sensitivity(material_type, material_subgroup)
     return {
-        "level": moisture_level(sensitivity, days),
+        "level": moisture_level(sensitivity, days, interval_days),
         "days_exposed": days,
         "reference_at": reference,
         "sensitivity": sensitivity,

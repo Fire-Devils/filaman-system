@@ -5,9 +5,11 @@
       "date": "",
       "changes": {
         "de": [
+          { "type": "feature", "text": "Neue Material-Voreinstellungen in den Anwendungseinstellungen: Pro Filamentart (PLA, PETG, ABS …) lassen sich Düsen- und Betttemperatur, Flussrate, Trocknung, Trocknungsintervall und Dichte hinterlegen. Neue Filamente bekommen leere Felder automatisch befüllt, per Button lassen sich fehlende Werte auch bei allen bestehenden Filamenten nachtragen. Dazu gibt es ein globales Standard-Leerspulengewicht, und das Trocknungsintervall (auch pro Filament einstellbar) steuert den Feuchte-Status der Spulen." },
           { "type": "improved", "text": "Plugin-Katalog: Die FilaBrain-Vorschau ist auf 0.1.27 aktualisiert (ein gemeinsamer Filament-Arbeitsbereich für bestehende und neue Filamente, klarere Farbauswahl vor dem Speichern, bessere Handy-Ansicht). (#286, beigetragen von akira69)" }
         ],
         "en": [
+          { "type": "feature", "text": "New material presets in the app settings: store nozzle and bed temperature, flow ratio, drying, drying interval and density per filament material (PLA, PETG, ABS …). New filaments get empty fields filled automatically, and a button fills in missing values on all existing filaments. Also adds a global default empty spool weight; the drying interval (also settable per filament) now drives the spool moisture status." },
           { "type": "improved", "text": "Plugin catalog: the FilaBrain preview is updated to 0.1.27 (one filament workspace for existing and new filaments, clearer color selection before saving, improved phone layout). (#286, contributed by akira69)" }
         ]
       }

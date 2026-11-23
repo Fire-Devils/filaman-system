@@ -13,6 +13,7 @@ from app.models.label_asset import LabelAsset, LabelPresetAsset
 from app.models.label_preset import LabelPreset
 from app.models.label_print_request import LabelPrintRequest
 from app.models.location import Location
+from app.models.material_preset import MaterialPreset
 from app.models.oidc_settings import OIDCAuthState, OIDCSettings
 from app.models.plugin import InstalledPlugin
 from app.models.print_job import PrintJob, PrintJobUsage, PrintProject
@@ -52,6 +53,7 @@ __all__ = [
     "LabelPrintRequest",
     "Location",
     "Manufacturer",
+    "MaterialPreset",
     "OAuthIdentity",
     "OIDCAuthState",
     "OIDCSettings",
