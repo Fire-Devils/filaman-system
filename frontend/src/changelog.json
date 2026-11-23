@@ -7,12 +7,16 @@
         "de": [
           { "type": "feature", "text": "GitHub-Import und Update-Hinweis für ESP-Firmware berücksichtigen nur Platinen, die angemeldete Geräte tatsächlich nutzen (per Heartbeat gemeldet). Hat noch kein Gerät eine Platine gemeldet, wird wie bisher alles importiert; manueller Upload bleibt unverändert." },
           { "type": "feature", "text": "Neuer Schalter unter Admin > Geräte: „Nur aktuelle und letzte Firmware behalten“ löscht ältere ESP-Firmware-Versionen automatisch nach Upload und GitHub-Import (Standard: an)." },
-          { "type": "feature", "text": "Hinweis auf neue Waagen-Firmware: Liegt auf GitHub eine neuere ESP-Firmware als in FilaMan, zeigt die Admin-Übersicht einen Hinweis und die Geräte-Seite ein Banner mit Knopf „Jetzt importieren“. Es wird nichts automatisch installiert." }
+          { "type": "feature", "text": "Hinweis auf neue Waagen-Firmware: Liegt auf GitHub eine neuere ESP-Firmware als in FilaMan, zeigt die Admin-Übersicht einen Hinweis und die Geräte-Seite ein Banner mit Knopf „Jetzt importieren“. Es wird nichts automatisch installiert." },
+          { "type": "fix", "text": "Geräteliste unter Admin > Geräte: Ein fehlgeschlagenes oder zurückgerolltes Firmware-Update zeigt jetzt den Fehlergrund direkt unter dem Status. Meldet eine Waage nach dem Update die neue Version, steht das Update auf „ok“, auch wenn ihr letzter Bericht vor dem Neustart verloren ging." },
+          { "type": "fix", "text": "Admin > Geräte: Die Tabelle bricht Status und IP-Adresse nicht mehr mitten im Wort um, und die Firmware-Schalter stehen direkt bei ihrem Text." }
         ],
         "en": [
           { "type": "feature", "text": "GitHub firmware import and the update hint only consider boards that registered devices actually use (reported by the heartbeat). Without any reported board everything is imported as before; manual uploads are unaffected." },
           { "type": "feature", "text": "New switch under Admin > Devices: \"Keep only the current and the latest firmware\" automatically deletes older ESP firmware versions after upload and GitHub import (default: on)." },
-          { "type": "feature", "text": "Hint for new scale firmware: when GitHub has newer ESP firmware than FilaMan, the admin overview shows a notice and the devices page a banner with an \"Import now\" button. Nothing is installed automatically." }
+          { "type": "feature", "text": "Hint for new scale firmware: when GitHub has newer ESP firmware than FilaMan, the admin overview shows a notice and the devices page a banner with an \"Import now\" button. Nothing is installed automatically." },
+          { "type": "fix", "text": "Device list under Admin > Devices: a failed or rolled-back firmware update now shows the reason right below the status. When a scale reports the new version after an update, the update shows \"ok\" even if its last report before the reboot got lost." },
+          { "type": "fix", "text": "Admin > Devices: the table no longer breaks status and IP address mid-word, and the firmware switches sit right next to their label." }
         ]
       }
     },
