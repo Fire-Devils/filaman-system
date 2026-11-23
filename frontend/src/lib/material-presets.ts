@@ -15,7 +15,15 @@ export interface MaterialPreset {
   density_g_cm3: number | null
 }
 
-type PresetField = Exclude<keyof MaterialPreset, 'id' | 'material_type'>
+type ConfirmOptions = { title?: string; okLabel?: string; isDanger?: boolean }
+
+/** FilaMan-styled confirm dialog from Layout.astro; falls back to the browser dialog. */
+function fmConfirm(message: string, options?: ConfirmOptions): Promise<boolean> {
+  const dialog = (window as unknown as { __fmConfirm?: (m: string, o?: ConfirmOptions) => Promise<boolean> }).__fmConfirm
+  return dialog ? dialog(message, options) : Promise.resolve(window.confirm(message))
+}
+
+type PresetField =Exclude<keyof MaterialPreset, 'id' | 'material_type'>
 
 const NUMERIC_COLUMNS: { key: PresetField; step: string }[] = [
   { key: 'extruder_temp_min_c', step: '1' },
@@ -140,7 +148,7 @@ export function initMaterialPresets(): void {
       row.remove()
       return
     }
-    if (!window.confirm(t('admin.presetDeleteConfirm'))) return
+    if (!(await fmConfirm(t('admin.presetDeleteConfirm')))) return
     try {
       await api.delete(`${BASE}/${id}`)
       row.remove()
@@ -156,7 +164,11 @@ export function initMaterialPresets(): void {
   })
 
   resetButton.addEventListener('click', async () => {
-    if (!window.confirm(t('admin.presetResetConfirm'))) return
+    if (!(await fmConfirm(t('admin.presetResetConfirm'), {
+      title: t('admin.presetReset'),
+      okLabel: t('admin.presetReset'),
+      isDanger: true,
+    }))) return
     try {
       render(await api.post<MaterialPreset[]>(`${BASE}/reset`))
       show(t('admin.presetResetDone'), false)
@@ -166,7 +178,11 @@ export function initMaterialPresets(): void {
   })
 
   applyButton.addEventListener('click', async () => {
-    if (!window.confirm(t('admin.presetApplyConfirm'))) return
+    if (!(await fmConfirm(t('admin.presetApplyConfirm'), {
+      title: t('admin.presetApply'),
+      okLabel: t('common.apply'),
+      isDanger: false,
+    }))) return
     applyButton.disabled = true
     try {
       const result = await api.post<{ updated_filaments: number; updated_fields: number }>(`${BASE}/apply-to-filaments`)
