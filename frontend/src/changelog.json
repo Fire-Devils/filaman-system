@@ -1,6 +1,18 @@
 {
   "versions": [
     {
+      "version": "UNRELEASED",
+      "date": "",
+      "changes": {
+        "de": [
+          { "type": "feature", "text": "Firmware-Verwaltung für ESP-Geräte (Waagen): Firmware-Images lassen sich unter Admin > Geräte hochladen, je Platinentyp als aktuelle Version festlegen oder auf eine ältere zurücksetzen. Geräte holen sich Updates per WLAN selbst, melden das Ergebnis, und die Geräteliste zeigt Firmware-Version und letztes Update." }
+        ],
+        "en": [
+          { "type": "feature", "text": "Firmware management for ESP devices (scales): upload firmware images under Admin > Devices, set one as current per board type or roll back to an older one. Devices fetch updates over Wi-Fi themselves and report the result; the device list shows firmware version and last update." }
+        ]
+      }
+    },
+    {
       "version": "2.5.1",
       "date": "",
       "changes": {

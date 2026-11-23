@@ -7,6 +7,7 @@ from threading import Lock
 
 import httpx
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
+from fastapi.responses import FileResponse
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
@@ -53,11 +54,12 @@ def _is_primary_worker() -> bool:
         return False
 
 
-from app.api.v1.schemas_device import HeartbeatRequest, LocateRequest, LocateResponse, WeighRequest, WeighResponse, WriteTagRequest, WriteTagResponse, RfidResultRequest, RfidResultResponse, WriteStatusResponse, TagDataRequest, TagScanStatusResponse
+from app.api.v1.schemas_device import HeartbeatRequest, OtaReportRequest, LocateRequest, LocateResponse, WeighRequest, WeighResponse, WriteTagRequest, WriteTagResponse, RfidResultRequest, RfidResultResponse, WriteStatusResponse, TagDataRequest, TagScanStatusResponse
 from app.core.event_bus import event_bus
 from app.core.security import Principal, generate_token_secret, hash_token
-from app.models import AppSettings, Device, Location, Spool
+from app.models import AppSettings, Device, DeviceFirmware, Location, Spool
 from app.models.filament import Color, FilamentColor, Manufacturer
+from app.services import firmware_service
 from app.services.spool_service import SpoolService
 
 _MATERIAL_TEMP_DEFAULTS: dict[str, tuple[int, int]] = {
@@ -215,6 +217,80 @@ async def device_heartbeat(
 ):
     device.ip_address = str(data.ip_address)
     device.last_seen_at = datetime.now(timezone.utc)
+    if data.firmware_version:
+        device.firmware_version = data.firmware_version
+    if data.firmware_project:
+        device.firmware_project = data.firmware_project
+    await db.commit()
+    return {"status": "ok"}
+
+
+@router.get("/firmware/latest", response_model=dict)
+async def get_latest_firmware(
+    db: DBSession,
+    project: str,
+    device: Device = Depends(get_current_device),
+):
+    entry = (
+        await db.execute(
+            select(DeviceFirmware).where(
+                DeviceFirmware.project == project, DeviceFirmware.is_current.is_(True)
+            )
+        )
+    ).scalar_one_or_none()
+    if entry is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"code": "not_found", "message": "No firmware for this project"},
+        )
+    return {
+        "project": entry.project,
+        "version": entry.version,
+        "size": entry.size,
+        "sha256": entry.sha256,
+        "url": f"/api/v1/devices/firmware/{entry.sha256}.bin",
+    }
+
+
+@router.get("/firmware/{sha256}.bin")
+async def download_firmware(
+    sha256: str,
+    db: DBSession,
+    device: Device = Depends(get_current_device),
+):
+    not_found = HTTPException(
+        status_code=status.HTTP_404_NOT_FOUND,
+        detail={"code": "not_found", "message": "Firmware not found"},
+    )
+    if not firmware_service.SHA256_RE.match(sha256):
+        raise not_found
+    entry = (
+        await db.execute(select(DeviceFirmware).where(DeviceFirmware.sha256 == sha256))
+    ).scalar_one_or_none()
+    path = firmware_service.firmware_path(sha256)
+    if entry is None or not path.is_file():
+        raise not_found
+    # "identity" keeps GZipMiddleware from compressing the image, so the ESP
+    # gets an exact Content-Length for progress and size checks.
+    return FileResponse(
+        path,
+        media_type="application/octet-stream",
+        filename=f"{sha256}.bin",
+        headers={"Content-Encoding": "identity"},
+    )
+
+
+@router.post("/ota-report", response_model=dict)
+async def device_ota_report(
+    data: OtaReportRequest,
+    db: DBSession,
+    device: Device = Depends(get_current_device),
+):
+    device.last_ota_result = data.result
+    device.last_ota_error = data.error[:255] if data.error else None
+    device.last_ota_from = data.from_version
+    device.last_ota_to = data.to_version
+    device.last_ota_at = datetime.now(timezone.utc)
     await db.commit()
     return {"status": "ok"}
 

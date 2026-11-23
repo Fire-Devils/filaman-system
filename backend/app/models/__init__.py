@@ -1,6 +1,7 @@
 from app.models.app_settings import AppSettings
 from app.models.base import Base
 from app.models.device import Device
+from app.models.device_firmware import DeviceFirmware
 from app.models.filament import (
     Color,
     Filament,
@@ -40,6 +41,7 @@ __all__ = [
     "Base",
     "Color",
     "Device",
+    "DeviceFirmware",
     "Filament",
     "FilamentColor",
     "FilamentPrinterInitialization",

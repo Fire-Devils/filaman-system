@@ -1,3 +1,5 @@
+from typing import Literal
+
 from pydantic import BaseModel, Field, IPvAnyAddress
 
 
@@ -29,6 +31,15 @@ class LocateResponse(BaseModel):
 
 class HeartbeatRequest(BaseModel):
     ip_address: IPvAnyAddress
+    firmware_version: str | None = Field(default=None, max_length=32)
+    firmware_project: str | None = Field(default=None, max_length=64)
+
+
+class OtaReportRequest(BaseModel):
+    from_version: str = Field(max_length=32)
+    to_version: str = Field(max_length=32)
+    result: Literal["started", "ok", "failed", "rolled_back"]
+    error: str | None = None
 
 
 class WriteTagRequest(BaseModel):

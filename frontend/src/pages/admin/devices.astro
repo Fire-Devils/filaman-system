@@ -12,13 +12,32 @@ import FormDialog from '../../components/FormDialog.astro'
       <table class="fm-table">
         <thead><tr>
           <th data-i18n="common.name">Name</th><th data-i18n="common.status">Status</th>
-          <th data-i18n="admin.ipAddress">IP Address</th><th data-i18n="admin.autoAssign">Auto-Assign</th>
+          <th data-i18n="admin.ipAddress">IP Address</th><th data-i18n="admin.firmwareColumn">Firmware</th><th data-i18n="admin.lastUpdate">Last update</th><th data-i18n="admin.autoAssign">Auto-Assign</th>
           <th data-i18n="admin.lastUsed">Last Used</th><th style="text-align:right" data-i18n="common.actions">Actions</th>
         </tr></thead>
-        <tbody id="devices-table"><tr><td colspan="6" data-i18n="common.loading">Loading...</td></tr></tbody>
+        <tbody id="devices-table"><tr><td colspan="8" data-i18n="common.loading">Loading...</td></tr></tbody>
       </table>
     </div>
   </div>
+
+  <section class="fm-card fm-admin-table" id="firmware-section" style="margin-top:var(--section-gap, 16px)">
+    <div class="fm-admin-actions" style="padding:12px 16px;justify-content:space-between">
+      <strong data-i18n="admin.deviceFirmware">Firmware</strong>
+      <span>
+        <input type="file" id="firmware-file" accept=".bin" class="fm-visually-hidden" />
+        <button type="button" id="firmware-upload" class="fm-btn fm-btn-primary" data-i18n="admin.firmwareUpload">Upload firmware</button>
+      </span>
+    </div>
+    <p class="fm-field-hint" style="padding:0 16px" data-i18n="admin.deviceFirmwareHint"></p>
+    <div id="firmware-error" class="fm-alert-error hidden" role="alert" style="margin:8px 16px"></div>
+    <table class="fm-table">
+      <thead><tr>
+        <th data-i18n="admin.firmwareProject">Project</th><th data-i18n="admin.firmwareVersion">Version</th><th data-i18n="admin.firmwareSize">Size</th>
+        <th data-i18n="admin.firmwareDate">Uploaded</th><th style="text-align:right" data-i18n="common.actions">Actions</th>
+      </tr></thead>
+      <tbody id="firmware-table"><tr><td colspan="5" data-i18n="common.loading">Loading...</td></tr></tbody>
+    </table>
+  </section>
 
   <template id="device-editor-template">
     <form id="edit-form" class="fm-inline-editor fm-compact-form">
@@ -64,7 +83,7 @@ import FormDialog from '../../components/FormDialog.astro'
     import { isAbortError } from '../../lib/abort'
     import { copyText } from '../../lib/clipboard'
     import { escapeHtml } from '../../lib/extra-fields'
-    import { api, fetchAllPages } from '../../lib/api'
+    import { api, fetchAllPages, request } from '../../lib/api'
     import { bindFormDialog } from '../../lib/form-dialog'
     import { bindFormState } from '../../lib/form-state'
     import { tableAction } from '../../lib/table-actions'
@@ -74,6 +93,13 @@ import FormDialog from '../../components/FormDialog.astro'
       id: number; name: string; is_active: boolean; registration_pending: boolean
       ip_address: string | null; auto_assign_enabled: boolean; auto_assign_timeout: number
       last_used_at: string | null; is_online: boolean
+      firmware_project: string | null; firmware_version: string | null
+      last_ota_result: string | null; last_ota_error: string | null
+      last_ota_from: string | null; last_ota_to: string | null; last_ota_at: string | null
+    }
+    interface FirmwareRecord {
+      id: number; project: string; version: string; size: number; sha256: string
+      is_current: boolean; created_at: string | null
     }
     type DeviceAdminWindow = {
       __fmAlert: (message: string) => Promise<boolean>
@@ -102,7 +128,7 @@ import FormDialog from '../../components/FormDialog.astro'
       } catch (error) {
         if (isAbortError(error)) return
         console.error('Failed to load devices:', error)
-        document.getElementById('devices-table')!.innerHTML = `<tr><td colspan="6" role="alert" style="color:var(--error-text)">${escapeHtml(t('admin.failedLoadDevices'))}</td></tr>`
+        document.getElementById('devices-table')!.innerHTML = `<tr><td colspan="8" role="alert" style="color:var(--error-text)">${escapeHtml(t('admin.failedLoadDevices'))}</td></tr>`
       }
     }
     function renderDevices() {
@@ -111,15 +137,26 @@ import FormDialog from '../../components/FormDialog.astro'
         const status = !device.is_active ? device.registration_pending ? 'admin.pending' : 'admin.inactive' : device.is_online ? 'common.online' : 'common.offline'
         const statusColor = !device.is_active ? device.registration_pending ? 'var(--accent-3)' : 'var(--error-text)' : device.is_online ? 'var(--accent-2)' : 'var(--text-muted)'
         const host = device.ip_address?.includes(':') ? `[${device.ip_address}]` : device.ip_address
+        const otaKey: Record<string, string> = { started: 'admin.otaStarted', ok: 'admin.otaOk', failed: 'admin.otaFailed', rolled_back: 'admin.otaRolledBack' }
+        const otaColor = device.last_ota_result === 'ok' ? 'var(--accent-2)' : device.last_ota_result === 'failed' || device.last_ota_result === 'rolled_back' ? 'var(--error-text)' : 'var(--text-muted)'
+        const otaCell = device.last_ota_result
+          ? `<span class="fm-pill" style="color:${otaColor};border-color:${otaColor}" title="${escapeHtml(device.last_ota_error || '')}">${escapeHtml(t(otaKey[device.last_ota_result] || device.last_ota_result))}</span>
+             <small style="color:var(--text-muted)">${escapeHtml([device.last_ota_from, device.last_ota_to].filter(Boolean).join(' → '))}${device.last_ota_at ? ` · ${escapeHtml(new Date(device.last_ota_at).toLocaleString())}` : ''}</small>`
+          : '—'
+        const firmwareCell = device.firmware_version
+          ? `${escapeHtml(device.firmware_version)}${device.firmware_project ? `<br><small style="color:var(--text-muted)">${escapeHtml(device.firmware_project)}</small>` : ''}`
+          : '—'
         return `<tr data-device-id="${device.id}">
           <td>${escapeHtml(device.name)}</td>
           <td><span class="fm-pill" style="color:${statusColor};border-color:${statusColor}">${escapeHtml(t(status))}</span></td>
           <td style="font-family:monospace">${host ? `<a href="http://${escapeHtml(host)}" target="_blank" rel="noopener noreferrer">${escapeHtml(device.ip_address!)}</a>` : '—'}</td>
+          <td>${firmwareCell}</td>
+          <td>${otaCell}</td>
           <td><span class="fm-pill">${escapeHtml(t(device.auto_assign_enabled ? 'common.on' : 'common.off'))}</span></td>
           <td>${device.last_used_at ? escapeHtml(new Date(device.last_used_at).toLocaleString()) : escapeHtml(t('common.never'))}</td>
           <td style="text-align:right"><span class="fm-row-actions">${tableAction('edit', { id: device.id })}${tableAction('delete', { id: device.id })}</span></td>
         </tr>`
-      }).join('') : `<tr><td colspan="6">${escapeHtml(t('admin.noDevices'))}</td></tr>`
+      }).join('') : `<tr><td colspan="8">${escapeHtml(t('admin.noDevices'))}</td></tr>`
       tbody.querySelectorAll<HTMLButtonElement>('.btn-edit').forEach(button => button.addEventListener('click', () => {
         const device = devices.find(item => item.id === Number(button.dataset.id))
         if (device && !editor && !pendingAction) openEditor(device, button)
@@ -139,6 +176,67 @@ import FormDialog from '../../components/FormDialog.astro'
       }))
       updateRowActions()
     }
+    let firmware: FirmwareRecord[] = []
+    const firmwareError = document.getElementById('firmware-error')!
+    function showFirmwareError(message: string | null) {
+      firmwareError.textContent = message || ''
+      firmwareError.classList.toggle('hidden', !message)
+    }
+    function formatSize(bytes: number) { return bytes >= 1024 * 1024 ? `${(bytes / 1048576).toFixed(2)} MB` : `${Math.round(bytes / 1024)} KB` }
+    async function loadFirmware() {
+      try {
+        firmware = await api.get<FirmwareRecord[]>('/admin/firmware')
+        renderFirmware()
+      } catch (error) {
+        if (isAbortError(error)) return
+        document.getElementById('firmware-table')!.innerHTML = `<tr><td colspan="5" role="alert" style="color:var(--error-text)">${escapeHtml(t('admin.firmwareFailedLoad'))}</td></tr>`
+      }
+    }
+    function renderFirmware() {
+      const tbody = document.getElementById('firmware-table')!
+      tbody.innerHTML = firmware.length ? firmware.map(item => `<tr>
+          <td style="font-family:monospace">${escapeHtml(item.project)}</td>
+          <td>${escapeHtml(item.version)} ${item.is_current ? `<span class="fm-pill" style="color:var(--accent-2);border-color:var(--accent-2)">${escapeHtml(t('admin.firmwareCurrent'))}</span>` : ''}</td>
+          <td>${escapeHtml(formatSize(item.size))}</td>
+          <td>${item.created_at ? escapeHtml(new Date(item.created_at).toLocaleString()) : '—'}</td>
+          <td style="text-align:right"><span class="fm-row-actions">
+            ${item.is_current ? '' : `<button type="button" class="fm-btn fm-btn-outline fw-current" data-id="${item.id}">${escapeHtml(t('admin.firmwareSetCurrent'))}</button>${tableAction('delete', { id: item.id })}`}
+          </span></td>
+        </tr>`).join('') : `<tr><td colspan="5">${escapeHtml(t('admin.firmwareNone'))}</td></tr>`
+      tbody.querySelectorAll<HTMLButtonElement>('.fw-current').forEach(button => button.addEventListener('click', async () => {
+        showFirmwareError(null)
+        try { await api.post(`/admin/firmware/${button.dataset.id}/current`); await loadFirmware() }
+        catch (error) { if (!isAbortError(error)) showFirmwareError(error instanceof Error ? error.message : t('admin.firmwareFailedAction')) }
+      }))
+      tbody.querySelectorAll<HTMLButtonElement>('.btn-delete').forEach(button => button.addEventListener('click', async () => {
+        showFirmwareError(null)
+        if (!(await dialogWindow.__fmConfirm(t('admin.firmwareConfirmDelete')))) return
+        try { await api.delete(`/admin/firmware/${button.dataset.id}`); await loadFirmware() }
+        catch (error) { if (!isAbortError(error)) showFirmwareError(error instanceof Error ? error.message : t('admin.firmwareFailedAction')) }
+      }))
+    }
+    const firmwareInput = document.getElementById('firmware-file') as HTMLInputElement
+    const firmwareButton = document.getElementById('firmware-upload') as HTMLButtonElement
+    firmwareButton.addEventListener('click', () => firmwareInput.click())
+    firmwareInput.addEventListener('change', async () => {
+      const file = firmwareInput.files?.[0]
+      if (!file) return
+      showFirmwareError(null)
+      firmwareButton.disabled = true
+      firmwareButton.textContent = t('admin.firmwareUploading')
+      try {
+        const body = new FormData()
+        body.append('file', file)
+        await request('/admin/firmware', { method: 'POST', body })
+        await loadFirmware()
+      } catch (error) {
+        if (!isAbortError(error)) showFirmwareError(error instanceof Error ? error.message : t('admin.firmwareFailedUpload'))
+      } finally {
+        firmwareInput.value = ''
+        firmwareButton.disabled = false
+        firmwareButton.textContent = t('admin.firmwareUpload')
+      }
+    })
     function updateRowActions() {
       document.querySelectorAll<HTMLButtonElement>('#devices-table .btn-edit, #devices-table .btn-delete, #btn-new').forEach(button => { button.disabled = pendingAction || editor !== null })
     }
@@ -155,7 +253,7 @@ import FormDialog from '../../components/FormDialog.astro'
       const row = document.createElement('tr')
       row.id = 'device-editor-row'
       const cell = row.insertCell()
-      cell.colSpan = 6
+      cell.colSpan = 8
       const form = template.content.firstElementChild!.cloneNode(true) as HTMLFormElement
       cell.append(form)
       opener.closest('tr')!.after(row)
@@ -252,6 +350,7 @@ import FormDialog from '../../components/FormDialog.astro'
       } finally { pendingAction = false; createState.setBusy(false); createButton.textContent = t('common.create'); updateRowActions() }
     })
     updateRowActions()
+    void loadFirmware()
     loadDevices().finally(() => { pendingAction = false; updateRowActions() })
   </script>
 </Layout>

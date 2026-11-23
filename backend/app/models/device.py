@@ -29,6 +29,14 @@ class Device(Base, TimestampMixin):
     auto_assign_timeout: Mapped[int] = mapped_column(Integer, default=60, server_default="60")
 
     custom_fields: Mapped[dict[str, Any] | None] = mapped_column(nullable=True)
+
+    firmware_project: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    firmware_version: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    last_ota_result: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    last_ota_error: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    last_ota_from: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    last_ota_to: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    last_ota_at: Mapped[datetime | None] = mapped_column(TZDateTime(), nullable=True)
     
     @property
     def is_online(self) -> bool:

@@ -13,6 +13,7 @@ from app.api.v1.devices import router as devices_router
 from app.api.v1.display import router as display_router
 from app.api.v1.events import router as events_router
 from app.api.v1.filamentdb_proxy import router as filamentdb_router
+from app.api.v1.firmware_admin import router as firmware_admin_router
 from app.api.v1.filaments import router, router_colors, router_filaments
 from app.api.v1.label_assets import router as label_assets_router
 from app.api.v1.label_presets import router as label_presets_router
@@ -74,6 +75,7 @@ api_router.include_router(print_projects_router)
 api_router.include_router(spool_print_jobs_router)
 api_router.include_router(slicer_link_router)
 api_router.include_router(admin_router)
+api_router.include_router(firmware_admin_router)
 api_router.include_router(devices_router)
 api_router.include_router(display_router)
 api_router.include_router(tag_router)

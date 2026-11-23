@@ -100,6 +100,13 @@ class DeviceResponse(BaseModel):
     is_online: bool = False
     auto_assign_enabled: bool = False
     auto_assign_timeout: int = 60
+    firmware_project: str | None = None
+    firmware_version: str | None = None
+    last_ota_result: str | None = None
+    last_ota_error: str | None = None
+    last_ota_from: str | None = None
+    last_ota_to: str | None = None
+    last_ota_at: datetime | None = None
 
     class Config:
         from_attributes = True
