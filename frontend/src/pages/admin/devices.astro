@@ -30,8 +30,8 @@ import FormDialog from '../../components/FormDialog.astro'
       </span>
     </div>
     <p class="fm-field-hint" style="padding:0 16px" data-i18n="admin.deviceFirmwareHint"></p>
-    <div class="fm-settings-row" id="firmware-auto-row" style="padding:0 16px"><label for="firmware-auto" data-i18n="admin.firmwareAutoImport">Automatically load new versions from GitHub (every 6 h)</label><label class="fm-toggle"><input type="checkbox" id="firmware-auto" /><span class="fm-toggle-slider"></span></label></div>
-    <div class="fm-settings-row" id="firmware-prune-row" style="padding:0 16px"><label for="firmware-prune" data-i18n="admin.firmwareKeepLatestOnly">Keep only the current and the latest firmware (delete older ones automatically)</label><label class="fm-toggle"><input type="checkbox" id="firmware-prune" /><span class="fm-toggle-slider"></span></label></div>
+    <div class="fm-firmware-option" id="firmware-auto-row"><label class="fm-toggle"><input type="checkbox" id="firmware-auto" /><span class="fm-toggle-slider"></span></label><label for="firmware-auto" data-i18n="admin.firmwareAutoImport">Automatically load new versions from GitHub (every 6 h)</label></div>
+    <div class="fm-firmware-option" id="firmware-prune-row"><label class="fm-toggle"><input type="checkbox" id="firmware-prune" /><span class="fm-toggle-slider"></span></label><label for="firmware-prune" data-i18n="admin.firmwareKeepLatestOnly">Keep only the current and the latest firmware (delete older ones automatically)</label></div>
     <div id="firmware-update-hint" class="hidden" style="padding:0 16px"></div>
     <div id="firmware-error" class="fm-alert-error hidden" role="alert" style="margin:8px 16px"></div>
     <ul id="firmware-github-result" class="fm-field-hint hidden" style="padding:0 16px 8px 32px" aria-live="polite"></ul>
@@ -83,6 +83,12 @@ import FormDialog from '../../components/FormDialog.astro'
     #edit-timeout-group[hidden] { display: none; }
     #token-display { font-family: monospace; }
     /* Kein Umbruch mitten im Wort (global: overflow-wrap:anywhere); breite Tabelle scrollt statt zu quetschen. */
+    /* Schalter direkt vor seinem Text, damit beides sichtbar zusammengehoert */
+    .fm-firmware-option { display: flex; align-items: center; gap: 12px; padding: 6px 16px; cursor: pointer; }
+    .fm-firmware-option.hidden { display: none; }
+    .fm-firmware-option > label[for] { font-size: inherit; cursor: pointer; }
+    #firmware-auto-row { margin-top: 8px; }
+    #firmware-prune-row { margin-bottom: 12px; }
     .fm-devices-table :global(td) { overflow-wrap: normal; white-space: nowrap; }
     .fm-devices-table :global(.fm-ota-error) { display: block; margin-top: 2px; max-width: 22rem; color: var(--error-text); white-space: normal; overflow-wrap: anywhere; }
   </style>
