@@ -23,6 +23,7 @@ class AppSettingsResponse(BaseModel):
     filament_lookup_source: str = "filamandb"
     mcp_enabled: bool = False
     mcp_write_enabled: bool = False
+    firmware_auto_import: bool = False
 
 
 class AppSettingsUpdate(BaseModel):
@@ -54,6 +55,7 @@ class AppSettingsUpdate(BaseModel):
     filament_lookup_source: Literal["filamandb", "disabled"] | None = None
     mcp_enabled: bool | None = None
     mcp_write_enabled: bool | None = None
+    firmware_auto_import: bool | None = None
 
 
 def _available_lookup_source(value: str) -> str:
@@ -73,6 +75,7 @@ def _to_response(settings_row: AppSettings) -> AppSettingsResponse:
         filament_lookup_source=_available_lookup_source(settings_row.filament_lookup_source),
         mcp_enabled=settings_row.mcp_enabled,
         mcp_write_enabled=settings_row.mcp_write_enabled,
+        firmware_auto_import=settings_row.firmware_auto_import,
     )
 
 

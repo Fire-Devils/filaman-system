@@ -25,11 +25,14 @@ import FormDialog from '../../components/FormDialog.astro'
       <strong data-i18n="admin.deviceFirmware">Firmware</strong>
       <span>
         <input type="file" id="firmware-file" accept=".bin" class="fm-visually-hidden" />
+        <button type="button" id="firmware-github" class="fm-btn fm-btn-outline" data-i18n="admin.firmwareGithub">Load from GitHub</button>
         <button type="button" id="firmware-upload" class="fm-btn fm-btn-primary" data-i18n="admin.firmwareUpload">Upload firmware</button>
       </span>
     </div>
     <p class="fm-field-hint" style="padding:0 16px" data-i18n="admin.deviceFirmwareHint"></p>
+    <div class="fm-settings-row" id="firmware-auto-row" style="padding:0 16px"><label for="firmware-auto" data-i18n="admin.firmwareAutoImport">Automatically load new versions from GitHub (every 6 h)</label><label class="fm-toggle"><input type="checkbox" id="firmware-auto" /><span class="fm-toggle-slider"></span></label></div>
     <div id="firmware-error" class="fm-alert-error hidden" role="alert" style="margin:8px 16px"></div>
+    <ul id="firmware-github-result" class="fm-field-hint hidden" style="padding:0 16px 8px 32px" aria-live="polite"></ul>
     <table class="fm-table">
       <thead><tr>
         <th data-i18n="admin.firmwareProject">Project</th><th data-i18n="admin.firmwareVersion">Version</th><th data-i18n="admin.firmwareSize">Size</th>
@@ -235,6 +238,50 @@ import FormDialog from '../../components/FormDialog.astro'
         firmwareInput.value = ''
         firmwareButton.disabled = false
         firmwareButton.textContent = t('admin.firmwareUpload')
+      }
+    })
+    const githubButton = document.getElementById('firmware-github') as HTMLButtonElement
+    const githubResult = document.getElementById('firmware-github-result')!
+    interface GithubImportResult { release: string; results: { asset: string; status: string; project: string | null; version: string | null; message: string }[] }
+    githubButton.addEventListener('click', async () => {
+      showFirmwareError(null)
+      githubResult.classList.add('hidden')
+      githubButton.disabled = true
+      githubButton.textContent = t('admin.firmwareGithubLoading')
+      try {
+        const result = await api.post<GithubImportResult>('/admin/firmware/github-import')
+        githubResult.innerHTML = `<li>${escapeHtml(t('admin.firmwareGithubRelease'))} ${escapeHtml(result.release)}</li>` + (result.results.length
+          ? result.results.map(item => `<li>${escapeHtml(item.asset)}: ${escapeHtml(t(`admin.firmwareGithubStatus.${item.status}`))}${item.message ? ` - ${escapeHtml(item.message)}` : ''}</li>`).join('')
+          : `<li>${escapeHtml(t('admin.firmwareGithubNoAssets'))}</li>`)
+        githubResult.classList.remove('hidden')
+        await loadFirmware()
+      } catch (error) {
+        if (!isAbortError(error)) showFirmwareError(error instanceof Error ? error.message : t('admin.firmwareGithubFailed'))
+      } finally {
+        githubButton.disabled = false
+        githubButton.textContent = t('admin.firmwareGithub')
+      }
+    })
+    const autoToggle = document.getElementById('firmware-auto') as HTMLInputElement
+    void (async () => {
+      try {
+        const settings = await api.get<{ firmware_auto_import?: boolean }>('/admin/app-settings/')
+        autoToggle.checked = !!settings.firmware_auto_import
+      } catch {
+        // devices-only admins may lack access to the app settings
+        document.getElementById('firmware-auto-row')!.classList.add('hidden')
+      }
+    })()
+    autoToggle.addEventListener('change', async () => {
+      const wanted = autoToggle.checked
+      autoToggle.disabled = true
+      try {
+        await api.put('/admin/app-settings/', { firmware_auto_import: wanted })
+      } catch (error) {
+        autoToggle.checked = !wanted
+        if (!isAbortError(error)) showFirmwareError(error instanceof Error ? error.message : t('admin.firmwareGithubFailed'))
+      } finally {
+        autoToggle.disabled = false
       }
     })
     function updateRowActions() {

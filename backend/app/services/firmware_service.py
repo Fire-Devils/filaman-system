@@ -8,8 +8,11 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from fastapi import HTTPException, status
+from sqlalchemy import select, update
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import DATA_DIR
+from app.models import DeviceFirmware
 
 MAX_FIRMWARE_BYTES = 2_097_152
 ESP_IMAGE_MAGIC = 0xE9
@@ -80,3 +83,66 @@ def delete_firmware_file(sha256: str) -> None:
         firmware_path(sha256).unlink(missing_ok=True)
     except ValueError:
         pass
+
+
+async def _sha_in_use(db: AsyncSession, sha256: str) -> bool:
+    query = select(DeviceFirmware.id).where(DeviceFirmware.sha256 == sha256)
+    return (await db.execute(query)).first() is not None
+
+
+async def import_firmware(
+    db: AsyncSession, data: bytes, *, skip_identical: bool = True
+) -> tuple[DeviceFirmware, str]:
+    """Store an image and register it. Status: imported | replaced | exists.
+
+    With ``skip_identical`` an already stored identical image of the same
+    project+version is left untouched (is_current included). Without it the
+    entry is (re-)activated as current, as for a manual upload.
+    Raises HTTPException 400/413 for invalid images and 409 when the same
+    image is stored under another project/version.
+    """
+    info = parse_firmware(data)
+    existing = (
+        await db.execute(
+            select(DeviceFirmware).where(
+                DeviceFirmware.project == info.project, DeviceFirmware.version == info.version
+            )
+        )
+    ).scalar_one_or_none()
+    same_sha = (
+        await db.execute(select(DeviceFirmware).where(DeviceFirmware.sha256 == info.sha256))
+    ).scalar_one_or_none()
+    if same_sha is not None and (existing is None or same_sha.id != existing.id):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "code": "firmware_exists",
+                "message": f"Identical image already stored as {same_sha.project} {same_sha.version}",
+            },
+        )
+    if skip_identical and existing is not None and existing.sha256 == info.sha256:
+        return existing, "exists"
+
+    store_firmware_file(info.sha256, data)
+    old_sha: str | None = None
+    if existing is None:
+        entry = DeviceFirmware(project=info.project, version=info.version, size=info.size, sha256=info.sha256)
+        db.add(entry)
+        result = "imported"
+    else:
+        entry = existing
+        if entry.sha256 != info.sha256:
+            old_sha = entry.sha256
+        entry.size = info.size
+        entry.sha256 = info.sha256
+        result = "replaced"
+    await db.flush()
+    await db.execute(
+        update(DeviceFirmware).where(DeviceFirmware.project == info.project).values(is_current=False)
+    )
+    entry.is_current = True
+    await db.commit()
+    await db.refresh(entry)
+    if old_sha and not await _sha_in_use(db, old_sha):
+        delete_firmware_file(old_sha)
+    return entry, result

@@ -35,3 +35,5 @@ class AppSettings(Base, TimestampMixin):
     # second, separate opt-in.
     mcp_enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     mcp_write_enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    # Periodically import new ESP firmware images from GitHub releases.
+    firmware_auto_import: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)

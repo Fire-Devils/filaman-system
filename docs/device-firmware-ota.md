@@ -50,6 +50,25 @@ Permission `admin:devices_manage`.
 | `POST /api/v1/admin/firmware` | Multipart field `file`; 201 |
 | `POST /api/v1/admin/firmware/{id}/current` | Make current for its project |
 | `DELETE /api/v1/admin/firmware/{id}` | 204; `409 firmware_is_current` for the current version |
+| `POST /api/v1/admin/firmware/github-import` | Load the latest GitHub release, see below; `502 github_unavailable` |
+
+## GitHub import
+
+`POST /api/v1/admin/firmware/github-import` (button "Load from GitHub" under Admin > Devices) reads
+`https://api.github.com/repos/Fire-Devils/FilaMan-System-ESP32/releases/latest` and imports all
+assets named `upgrade_filaman_firmware_[esp32s3_]v<version>.bin`; other assets (`filaman_full_*`,
+`upgrade_filaman_website_*`) are ignored. Downloads are limited to 2 MB and to https hosts
+`github.com`, `api.github.com` and `*.githubusercontent.com` (also across redirects).
+
+The response is `{"release": "<tag>", "results": [{"asset", "status", "project", "version", "message"}]}`
+with status `imported` (new, becomes current), `replaced` (same project+version, new image),
+`exists` (identical image already stored, nothing is changed, so a deliberate rollback of
+`is_current` stays), `skipped` (image larger than 2 MB, or no `FMFWINFO1` marker as in releases
+up to 3.4.11) or `failed`.
+
+The app setting `firmware_auto_import` (default off, toggle on the same page) runs the same
+import 5 minutes after start and then every 6 hours, in the primary worker only. Errors are
+logged and retried at the next run.
 
 ## Security
 

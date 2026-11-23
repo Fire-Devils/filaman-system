@@ -56,6 +56,8 @@ _primary_socket = AsyncExitStack()
 _DISPLAY_REFRESH_INTERVAL = 15
 _WATCHDOG_INTERVAL = 60  # seconds
 _TAKEOVER_INTERVAL = 1  # seconds
+_FIRMWARE_IMPORT_FIRST_DELAY = 5 * 60
+_FIRMWARE_IMPORT_INTERVAL = 6 * 60 * 60
 _LABEL_ASSET_CLEANUP_INTERVAL = 24 * 60 * 60
 _LABEL_ASSET_REQUEST_BYTES = 6 * 1024 * 1024
 _next_label_asset_cleanup = 0.0
@@ -193,6 +195,24 @@ async def _display_snapshot_loop() -> None:
             except Exception:
                 logger.exception("Display snapshot refresh failed")
         await asyncio.sleep(_DISPLAY_REFRESH_INTERVAL if _is_primary else _TAKEOVER_INTERVAL)
+
+
+async def _firmware_auto_import_loop() -> None:
+    """Import new ESP firmware from GitHub (opt-in setting), primary worker only."""
+    from app.services.firmware_github import run_firmware_auto_import_once
+
+    delay = _FIRMWARE_IMPORT_FIRST_DELAY
+    while True:
+        await asyncio.sleep(delay)
+        delay = _FIRMWARE_IMPORT_INTERVAL if _is_primary else _TAKEOVER_INTERVAL
+        if not _is_primary or worker_is_draining():
+            continue
+        try:
+            await run_firmware_auto_import_once()
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception("Firmware auto import failed (will retry later)")
 
 
 async def _cleanup_stale_label_assets() -> None:
@@ -442,13 +462,14 @@ async def lifespan(app: FastAPI):
         # for the primary and automatic takeover for secondary workers).
         watchdog_task = asyncio.create_task(_driver_watchdog())
         display_task = asyncio.create_task(_display_snapshot_loop())
+        firmware_task = asyncio.create_task(_firmware_auto_import_loop())
 
         try:
             logger.info("FilaMan backend started")
             yield
         finally:
             logger.info("Shutting down FilaMan backend...")
-            await finish_on_cancel(_shutdown_workers(watchdog_task, display_task))
+            await finish_on_cancel(_shutdown_workers(watchdog_task, display_task, firmware_task))
             logger.info("FilaMan backend stopped")
 
 
