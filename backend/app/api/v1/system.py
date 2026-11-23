@@ -21,7 +21,7 @@ from urllib.parse import quote
 import httpx
 from fastapi import APIRouter, File, HTTPException, Query, Request, UploadFile, status
 from fastapi.responses import FileResponse, JSONResponse, Response
-from pydantic import BaseModel, StrictBool, ValidationError
+from pydantic import BaseModel, ValidationError
 from sqlalchemy import DateTime, LargeBinary, delete, func, select, text
 from sqlalchemy.engine import CursorResult
 from sqlalchemy.exc import SQLAlchemyError
@@ -140,6 +140,17 @@ from app.services.plugin_service import (
     plugin_restore_lock,
     version_key,
 )
+from app.services.plugin_ui_launchers import (
+    Mode as LauncherMode,
+)
+from app.services.plugin_ui_launchers import (
+    PluginEditorLauncher,
+    UiLauncherItem,
+    discover_ui_launchers,
+)
+from app.services.plugin_ui_launchers import (
+    Surface as LauncherSurface,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -169,11 +180,6 @@ class PluginNavItem(BaseModel):
 
     class Config:
         from_attributes = True
-
-
-class PluginEditorLauncher(BaseModel):
-    style: Literal["text", "icon"] = "text"
-    allow_auto_open: StrictBool = False
 
 
 class FilamentPluginHookItem(PluginNavItem):
@@ -270,6 +276,20 @@ async def plugin_icon(plugin_key: str, db: DBSession, _principal: PrincipalDep):
         "X-Content-Type-Options": "nosniff",
         "Cache-Control": "private, no-cache",
     })
+
+
+@public_router.get("/plugin-ui-launchers", response_model=list[UiLauncherItem])
+async def plugin_ui_launchers(
+    db: DBSession, principal: PrincipalDep, surface: LauncherSurface,
+    mode: LauncherMode | None = None,
+):
+    editor = surface.endswith(".editor")
+    if editor != (mode is not None):
+        raise HTTPException(status_code=422, detail="mode is required only for editor surfaces")
+    entity, location = surface.split(".")
+    if location != "library":
+        await ensure_any_permission(db, principal, f"{entity}:{'create' if mode == 'create' else 'update'}")
+    return await discover_ui_launchers(db, surface, mode)
 
 
 @public_router.get("/filament-plugin-hooks", response_model=list[FilamentPluginHookItem], response_model_exclude_unset=True)

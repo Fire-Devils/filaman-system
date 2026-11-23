@@ -1,4 +1,6 @@
 ---
+import ColorPluginHooks from '../../components/ColorPluginHooks.astro'
+import PluginUiLaunchers from '../../components/PluginUiLaunchers.astro'
 import ColorEditorFields from '../../components/ColorEditorFields.astro'
 import FormDialog from '../../components/FormDialog.astro'
 import InventoryLoadMore from '../../components/InventoryLoadMore.astro'
@@ -10,6 +12,7 @@ import Layout from '../../layouts/Layout.astro'
   <div class="fm-list-toolbar">
     <h1 data-i18n="colors.title">Color Library</h1>
     <div class="fm-list-controls">
+      <PluginUiLaunchers surface="colors.library" />
       <span data-inventory-count></span>
       <InventoryFilterReset scope="columns" />
       <button id="btn-new" class="fm-btn fm-btn-primary" data-i18n="colors.addColor">Add Color</button>
@@ -38,6 +41,7 @@ import Layout from '../../layouts/Layout.astro'
 
   <FormDialog id="modal-container" titleId="modal-title" titleKey="colors.addColor" title="Add Color" wide>
     <Fragment slot="actions">
+      <ColorPluginHooks />
       <button type="submit" form="modal-form" id="modal-submit" disabled class="fm-btn fm-btn-primary" data-i18n="common.save">Save</button>
       <button type="button" id="modal-cancel" data-dialog-close class="fm-btn fm-btn-outline" data-i18n="common.cancel">Cancel</button>
     </Fragment>
@@ -49,10 +53,11 @@ import Layout from '../../layouts/Layout.astro'
   </FormDialog>
 
   <script>
+    import { hasPermission, type User } from '../../lib/auth'
     import { t, initI18n, translatePage } from '../../lib/i18n'
     import { getAbortSignal, isAbortError } from '../../lib/abort'
     import { initInventoryScroll, inventoryLocalPages } from '../../lib/inventory-scroll'
-    import { fetchAllPages } from '../../lib/api'
+    import { api, fetchAllPages } from '../../lib/api'
     import { colorUsageHtml } from '../../lib/color-library-links'
     import { bindAlphaColorControls, normalizeHexCode, toColorSwatchBackground } from '../../lib/colors'
     import { escapeHtml } from '../../lib/extra-fields'
@@ -67,22 +72,26 @@ import Layout from '../../layouts/Layout.astro'
     } from '../../lib/table-column-filters'
     import { tableAction } from '../../lib/table-actions'
     import { initColumnLocks } from '../../lib/column-locks'
-    import { bindFormDialog } from '../../lib/form-dialog'
+    import { bindFormDialog, type AppDialogs } from '../../lib/form-dialog'
+    import { mountColorPluginHooks } from '../../lib/color-plugin-hooks'
+    import { mountPluginUiLaunchers } from '../../lib/plugin-ui-launchers'
     import { bindFormState } from '../../lib/form-state'
     import { mountPanel } from '../../lib/panel-navigation'
 
     mountPanel('colors', async panelSignal => {
     await initI18n()
+    if (panelSignal.aborted) return
 
     const modalForm = document.getElementById('modal-form') as HTMLFormElement
     const formState = bindFormState(modalForm, document.getElementById('modal-submit') as HTMLButtonElement)
-    const formDialog = bindFormDialog(document.getElementById('modal-container') as HTMLDialogElement, { canClose: () => !formState.busy })
+    const formDialog = bindFormDialog(document.getElementById('modal-container') as HTMLDialogElement, { canClose: () => !formState.busy, onClose: () => colorHooks.close() })
 
     interface ColorRecord { id: number; name: string; hex_code: string; usage_count: number }
     type ColorSortKey = 'name' | 'hex_code' | 'usage_count'
-    const dialogs = window as unknown as { __fmConfirm: (message: string) => Promise<boolean>; __fmAlert: (message: string) => Promise<boolean> }
+    const dialogs = window as unknown as AppDialogs
     const isSortKey = (key: unknown): key is ColorSortKey => key === 'name' || key === 'hex_code' || key === 'usage_count'
     let colors: ColorRecord[] = []
+    let editorUsage = 0
     let sortKey: ColorSortKey | null = 'name'
     let sortDirection: 'asc' | 'desc' | null = 'asc'
     let columnFilters: Record<string, ColumnFilterValue> = {}
@@ -310,13 +319,26 @@ import Layout from '../../layouts/Layout.astro'
 
     }
     
-    function openModal(id: number | null = null, name: string = '', hex: string = '#000000') {
+    let openRequest = 0
+    async function openModal(id: number | null = null, name: string = '', hex: string = '#000000', usageCount?: number) {
+      const request = ++openRequest
+      if (id && usageCount === undefined) {
+        try {
+          const current = await api.get<ColorRecord>(`/colors/${id}`, {signal: panelSignal})
+          if (request !== openRequest || panelSignal.aborted || formState.busy) return
+          name = current.name; hex = current.hex_code; usageCount = current.usage_count
+        } catch (error) {
+          if (request === openRequest && !panelSignal.aborted && !isAbortError(error)) dialogs.__fmAlert(t('common.errorLoadingData'))
+          return
+        }
+      }
       const title = document.getElementById('modal-title')!
       const idInput = document.getElementById('color-id') as HTMLInputElement
       const nameInput = document.getElementById('color-name') as HTMLInputElement
       const error = document.getElementById('modal-error')!
       
       title.textContent = id ? t('colors.editColor') : t('colors.addColor')
+      editorUsage = usageCount || 0
       idInput.value = id ? String(id) : ''
       nameInput.value = name
       colorControls.reset(normalizeHexCode(hex) || '#000000')
@@ -324,6 +346,7 @@ import Layout from '../../layouts/Layout.astro'
       
       formState.reset()
       formDialog.open()
+      void colorHooks.refresh()
       nameInput.focus()
     }
     
@@ -349,6 +372,47 @@ import Layout from '../../layouts/Layout.astro'
       alphaValueInput: alphaValue,
       alphaHexInput: alphaHex,
     })
+    const colorHooks = mountColorPluginHooks(
+      document.querySelector<HTMLElement>('[data-color-plugin-hooks]')!,
+      document.getElementById('modal-container') as HTMLDialogElement,
+      {
+        read() {
+          const id = Number((document.getElementById('color-id') as HTMLInputElement).value) || null
+          return {mode: id ? 'edit' : 'create', color_id: id,
+            usage_count: editorUsage,
+            fields: {name: (document.getElementById('color-name') as HTMLInputElement).value,
+              hex_code: normalizeHexCode(hexInput.value) || ''}}
+        },
+        busy: () => formState.busy,
+        stage(value) {
+          (document.getElementById('color-name') as HTMLInputElement).value = value.name
+          colorControls.reset(value.hex_code)
+          formState.update()
+        },
+        async openExisting(id, isCurrent, revalidate) {
+          if (formState.busy || !isCurrent()) return false
+          const signature = () => JSON.stringify(['color-id', 'color-name', 'color-hex'].map(key => (document.getElementById(key) as HTMLInputElement).value))
+          const expected = signature()
+          try {
+            const account = await api.get<User>('/auth/me', {signal: panelSignal})
+            if (!isCurrent() || formState.busy || !hasPermission(account, 'colors:update')) return false
+            const existing = await api.get<ColorRecord>(`/colors/${id}`, {signal: panelSignal})
+            if (!isCurrent() || formState.busy) return false
+            if (modalForm.dataset.dirty === 'true' && !await dialogs.__fmConfirm(
+              t('colors.confirmOpenExisting', {name: existing.name}), {okLabel: t('pluginLaunchers.openColor'), isDanger: false},
+            )) return false
+            const [currentUser, current, authorized] = await Promise.all([
+              api.get<User>('/auth/me', {signal: panelSignal}), api.get<ColorRecord>(`/colors/${id}`, {signal: panelSignal}), revalidate(),
+            ])
+            if (!authorized || !isCurrent() || formState.busy || !hasPermission(currentUser, 'colors:update')
+              || current.id !== id || expected !== signature()) return false
+            openModal(current.id, current.name, current.hex_code, current.usage_count)
+            return true
+          } catch { return false }
+
+        },
+      }, panelSignal,
+    )
     // Revert hidden alpha values too, so an opaque color can return to a clean state.
     alphaEnabled.addEventListener('change', () => {
       if (!alphaEnabled.checked) colorControls.syncFromHex()
@@ -366,6 +430,7 @@ import Layout from '../../layouts/Layout.astro'
       error.classList.add('hidden')
       if (formState.busy || !modalForm.reportValidity()) return
       formState.setBusy(true)
+      colorHooks.updateEligibility()
       submitBtn.textContent = t('common.saving')
       
       try {
@@ -397,10 +462,16 @@ import Layout from '../../layouts/Layout.astro'
         error.classList.remove('hidden')
       } finally {
         formState.setBusy(false)
+        colorHooks.updateEligibility()
         submitBtn.textContent = t('common.save')
       }
     })
     
+    const workspace = document.querySelector<HTMLElement>('.fm-main') || document.body
+    const libraryHost = document.querySelector<HTMLElement>('[data-plugin-ui-launchers="colors.library"]')!
+    void mountPluginUiLaunchers(libraryHost, {
+      surface: 'colors.library', workspace, isEligible: () => ({enabled: true}), context: () => ({entity: 'colors'}),
+    }, panelSignal).refresh()
     setupTableControls()
     loadColors(false)
 

@@ -753,6 +753,7 @@
     "printJobs": "Impressions"
   },
   "colors": {
+    "confirmOpenExisting": "Ouvrir {name} ? Les modifications non enregistrées seront perdues.",
     "colorCount": "{count} couleur(s)",
     "title": "Bibliothèque de couleurs",
     "addColor": "Ajouter une couleur",
@@ -2532,5 +2533,13 @@
     "lot": "lot {lot}",
     "select": "Bobine à lier",
     "failed": "La suggestion n’a pas pu être appliquée."
+  },
+  "pluginLaunchers": {
+    "replaceAction": "Remplacer l’outil",
+    "openColor": "Ouvrir la couleur",
+    "retry": "Réessayer les outils de plugin",
+    "more": "Autres outils de plugin",
+    "replace": "Remplacer l’outil ouvert ? La conversation non enregistrée sera fermée.",
+    "selectRecords": "Sélectionnez des éléments"
   }
 }

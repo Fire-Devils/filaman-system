@@ -534,14 +534,20 @@ async def create_color(
 
 @router_colors.get("/{color_id}", response_model=ColorResponse)
 async def get_color(color_id: int, db: DBSession, principal: PrincipalDep):
-    result = await db.execute(select(Color).where(Color.id == color_id))
-    color = result.scalar_one_or_none()
-    if not color:
+    result = await db.execute(
+        select(Color, func.count(func.distinct(FilamentColor.filament_id)))
+        .outerjoin(FilamentColor, Color.id == FilamentColor.color_id)
+        .where(Color.id == color_id)
+        .group_by(Color.id)
+    )
+    row = result.one_or_none()
+    if row is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail={"code": "not_found", "message": "Color not found"},
         )
-    return color
+    color, usage_count = row
+    return ColorResponse.model_validate({**color.__dict__, "usage_count": usage_count})
 
 
 @router_colors.patch("/{color_id}", response_model=ColorResponse)

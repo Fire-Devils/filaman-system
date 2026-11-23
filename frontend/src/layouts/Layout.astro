@@ -513,7 +513,9 @@ const panel = pagePanel ?? (Astro.url.pathname.replace(/\/$/, '') === '/settings
           adminNav.classList.toggle('invisible', !user.is_superadmin && !user.permissions.some(p => p.startsWith('admin:')))
           const access = JSON.stringify([user.id, user.is_superadmin, [...user.permissions].sort()])
           if (sidebarAccess !== access) {
+            const changed = sidebarAccess !== undefined
             sidebarAccess = access
+            if (changed) window.dispatchEvent(new Event('filaman:permissions-changed'))
             lastPluginNav = undefined
             sidebar.setPlugins([])
           }

@@ -45,7 +45,7 @@ try {
     }
   })
   await page.route('**/plugin-page/fixture?*', route => route.fulfill({
-    contentType: 'text/html', body: '<!doctype html><title>Plugin fixture</title><p>Plugin fixture</p>',
+    contentType: 'text/html', body: '<!doctype html><title>Plugin fixture</title><input aria-label="Assistant draft"><p>Plugin fixture</p>',
   }))
   await page.route(/\/(?:api\/|auth\/me$)/, async route => {
     const req = route.request()
@@ -68,12 +68,14 @@ try {
     }
     let json = []
     if (path.endsWith('/me')) json = { id: 1, email: 'fixture@example.invalid', language: 'en', is_superadmin: true, permissions: [], roles: [] }
-    else if (path.endsWith('/filament-plugin-hooks')) {
-      const editor = url.searchParams.get('surface') === 'edit' && url.searchParams.get('include_launcher') === 'true'
+    else if (path.endsWith('/plugin-ui-launchers')) {
+      if (url.searchParams.get('surface').endsWith('.library')) return route.fulfill({json: []})
+      const editor = url.searchParams.get('mode') === 'edit'
       if (editor && delayedDiscovery) await delayedDiscovery
+      const descriptor = p => ({...p, plugin_name: p.name, label: p.name, launcher_id: 'legacy', legacy: true, surface: url.searchParams.get('surface')})
       json = editor && !editorPluginActive ? [] : [
-        editor ? { ...plugin, editor_launcher: { style: 'icon', allow_auto_open: true } } : plugin,
-        { ...plugin, name: 'External plugin', page_url: 'https://example.invalid/fixture' },
+        descriptor(editor ? { ...plugin, editor_launcher: { style: 'icon', allow_auto_open: true } } : plugin),
+        descriptor({ ...plugin, name: 'External plugin', page_url: 'https://example.invalid/fixture' }),
       ]
     }
     else if (path.endsWith('/colors/99')) json = newColor
@@ -166,7 +168,7 @@ try {
   await field('spool_width_mm').fill('66')
   const spoolProfile = field('filament-spool-profile').getByRole('status')
   await spoolProfile.filter({ hasText: reel.name }).waitFor()
-  const create = await openPlugin('editor')
+  let create = await openPlugin('editor')
   assert.equal(await launch.textContent(), plugin.name)
   const context = await message(create, 'filaman:filament-context')
   assert.equal(context.mode, 'create')
@@ -197,7 +199,12 @@ try {
     window.referenceSettled = false
     window.previousPluginWindow = document.querySelector('dialog[open] iframe').contentWindow
     window.fetch = async (...args) => {
-      const response = await original(...args)
+      let response
+      try { response = await original(...args) }
+      catch (error) {
+        if (String(args[0]).endsWith('/colors/99')) window.referenceSettled = true
+        throw error
+      }
       if (String(args[0]).endsWith('/colors/99')) {
         const json = response.json.bind(response)
         response.json = async () => {
@@ -214,12 +221,12 @@ try {
   }] }, location.origin))
   await reloadStarted
   await Promise.all([page.waitForEvent('framenavigated', frame => frame === create), create.evaluate(() => location.reload())])
-  await create.getByText('Plugin fixture', { exact: true }).waitFor()
-  assert.equal(await page.evaluate(() => document.querySelector('dialog[open] iframe').contentWindow === window.previousPluginWindow), true)
+  await page.waitForFunction(() => !document.querySelector('dialog[open] iframe'))
   releaseReloadRead()
   await page.waitForFunction(() => window.referenceSettled)
   assert.equal(await field('designation').inputValue(), 'Unsaved draft')
   await page.evaluate(() => window.restoreReferenceFetch())
+  create = await openPlugin('editor')
   assert.equal((await message(create, 'filaman:filament-context')).fields.color_id, null)
 
   let releaseTimedRead
@@ -259,8 +266,13 @@ try {
   assert.equal(filled.fields.manufacturer_name, newManufacturer.name)
   assert.equal(filled.fields.palette_color_name, newColor.name)
   assert.equal(writes.length, 0)
-  if (await dialog.isVisible()) await dialog.getByRole('button', { name: 'Close' }).click()
+  await create.getByRole('textbox', {name: 'Assistant draft'}).fill('Keep the filament research')
   await Promise.all([page.waitForResponse(r => r.request().method() === 'POST' && r.url().endsWith('/filaments')), field('submit-btn').click()])
+  await page.getByText('Fixture intercepted Save', {exact: true}).waitFor()
+  assert.equal(await dialog.isVisible(), true)
+  assert.equal(page.frames().find(frame => frame.url().includes('filament_host=editor')), create)
+  assert.equal(await create.getByRole('textbox', {name: 'Assistant draft'}).inputValue(), 'Keep the filament research')
+  assert.equal((await message(create, 'filaman:filament-context')).fields.designation, 'Proposed PLA')
   assert.equal(writes[0].designation, 'Proposed PLA')
   assert.equal(writes[0].material_type, 'PETG')
   assert.equal(writes[0].diameter_mm, 2.85)
@@ -336,7 +348,7 @@ try {
   assert.equal(await launch.evaluate(button => button === document.activeElement), true)
   await page.locator('#btn-edit-filament').click()
   editorPluginActive = false
-  const rediscovery = page.waitForResponse(response => response.url().includes('surface=edit&include_launcher=true'), { timeout: 1000 })
+  const rediscovery = page.waitForResponse(response => response.url().includes('surface=filaments.editor&mode=edit'), { timeout: 1000 })
   await page.locator('#btn-enter-filament-edit').click()
   await rediscovery
   await launch.waitFor({ state: 'detached' })
@@ -372,10 +384,10 @@ try {
   assert.equal(await dialog.isVisible(), false)
 
   delayedDiscovery = new Promise(resolve => { releaseDiscovery = resolve })
-  const pendingDiscovery = page.waitForRequest(request => request.url().includes('surface=edit&include_launcher=true'))
+  const pendingDiscovery = page.waitForRequest(request => request.url().includes('surface=filaments.editor&mode=edit'))
   await page.goto(new URL('/filaments/10?edit=1', base).href)
   await pendingDiscovery
-  const abortedDiscovery = page.waitForEvent('requestfailed', request => request.url().includes('surface=edit&include_launcher=true'))
+  const abortedDiscovery = page.waitForEvent('requestfailed', request => request.url().includes('surface=filaments.editor&mode=edit'))
   await page.evaluate(() => window.dispatchEvent(new Event('beforeunload')))
   await abortedDiscovery
   await page.evaluate(() => window.dispatchEvent(new PageTransitionEvent('pagehide', { persisted: true })))
@@ -567,7 +579,7 @@ try {
   }
   await checkThemes('#plugin-iframe')
   await page.route('**/plugin-page/fixture', route => route.fulfill({
-    contentType: 'text/html', body: '<!doctype html><html data-theme="brand"><title>Plugin fixture</title><p>Plugin fixture</p></html>',
+    contentType: 'text/html', body: '<!doctype html><html data-theme="brand"><title>Plugin fixture</title><input aria-label="Assistant draft"><p>Plugin fixture</p></html>',
   }))
   await page.goto(new URL('/plugin-view?p=fixture', base).href)
   await checkThemes('#plugin-frame')

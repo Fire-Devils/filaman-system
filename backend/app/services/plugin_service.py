@@ -834,6 +834,20 @@ class PluginInstallService:
             if value is not None and not isinstance(value, dict):
                 raise PluginInstallError(f"Invalid manifest field: {field}.", "invalid_manifest")
 
+        from app.services.plugin_ui_launchers import (
+            owned_plugin_page,
+            parse_ui_launchers,
+        )
+
+        try:
+            launchers = parse_ui_launchers(manifest.get("capabilities") or {})
+            if launchers and not owned_plugin_page(manifest["plugin_key"], manifest.get("page_url")):
+                raise ValueError("Launcher page must belong to this plugin")
+            if launchers and not (plugin_dir / "page.html").is_file():
+                raise PluginInstallError("Launcher page.html is missing", "missing_file")
+        except ValueError as exc:
+            raise PluginInstallError(str(exc), "invalid_manifest") from exc
+
         dependencies = manifest.get("dependencies")
         if dependencies is not None and (
             not isinstance(dependencies, list)
