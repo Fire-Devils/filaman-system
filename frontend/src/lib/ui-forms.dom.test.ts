@@ -29,7 +29,7 @@ const printer = { id: 4, name: 'Example printer', driver_key: 'moonraker', drive
 const dependencies = {
   ...dialog, ...state, ...driver, ...i18n, ...abort, ...scanner, ...escape, ...actions, ...colors, ...filters, ...inventoryScroll, ...locationTypes, ...driverLocations, api, createExtraFieldDefinitionDialog, copyText, initColumnLocks, colorUsageHtml,
   fetchAllPages: async () => ({ items: [{ id: 2, name: 'Translucent blue', hex_code: fixtureColorHex, usage_count: 1 }] }),
-  initI18n: async () => {}, initCurrency: async () => {}, initColumnPicker: () => {}, initColumnResize: () => {},
+  initI18n: async () => {}, initCurrency: async () => {}, initMaterialPresets: () => {}, initColumnPicker: () => {}, initColumnResize: () => {},
   invalidateCachePrefix: () => {}, CACHE_KEYS: { LOCATIONS: 'locations' },
   cachedFetchAllPages: async () => ({ items: [{ id: 3, name: 'Shelf "A" <blue>', identifier: 'UID', location_type: 'Storage', spool_count: 1 }] }),
 }
@@ -107,7 +107,7 @@ it('saves visible app settings without resetting the hidden lookup preference', 
   expect(JSON.parse(String(writes()[0].init!.body))).toEqual({
     login_disabled: false, currency: 'EUR', rfid_protocol: 'openspool',
     rfid_extended_data_enabled: false, rfid_display_colons: true,
-    default_spool_core_weight_g: 60, bambu_unmatched_profile_fallback: 'generic',
+    default_spool_core_weight_g: 60, default_empty_spool_weight_g: null, bambu_unmatched_profile_fallback: 'generic',
     mcp_enabled: false, mcp_write_enabled: false,
   })
   await vi.waitFor(() => expect(save.disabled).toBe(true))
