@@ -50,3 +50,12 @@ Permission `admin:devices_manage`.
 | `POST /api/v1/admin/firmware` | Multipart field `file`; 201 |
 | `POST /api/v1/admin/firmware/{id}/current` | Make current for its project |
 | `DELETE /api/v1/admin/firmware/{id}` | 204; `409 firmware_is_current` for the current version |
+
+## Security
+
+Images are not signed. Devices verify only the SHA-256 from the `latest` response and the
+project marker, both served by the FilaMan server. Anyone who can spoof traffic between a
+device and the server (especially over plain `http://`) could push their own firmware. This
+is an accepted trade-off (decision 2026-11-23): FilaMan and its devices are meant to run on
+the owner's own trusted network and must not be exposed to the internet. If that changes,
+add offline-key signing (e.g. Ed25519 in CI, public key built into the firmware).
