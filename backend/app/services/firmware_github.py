@@ -72,6 +72,25 @@ def _asset_project_version(name: str) -> tuple[str, str] | None:
     return project, name.rsplit("_v", 1)[1][: -len(".bin")]
 
 
+async def used_firmware_projects(db: AsyncSession) -> set[str] | None:
+    """Firmware projects reported by active devices; None if unknown (no device reported one)."""
+    from sqlalchemy import select
+
+    from app.models import Device
+
+    rows = await db.scalars(
+        select(Device.firmware_project)
+        .where(
+            Device.is_active.is_(True),
+            Device.deleted_at.is_(None),
+            Device.firmware_project.is_not(None),
+            Device.firmware_project != "",
+        )
+        .distinct()
+    )
+    return set(rows.all()) or None
+
+
 async def fetch_latest_release_info() -> dict:
     """Read the latest release (tag + versions per project) without downloading anything.
 
@@ -111,12 +130,22 @@ async def import_latest_release(db: AsyncSession) -> dict:
             release = response.json()
             tag = str(release.get("tag_name", ""))
             results: list[dict] = []
+            used = await used_firmware_projects(db)
             for asset in release.get("assets") or []:
                 name = str(asset.get("name", ""))
                 if not ASSET_RE.match(name):
                     continue
                 item = {"asset": name, "status": "failed", "project": None, "version": None, "message": ""}
                 results.append(item)
+                parsed = _asset_project_version(name)
+                if parsed and used is not None and parsed[0] not in used:
+                    item.update(
+                        status="skipped",
+                        project=parsed[0],
+                        version=parsed[1],
+                        message="Kein Gerät mit dieser Platine angemeldet",
+                    )
+                    continue
                 if int(asset.get("size") or 0) > fw.MAX_FIRMWARE_BYTES:
                     item.update(status="skipped", message="Image größer als 2 MB, übersprungen")
                     continue

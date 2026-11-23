@@ -416,13 +416,17 @@ class FirmwareUpdateInfo(BaseModel):
 async def _firmware_updates(db: AsyncSession, latest: dict[str, str]) -> list[FirmwareUpdateInfo]:
     """Compare GitHub firmware versions with the current ones in FilaMan (fresh from the DB)."""
     from app.models import DeviceFirmware
+    from app.services.firmware_github import used_firmware_projects
 
+    used = await used_firmware_projects(db)
     rows = (
         await db.execute(select(DeviceFirmware.project, DeviceFirmware.version).where(DeviceFirmware.is_current.is_(True)))
     ).all()
     current = {project: version for project, version in rows}
     result = []
     for project, latest_version in sorted(latest.items()):
+        if used is not None and project not in used:
+            continue
         cur = current.get(project)
         result.append(
             FirmwareUpdateInfo(

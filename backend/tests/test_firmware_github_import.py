@@ -241,3 +241,86 @@ async def test_auto_import_once(db_session, monkeypatch):
     result = await firmware_github.run_firmware_auto_import_once()
     assert result["results"][0]["status"] == "imported"
     assert (await db_session.execute(select(DeviceFirmware))).scalars().one().version == "3.5.0"
+
+
+async def _add_device(db_session, project, *, active=True, deleted=False, n=[0]):
+    from datetime import datetime, timezone
+
+    from app.models import Device
+
+    n[0] += 1
+    db_session.add(
+        Device(
+            name=f"d{n[0]}",
+            device_type="scale",
+            token_hash="x",
+            is_active=active,
+            deleted_at=datetime.now(timezone.utc) if deleted else None,
+            firmware_project=project,
+        )
+    )
+    await db_session.commit()
+
+
+async def _run_filtered(auth_client, monkeypatch):
+    client, csrf = auth_client
+    names = ["upgrade_filaman_firmware_v3.5.0.bin", "upgrade_filaman_firmware_esp32s3_v3.5.0.bin"]
+    hits = []
+    mock_github(
+        monkeypatch,
+        {"tag_name": "v3.5.0", "assets": [asset(n) for n in names]},
+        {names[0]: make_image(ESP32, "3.5.0"), names[1]: make_image(S3, "3.5.0")},
+        hits,
+    )
+    r = await client.post(URL, headers={"X-CSRF-Token": csrf})
+    assert r.status_code == 200
+    return by_asset(r.json()), names, hits
+
+
+@pytest.mark.asyncio
+async def test_no_device_reports_imports_all(auth_client, db_session, monkeypatch):
+    await _add_device(db_session, None)
+    await _add_device(db_session, "")
+    res, names, _ = await _run_filtered(auth_client, monkeypatch)
+    assert all(res[n]["status"] == "imported" for n in names)
+
+
+@pytest.mark.asyncio
+async def test_only_s3_device_skips_esp32_without_download(auth_client, db_session, monkeypatch):
+    await _add_device(db_session, S3)
+    res, names, hits = await _run_filtered(auth_client, monkeypatch)
+    assert res[names[0]]["status"] == "skipped"
+    assert res[names[0]]["project"] == ESP32 and res[names[0]]["version"] == "3.5.0"
+    assert "Kein Gerät" in res[names[0]]["message"]
+    assert res[names[1]]["status"] == "imported"
+    assert not any(u.endswith(names[0]) for u in hits)
+
+
+@pytest.mark.asyncio
+async def test_mixed_devices_import_both(auth_client, db_session, monkeypatch):
+    await _add_device(db_session, ESP32)
+    await _add_device(db_session, S3)
+    res, names, _ = await _run_filtered(auth_client, monkeypatch)
+    assert all(res[n]["status"] == "imported" for n in names)
+
+
+@pytest.mark.asyncio
+async def test_inactive_and_deleted_devices_do_not_count(auth_client, db_session, monkeypatch):
+    await _add_device(db_session, S3)
+    await _add_device(db_session, ESP32, active=False)
+    await _add_device(db_session, ESP32, deleted=True)
+    res, names, _ = await _run_filtered(auth_client, monkeypatch)
+    assert res[names[0]]["status"] == "skipped"
+    assert res[names[1]]["status"] == "imported"
+
+
+@pytest.mark.asyncio
+async def test_manual_upload_ignores_used_projects(auth_client, db_session):
+    client, csrf = auth_client
+    await _add_device(db_session, S3)
+    r = await client.post(
+        "/api/v1/admin/firmware",
+        headers={"X-CSRF-Token": csrf},
+        files={"file": ("f.bin", make_image(ESP32, "3.5.0"))},
+    )
+    assert r.status_code in (200, 201), r.text

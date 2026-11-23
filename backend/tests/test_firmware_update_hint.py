@@ -94,3 +94,16 @@ async def test_cache_hit_recomputes_current(auth_client, monkeypatch):
     assert n_after_import > n
     assert second[ESP32]["current_version"] == "3.6.0"
     assert second[ESP32]["update_available"] is False
+
+
+@pytest.mark.asyncio
+async def test_hint_only_reported_projects(auth_client, db_session, monkeypatch):
+    from app.models import Device
+
+    client, _ = auth_client
+    rel, _ = release("3.6.0")
+    mock_github(monkeypatch, rel, {})
+    assert set(fw((await client.get(VC)).json())) == {ESP32, S3}  # no device reported
+    db_session.add(Device(name="d", device_type="scale", token_hash="x", firmware_project=S3))
+    await db_session.commit()
+    assert set(fw((await client.get(VC)).json())) == {S3}  # cache hit, fresh filter

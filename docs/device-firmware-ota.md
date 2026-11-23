@@ -66,6 +66,13 @@ with status `imported` (new, becomes current), `replaced` (same project+version,
 `is_current` stays), `skipped` (image larger than 2 MB, or no `FMFWINFO1` marker as in releases
 up to 3.4.11) or `failed`.
 
+Only boards in use are imported: the projects reported by active, non-deleted devices
+(`firmware_project` from the heartbeat) form the allowed set. Assets of other boards are not
+downloaded and get status `skipped` with the message "Kein Gerät mit dieser Platine angemeldet"
+(project and version taken from the asset name). If no device has reported a project yet (fresh
+install, only old scales), all projects are imported. This applies to the manual and the
+automatic import; a manual upload accepts every board.
+
 The app setting `firmware_auto_import` (default off, toggle on the same page) runs the same
 import 5 minutes after start and then every 6 hours, in the primary worker only. Errors are
 logged and retried at the next run.
@@ -90,7 +97,9 @@ check; `current_version` (the `is_current` image) and `update_available` are com
 database on every call. `update_available` is true if GitHub is newer or FilaMan has no image
 for the project. If GitHub is unreachable the list is empty. The admin overview links to
 `/admin/devices`, where a banner with an "Import now" button triggers the GitHub import above.
-Nothing is imported automatically by the hint.
+Nothing is imported automatically by the hint. Projects no active device uses are left out of
+the list (all are shown while no device has reported a project); this is evaluated on every
+call, also on a cache hit.
 
 ## Security
 
