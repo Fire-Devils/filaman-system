@@ -1,6 +1,18 @@
 {
   "versions": [
     {
+      "version": "UNRELEASED",
+      "date": "",
+      "changes": {
+        "de": [
+          { "type": "security", "text": "Slicer-Profile von Spulen und Filamenten (Standardprofil, Profil je Druckermodell, Übernahme der Spulenprofile ins Filament) lassen sich nur noch mit Bearbeitungsrecht für Spulen bzw. Filamente ändern. Bisher reichte dafür eine Anmeldung, auch als Betrachter." }
+        ],
+        "en": [
+          { "type": "security", "text": "Spool and filament slicer profiles (default profile, per-printer-model profile, copying spool profiles to the filament) now require the spool or filament update permission. Before, any logged-in user could change them, including viewers." }
+        ]
+      }
+    },
+    {
       "version": "2.5.0",
       "date": "",
       "changes": {

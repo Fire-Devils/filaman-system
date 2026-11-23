@@ -1693,7 +1693,7 @@ async def set_spool_default_slicer_profile(
     body: DefaultSlicerProfileBody,
     request: Request,
     db: DBSession,
-    principal: PrincipalDep,
+    principal=RequirePermission("spools:update"),
 ):
     """Set default Bambu cloud slicer profile for a spool (all connected models)."""
     if not _is_primary_worker():
@@ -1731,7 +1731,7 @@ async def set_spool_model_slicer_profile(
     body: ModelSlicerProfileBody,
     request: Request,
     db: DBSession,
-    principal: PrincipalDep,
+    principal=RequirePermission("spools:update"),
 ):
     """Set or clear a per-model slicer profile override on a spool."""
     if not _is_primary_worker():
@@ -1852,7 +1852,7 @@ async def backfill_spool_profiles_to_filament(
     body: BackfillToFilamentBody,
     request: Request,
     db: DBSession,
-    principal: PrincipalDep,
+    principal=RequirePermission("filaments:update"),
 ):
     """Copy this spool's slicer profiles to its parent filament."""
     if not _is_primary_worker():

@@ -1458,7 +1458,7 @@ async def set_filament_default_slicer_profile(
     body: DefaultFilamentSlicerProfileBody,
     request: Request,
     db: DBSession,
-    principal: PrincipalDep,
+    principal=RequirePermission("filaments:update"),
 ):
     """Set default Bambu cloud slicer profile for a filament."""
     if not _is_primary_worker():
@@ -1500,7 +1500,7 @@ async def set_filament_model_slicer_profile(
     body: ModelFilamentSlicerProfileBody,
     request: Request,
     db: DBSession,
-    principal: PrincipalDep,
+    principal=RequirePermission("filaments:update"),
 ):
     """Set or clear a per-model slicer profile override on a filament."""
     if not _is_primary_worker():
