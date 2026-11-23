@@ -60,10 +60,10 @@
     "description": "Development preview of source-backed filament and spool research in FilaMan. Connect an OpenAI-compatible model endpoint for model-assisted research and chat.",
     "publisher": "akira69",
     "repository_url": "https://github.com/akira69/filabrain",
-    "version": "0.1.27",
+    "version": "0.1.28",
     "min_filaman_version": "2.2.2",
-    "github_release_url": "https://github.com/akira69/filabrain/releases/download/v0.1.27-preview.1/filabrain-0.1.27.zip",
-    "sha256": "9eb3af3a7a65fac6aa59b49e8f524d704e50ce10381f7689d26d139d3521c24b"
+    "github_release_url": "https://github.com/akira69/filabrain/releases/download/v0.1.28-preview.1/filabrain-0.1.28.zip",
+    "sha256": "a6097eb9cb32ca266c0fc12f9f53e394e98104f03a94613d72edf5f0a7311d8d"
   },
   {
     "plugin_key": "spoolmanscale",
