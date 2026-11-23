@@ -1,6 +1,18 @@
 {
   "versions": [
     {
+      "version": "UNRELEASED",
+      "date": "",
+      "changes": {
+        "de": [
+          { "type": "improved", "text": "Plugin-Katalog: Die FilaBrain-Vorschau ist auf 0.1.27 aktualisiert (ein gemeinsamer Filament-Arbeitsbereich für bestehende und neue Filamente, klarere Farbauswahl vor dem Speichern, bessere Handy-Ansicht). (#286, beigetragen von akira69)" }
+        ],
+        "en": [
+          { "type": "improved", "text": "Plugin catalog: the FilaBrain preview is updated to 0.1.27 (one filament workspace for existing and new filaments, clearer color selection before saving, improved phone layout). (#286, contributed by akira69)" }
+        ]
+      }
+    },
+    {
       "version": "2.4.0",
       "date": "",
       "changes": {
