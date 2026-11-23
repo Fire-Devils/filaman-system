@@ -64,6 +64,42 @@ def _detail(exc: HTTPException) -> str:
     return str(detail.get("message")) if isinstance(detail, dict) else str(detail)
 
 
+def _asset_project_version(name: str) -> tuple[str, str] | None:
+    """Map an asset name to (project, version); None if it is not a firmware image."""
+    if not ASSET_RE.match(name):
+        return None
+    project = "filaman-scale-esp32s3" if "_esp32s3_v" in name else "filaman-scale-esp32"
+    return project, name.rsplit("_v", 1)[1][: -len(".bin")]
+
+
+async def fetch_latest_release_info() -> dict:
+    """Read the latest release (tag + versions per project) without downloading anything.
+
+    Raises GithubUnavailableError when GitHub cannot be reached.
+    """
+    from app.services.plugin_service import version_key
+
+    try:
+        async with httpx.AsyncClient(timeout=TIMEOUT) as client:
+            response = await client.get(
+                GITHUB_FIRMWARE_RELEASE_URL, headers={"Accept": "application/vnd.github+json"}
+            )
+            if response.status_code != 200:
+                raise GithubUnavailableError(f"GitHub antwortete mit HTTP {response.status_code}")
+            release = response.json()
+    except (httpx.HTTPError, ValueError) as exc:
+        raise GithubUnavailableError(f"GitHub nicht erreichbar ({type(exc).__name__})") from exc
+    projects: dict[str, str] = {}
+    for asset in release.get("assets") or []:
+        parsed = _asset_project_version(str(asset.get("name", "")))
+        if parsed is None:
+            continue
+        project, version = parsed
+        if project not in projects or version_key(version) > version_key(projects[project]):
+            projects[project] = version
+    return {"tag": str(release.get("tag_name", "")), "projects": projects}
+
+
 async def import_latest_release(db: AsyncSession) -> dict:
     try:
         async with httpx.AsyncClient(timeout=TIMEOUT) as client:

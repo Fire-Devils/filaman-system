@@ -389,6 +389,7 @@ _VERSION_CACHE_TTL = 86400  # 24 hours in seconds
 def _invalidate_version_cache() -> None:
     """Version-Cache invalidieren (nach Plugin-Installation/-Deinstallation)."""
     _VERSION_CACHE["data"] = None
+    _VERSION_CACHE["firmware"] = None
     _VERSION_CACHE["ts"] = 0.0
 
 
@@ -405,11 +406,41 @@ def _read_installed_version() -> str:
     return "unknown"
 
 
+class FirmwareUpdateInfo(BaseModel):
+    project: str
+    latest_version: str
+    current_version: str | None = None
+    update_available: bool = False
+
+
+async def _firmware_updates(db: AsyncSession, latest: dict[str, str]) -> list[FirmwareUpdateInfo]:
+    """Compare GitHub firmware versions with the current ones in FilaMan (fresh from the DB)."""
+    from app.models import DeviceFirmware
+
+    rows = (
+        await db.execute(select(DeviceFirmware.project, DeviceFirmware.version).where(DeviceFirmware.is_current.is_(True)))
+    ).all()
+    current = {project: version for project, version in rows}
+    result = []
+    for project, latest_version in sorted(latest.items()):
+        cur = current.get(project)
+        result.append(
+            FirmwareUpdateInfo(
+                project=project,
+                latest_version=latest_version,
+                current_version=cur,
+                update_available=cur is None or version_key(latest_version) > version_key(cur),
+            )
+        )
+    return result
+
+
 class VersionCheckResponse(BaseModel):
     installed_version: str
     latest_version: str | None = None
     update_available: bool = False
     latest_plugins: list[AvailablePluginResponse] = []
+    firmware_updates: list[FirmwareUpdateInfo] = []
 
 
 @router.get("/version-check", response_model=VersionCheckResponse)
@@ -426,13 +457,14 @@ async def version_check(
         _VERSION_CACHE["data"] is not None
         and (now - _VERSION_CACHE["ts"]) < _VERSION_CACHE_TTL
     ):
-        cached = _VERSION_CACHE["data"]
+        cached = dict(_VERSION_CACHE["data"])
         # Always use current installed version (may change after update)
         cached["installed_version"] = installed
         cached["update_available"] = (
             version_key(cached["latest_version"]) > version_key(installed)
             if cached["latest_version"] else False
         )
+        cached["firmware_updates"] = await _firmware_updates(db, _VERSION_CACHE.get("firmware") or {})
         return VersionCheckResponse(**cached)
 
     # Fetch latest system version from GitHub
@@ -459,6 +491,14 @@ async def version_check(
     else:
         plugin_updates = await _available_plugin_rows(db, releases, installed)
 
+    from app.services import firmware_github
+
+    try:
+        firmware_latest = (await firmware_github.fetch_latest_release_info())["projects"]
+    except firmware_github.GithubUnavailableError:
+        logger.warning("Failed to fetch latest ESP firmware version from GitHub")
+        firmware_latest = {}
+
     update_available = version_key(latest_version) > version_key(installed) if latest_version else False
 
     result_data = {
@@ -469,9 +509,12 @@ async def version_check(
     }
 
     _VERSION_CACHE["data"] = result_data
+    _VERSION_CACHE["firmware"] = firmware_latest
     _VERSION_CACHE["ts"] = now
 
-    return VersionCheckResponse(**result_data)
+    return VersionCheckResponse(
+        **result_data, firmware_updates=await _firmware_updates(db, firmware_latest)
+    )
 
 
 @router.get("/plugins/available", response_model=list[AvailablePluginResponse])

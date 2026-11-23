@@ -8,7 +8,7 @@ import FormDialog from '../../components/FormDialog.astro'
     <AdminHeader titleKey="admin.deviceTokens" title="Device Tokens">
       <button type="button" id="btn-new" class="fm-btn fm-btn-primary" data-i18n="admin.createDevice">Create Device</button>
     </AdminHeader>
-    <div class="fm-card fm-admin-table">
+    <div class="fm-card fm-admin-table fm-table-scroll fm-devices-table">
       <table class="fm-table">
         <thead><tr>
           <th data-i18n="common.name">Name</th><th data-i18n="common.status">Status</th>
@@ -31,6 +31,7 @@ import FormDialog from '../../components/FormDialog.astro'
     </div>
     <p class="fm-field-hint" style="padding:0 16px" data-i18n="admin.deviceFirmwareHint"></p>
     <div class="fm-settings-row" id="firmware-auto-row" style="padding:0 16px"><label for="firmware-auto" data-i18n="admin.firmwareAutoImport">Automatically load new versions from GitHub (every 6 h)</label><label class="fm-toggle"><input type="checkbox" id="firmware-auto" /><span class="fm-toggle-slider"></span></label></div>
+    <div id="firmware-update-hint" class="hidden" style="padding:0 16px"></div>
     <div id="firmware-error" class="fm-alert-error hidden" role="alert" style="margin:8px 16px"></div>
     <ul id="firmware-github-result" class="fm-field-hint hidden" style="padding:0 16px 8px 32px" aria-live="polite"></ul>
     <table class="fm-table">
@@ -80,6 +81,8 @@ import FormDialog from '../../components/FormDialog.astro'
     #edit-auto-timeout { width: 7rem; }
     #edit-timeout-group[hidden] { display: none; }
     #token-display { font-family: monospace; }
+    /* Kein Umbruch mitten im Wort (global: overflow-wrap:anywhere); breite Tabelle scrollt statt zu quetschen. */
+    .fm-devices-table :global(td) { overflow-wrap: normal; white-space: nowrap; }
   </style>
   <script>
     import { t, initI18n, translatePage } from '../../lib/i18n'
@@ -144,7 +147,7 @@ import FormDialog from '../../components/FormDialog.astro'
         const otaColor = device.last_ota_result === 'ok' ? 'var(--accent-2)' : device.last_ota_result === 'failed' || device.last_ota_result === 'rolled_back' ? 'var(--error-text)' : 'var(--text-muted)'
         const otaCell = device.last_ota_result
           ? `<span class="fm-pill" style="color:${otaColor};border-color:${otaColor}" title="${escapeHtml(device.last_ota_error || '')}">${escapeHtml(t(otaKey[device.last_ota_result] || device.last_ota_result))}</span>
-             <small style="color:var(--text-muted)">${escapeHtml([device.last_ota_from, device.last_ota_to].filter(Boolean).join(' → '))}${device.last_ota_at ? ` · ${escapeHtml(new Date(device.last_ota_at).toLocaleString())}` : ''}</small>`
+             <small style="display:block;margin-top:4px;color:var(--text-muted)">${escapeHtml([device.last_ota_from, device.last_ota_to].filter(Boolean).join(' → '))}${device.last_ota_at ? ` · ${escapeHtml(new Date(device.last_ota_at).toLocaleString())}` : ''}</small>`
           : '—'
         const firmwareCell = device.firmware_version
           ? `${escapeHtml(device.firmware_version)}${device.firmware_project ? `<br><small style="color:var(--text-muted)">${escapeHtml(device.firmware_project)}</small>` : ''}`
@@ -255,6 +258,7 @@ import FormDialog from '../../components/FormDialog.astro'
           : `<li>${escapeHtml(t('admin.firmwareGithubNoAssets'))}</li>`)
         githubResult.classList.remove('hidden')
         await loadFirmware()
+        void loadFirmwareHint()
       } catch (error) {
         if (!isAbortError(error)) showFirmwareError(error instanceof Error ? error.message : t('admin.firmwareGithubFailed'))
       } finally {
@@ -262,6 +266,27 @@ import FormDialog from '../../components/FormDialog.astro'
         githubButton.textContent = t('admin.firmwareGithub')
       }
     })
+    const hintBox = document.getElementById('firmware-update-hint')!
+    interface FirmwareUpdate { project: string; latest_version: string; current_version: string | null; update_available: boolean }
+    async function loadFirmwareHint() {
+      try {
+        const data = await api.get<{ firmware_updates?: FirmwareUpdate[] }>('/admin/system/version-check')
+        const updates = (data.firmware_updates || []).filter(u => u.update_available)
+        if (!updates.length) { hintBox.classList.add('hidden'); hintBox.innerHTML = ''; return }
+        hintBox.innerHTML = updates.map(u => {
+          const current = u.current_version ? `v${u.current_version}` : t('admin.firmwareUpdateNone')
+          const text = t('admin.firmwareUpdateBanner').replace('{latest}', u.latest_version).replace('{current}', current)
+          return `<div class="fm-alert-info" style="margin:8px 0;display:flex;justify-content:space-between;align-items:center;gap:12px"><span>${escapeHtml(u.project)}: ${escapeHtml(text)}</span><button type="button" class="fm-btn fm-btn-primary firmware-hint-import">${escapeHtml(t('admin.firmwareUpdateImport'))}</button></div>`
+        }).join('')
+        hintBox.classList.remove('hidden')
+      } catch {
+        hintBox.classList.add('hidden')
+      }
+    }
+    hintBox.addEventListener('click', event => {
+      if ((event.target as HTMLElement).closest('.firmware-hint-import')) githubButton.click()
+    })
+    void loadFirmwareHint()
     const autoToggle = document.getElementById('firmware-auto') as HTMLInputElement
     void (async () => {
       try {

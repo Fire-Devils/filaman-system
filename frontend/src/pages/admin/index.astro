@@ -63,6 +63,10 @@ import Layout from '../../layouts/Layout.astro'
           <span style="font-size: 0.85rem; color: var(--text-muted);" data-i18n="admin.pluginUpdates">Plugin Updates:</span>
           <span id="plugin-update-count" style="font-weight: 600;"></span>
         </div>
+        <a id="firmware-update-row" href="/admin/devices" class="invisible" style="display: flex; align-items: center; gap: 12px; text-decoration: none; color: inherit;">
+          <span style="font-size: 0.85rem; color: var(--text-muted);" data-i18n="admin.firmwareUpdateRow">New scale firmware:</span>
+          <span id="firmware-update-text" style="font-weight: 600; color: var(--error-text);"></span>
+        </a>
         <a href="/admin/system/changelog" class="fm-btn fm-btn-outline" style="margin-top: 8px; text-align: center;" data-i18n="admin.viewChangelog">Changelog</a>
       </div>
     </div>
@@ -192,6 +196,13 @@ import Layout from '../../layouts/Layout.astro'
         if (updatablePlugins.length > 0) {
           pluginRow.classList.remove('invisible')
           pluginCount.textContent = String(updatablePlugins.length)
+        }
+
+        const fwUpdates = (data.firmware_updates || []).filter((f: { update_available?: boolean }) => f.update_available)
+        if (fwUpdates.length > 0) {
+          const versions = [...new Set(fwUpdates.map((f: { latest_version: string }) => f.latest_version))]
+          document.getElementById('firmware-update-text')!.textContent = versions.map(v => t('admin.firmwareUpdateLink').replace('{version}', String(v))).join(', ')
+          document.getElementById('firmware-update-row')!.classList.remove('invisible')
         }
       } catch {
         // Silently fail — card just shows loading dots

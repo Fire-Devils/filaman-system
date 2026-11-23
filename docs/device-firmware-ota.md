@@ -70,6 +70,17 @@ The app setting `firmware_auto_import` (default off, toggle on the same page) ru
 import 5 minutes after start and then every 6 hours, in the primary worker only. Errors are
 logged and retried at the next run.
 
+## Update hint
+
+`GET /api/v1/admin/system/version-check` additionally returns `firmware_updates`: per project
+`{project, latest_version, current_version, update_available}`. The latest versions are read
+from the GitHub release assets (no download) and share the 24 h cache of the system version
+check; `current_version` (the `is_current` image) and `update_available` are computed from the
+database on every call. `update_available` is true if GitHub is newer or FilaMan has no image
+for the project. If GitHub is unreachable the list is empty. The admin overview links to
+`/admin/devices`, where a banner with an "Import now" button triggers the GitHub import above.
+Nothing is imported automatically by the hint.
+
 ## Security
 
 Images are not signed. Devices verify only the SHA-256 from the `latest` response and the
