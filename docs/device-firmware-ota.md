@@ -79,7 +79,7 @@ logged and retried at the next run.
 
 ## Keep only the latest firmware
 
-The app setting `firmware_keep_latest_only` (default off, toggle on the same page) limits the
+The app setting `firmware_keep_latest_only` (default on, toggle on the same page) limits the
 stored images. Per project the `is_current` image and, additionally, the highest version among
 the remaining images are kept; everything older is deleted (database row, and the file unless
 another entry uses the same sha256). Projects without a current image are never touched and

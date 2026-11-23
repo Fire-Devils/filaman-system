@@ -38,4 +38,4 @@ class AppSettings(Base, TimestampMixin):
     # Periodically import new ESP firmware images from GitHub releases.
     firmware_auto_import: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     # Keep only the current and the latest other ESP firmware per project.
-    firmware_keep_latest_only: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    firmware_keep_latest_only: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)

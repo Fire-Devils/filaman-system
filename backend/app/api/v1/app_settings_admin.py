@@ -24,7 +24,7 @@ class AppSettingsResponse(BaseModel):
     mcp_enabled: bool = False
     mcp_write_enabled: bool = False
     firmware_auto_import: bool = False
-    firmware_keep_latest_only: bool = False
+    firmware_keep_latest_only: bool = True
 
 
 class AppSettingsUpdate(BaseModel):
