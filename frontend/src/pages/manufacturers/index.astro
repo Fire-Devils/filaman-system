@@ -11,7 +11,6 @@ import InventoryFilterReset from '../../components/InventoryFilterReset.astro'
       <button id="btn-new" class="fm-btn fm-btn-primary" data-i18n="manufacturers.addManufacturer">
         Add Manufacturer
       </button>
-      <InventoryFilterReset scope="all" />
     </div>
   </div>
 
@@ -30,7 +29,7 @@ import InventoryFilterReset from '../../components/InventoryFilterReset.astro'
 
   <div class="fm-inventory-toolbar">
     <div data-inventory-count></div>
-    <InventoryFilterReset scope="columns" />
+    <InventoryFilterReset scope="all" />
     <div class="col-picker-wrap">
       <button id="btn-columns" class="fm-btn fm-btn-outline" style="padding: 5px 10px; font-size: 0.8rem; display: flex; align-items: center; gap: 5px; white-space: nowrap;">
         <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 3v18"/><path d="M15 3v18"/></svg>
@@ -294,7 +293,7 @@ import InventoryFilterReset from '../../components/InventoryFilterReset.astro'
     function renderManufacturers(reset = true) {
       updateFilterResets()
       localStorage.setItem('filaman-filters-manufacturers', JSON.stringify({ columns: columnFilters }))
-      void manufacturerList.load(inventoryLocalPages(() => sortManufacturers(filterManufacturers(manufacturers))), reset)
+      void manufacturerList.load(inventoryLocalPages(() => sortManufacturers(filterManufacturers(manufacturers)), false, getFilterValues().search || Object.values(columnFilters).some(isColumnFilterActive) ? () => manufacturers.length : undefined), reset)
     }
 
     function renderManufacturerRows(items: ManufacturerRow[], append: boolean) {

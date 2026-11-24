@@ -1,6 +1,9 @@
 import { astroPageFunction } from '../../tests/helpers/astro-script'
 import { expect, it, vi } from 'vitest'
 import { colorFilterFromIds, colorUsageHtml } from './color-library-links'
+import en from '../i18n/en.json'
+import de from '../i18n/de.json'
+import fr from '../i18n/fr.json'
 
 const t = (key: string, params?: Record<string, unknown>) => `${key}${params ? `:${params.count}` : ''}`
 
@@ -55,4 +58,16 @@ it.each([
     expect(miss.columnFilters.colors).toBeUndefined()
   }
   expect(run('?color_id=abc').columnFilters.colors).toBeUndefined()
+})
+
+
+it.each([
+  [en, '2 filament assignments'], [de, '2 Filament-Zuweisungen'], [fr, '2 affectations de filament'],
+])('labels repeated color stops as assignments rather than distinct filaments', (locale, label) => {
+  const html = colorUsageHtml(7, 2, key => {
+    const value = key === 'colors.usedInFilaments' ? locale.colors.usedInFilaments : locale.colors.showSpools
+    return value.replace('{count}', '2')
+  })
+  expect(html).toContain(label)
+  expect(html).toContain('href="/filaments?color_id=7"')
 })

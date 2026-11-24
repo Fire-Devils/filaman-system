@@ -2,6 +2,7 @@
 
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { abortAllRequests, getAbortSignal } from './abort'
 import { bindInlineColorEditor } from './inline-color-editor'
 
 function renderEditor(onOpenChange = vi.fn()): HTMLFormElement {
@@ -20,6 +21,8 @@ function renderEditor(onOpenChange = vi.fn()): HTMLFormElement {
           <input id="new-color-alpha" type="range" value="100" disabled />
           <input id="new-color-alpha-value" type="number" value="100" disabled />
           <input id="new-color-alpha-hex" value="FF" disabled />
+          <button type="button" id="new-color-wheel-trigger" disabled>Color wheel</button>
+          <div id="new-color-picker-popup" popover data-color-picker-popup><section data-color-picker-wheel></section></div>
           <button type="button" id="btn-save-new-color">Save Color</button>
         </div>
       </details>
@@ -27,7 +30,7 @@ function renderEditor(onOpenChange = vi.fn()): HTMLFormElement {
   `
 
   bindInlineColorEditor({
-    getAbortSignal: () => new AbortController().signal,
+    getAbortSignal,
     getCsrfToken: () => 'csrf',
     isAbortError: () => false,
     onCreated: vi.fn(),
@@ -41,6 +44,28 @@ function renderEditor(onOpenChange = vi.fn()): HTMLFormElement {
 describe('bindInlineColorEditor parent form behavior', () => {
   beforeEach(() => {
     document.body.innerHTML = ''
+  })
+
+  it('shares the popup wheel without adding controls to the parent form', () => {
+    const form = renderEditor()
+    const popup = document.getElementById('new-color-picker-popup')!
+    expect(popup.closest('form')).toBeNull()
+    const hide = vi.fn()
+    popup.hidePopover = hide
+    const trigger = document.getElementById('new-color-wheel-trigger') as HTMLButtonElement
+    const disclosure = document.getElementById('new-color-disclosure') as HTMLDetailsElement
+    disclosure.open = true
+    disclosure.dispatchEvent(new Event('toggle'))
+    expect(trigger.disabled).toBe(false)
+    abortAllRequests()
+    const hue = popup.querySelector<HTMLInputElement>('[data-wheel-hue]')!
+    hue.value = '120'
+    hue.dispatchEvent(new Event('input'))
+    expect(form.querySelector<HTMLInputElement>('#new-color-hex')!.value).toBe('#00FF00')
+    disclosure.open = false
+    disclosure.dispatchEvent(new Event('toggle'))
+    expect(hide).toHaveBeenCalled()
+    expect(trigger.disabled).toBe(true)
   })
 
   it('enables required fields only while the disclosure is open', () => {

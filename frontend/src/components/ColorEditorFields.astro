@@ -5,12 +5,16 @@ interface Props {
   idPrefix: string
   defaultHex?: string
   disabled?: boolean
+  wheel?: boolean
 }
 
-const { idPrefix, defaultHex = '#000000', disabled = false } = Astro.props
+const { idPrefix, defaultHex = '#000000', disabled = false, wheel = false } = Astro.props
 const nameId = `${idPrefix}-name`
 const pickerId = `${idPrefix}-picker`
 const hexId = `${idPrefix}-hex`
+const popupId = `${idPrefix}-picker-popup`
+const triggerId = `${idPrefix}-picker-trigger`
+const wheelTriggerId = `${idPrefix}-wheel-trigger`
 ---
 
 <div class="fm-color-editor-fields">
@@ -30,8 +34,16 @@ const hexId = `${idPrefix}-hex`
 
   <div class="fm-color-editor-value-row">
     <div class="fm-color-editor-picker">
-      <label for={pickerId} class="fm-label" data-i18n="filaments.colorPickerLabel">Color</label>
-      <input type="color" id={pickerId} value={defaultHex} disabled={disabled} />
+      {wheel ? <span class="fm-label" data-i18n="filaments.colorPickerLabel">Color</span> : <label for={pickerId} class="fm-label" data-i18n="filaments.colorPickerLabel">Color</label>}
+      {wheel ? <div class="fm-color-picker-actions">
+        <label id={triggerId} class="fm-color-picker-trigger" title="Edit RGB color" data-i18n-title="colors.editRgbColor">
+          <span id={`${idPrefix}-alpha-preview`} class="filament-color-dot fm-color-picker-trigger-swatch" data-color-picker-swatch aria-hidden="true"></span>
+          <svg width="16" height="16" aria-hidden="true"><use href="/icons.svg?v=2#icon-edit" /></svg>
+          <span>RGB</span>
+          <input type="color" id={pickerId} value={defaultHex} disabled={disabled} class="fm-color-picker-native" aria-label="Edit RGB color" data-i18n-aria-label="colors.editRgbColor" />
+        </label>
+        <button type="button" id={wheelTriggerId} popovertarget={popupId} aria-haspopup="dialog" disabled={disabled} class="fm-color-picker-wheel-trigger" aria-label="Color wheel" data-i18n-aria-label="colors.cleanup.wheel" title="Color wheel" data-i18n-title="colors.cleanup.wheel"><span class="fm-color-library-icon" aria-hidden="true"></span></button>
+      </div> : <input type="color" id={pickerId} value={defaultHex} disabled={disabled} />}
     </div>
     <div class="fm-color-editor-hex">
       <label for={hexId} class="fm-label" data-i18n="colors.hexCode">Hex Code</label>
@@ -48,5 +60,16 @@ const hexId = `${idPrefix}-hex`
     </div>
   </div>
 
-  <ColorOpacityControls idPrefix={idPrefix} disabled={disabled} />
+  <ColorOpacityControls idPrefix={idPrefix} disabled={disabled} showPreview={!wheel} />
 </div>
+
+{wheel && <div id={popupId} popover="auto" role="dialog" aria-labelledby={`${popupId}-title`} class="fm-color-picker-popover" data-color-picker-popup data-trigger={wheelTriggerId}>
+  <header class="fm-color-picker-popup-header">
+    <h3 id={`${popupId}-title`} data-i18n="colors.cleanup.wheel">Color wheel</h3>
+    <div class="fm-color-picker-popup-actions">
+      <button type="button" class="fm-btn fm-btn-outline" data-wheel-cancel data-i18n="common.cancel">Cancel</button>
+      <button type="button" class="fm-btn fm-btn-primary" popovertarget={popupId} popovertargetaction="hide" data-wheel-close data-i18n="common.done">Done</button>
+    </div>
+  </header>
+  <section class="fm-color-picker-wheel" data-color-picker-wheel></section>
+</div>}

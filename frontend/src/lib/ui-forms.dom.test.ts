@@ -10,6 +10,8 @@ import * as scanner from './tag-scanner'
 import * as escape from './extra-fields'
 import * as actions from './table-actions'
 import * as colors from './colors'
+import { bindColorCleanup } from './color-library-cleanup'
+import { bindColorPickerPopup } from './color-picker-wheel'
 import { hasPermission } from './auth'
 import { colorUsageHtml } from './color-library-links'
 import * as inventoryScroll from './inventory-scroll'
@@ -20,6 +22,12 @@ import { api } from './api'
 import { createExtraFieldDefinitionDialog } from './extra-field-definition-dialog'
 import { copyText } from './clipboard'
 import { initColumnLocks } from './column-locks'
+
+// Canvas rendering is covered by the Chrome color-library check.
+vi.mock('./color-wheel', async importOriginal => ({
+  ...await importOriginal<typeof import('./color-wheel')>(),
+  neutralWheelPalette: vi.fn(() => ({ background: 'none' })),
+}))
 
 const calls: { path: string; init?: RequestInit }[] = []
 let failSave = false
@@ -35,6 +43,7 @@ const dependencies = {
   mountColorPluginHooks: (_host: HTMLElement, _workspace: HTMLDialogElement, options: ColorHookOptions) => { capturedColorHooks = options; return {close() {}, refresh: async () => [], updateEligibility() {}} },
   mountPluginUiLaunchers: () => ({refresh: async () => [], updateEligibility() {}}),
   hasPermission, getMe: async () => fixtureUser,
+  bindColorCleanup, bindColorPickerPopup,
   fetchAllPages: async () => ({ items: [{ id: 2, name: 'Translucent blue', hex_code: fixtureColorHex, usage_count: 1 }] }),
   initI18n: async () => {}, initCurrency: async () => {}, initMaterialPresets: () => {}, initColumnPicker: () => {}, initColumnResize: () => {},
   invalidateCachePrefix: () => {}, CACHE_KEYS: { LOCATIONS: 'locations' },
@@ -347,21 +356,32 @@ it('locks AMS on driver-managed slots, resolves non-canonical casing, and reject
   }
 })
 
-it('preserves alpha colors and keeps in-use Delete unavailable', async () => {
+it('preserves alpha colors and disables deletion of an in-use color', async () => {
+  const alert = vi.fn(async () => true)
+  vi.stubGlobal('__fmAlert', alert)
   await boot('filaments/colors')
   await vi.waitFor(() => expect(document.querySelector('.btn-edit')).not.toBeNull())
   expect(document.querySelector<HTMLButtonElement>('.btn-delete')!.disabled).toBe(true)
+  expect(document.querySelector<HTMLButtonElement>('.btn-delete')!.title).toBe(i18n.t('colors.inUseWarning'))
+  document.querySelector<HTMLButtonElement>('.btn-delete')!.click()
+  expect(alert).not.toHaveBeenCalled()
+  expect(writes()).toHaveLength(0)
   expect(document.querySelector('td[data-column-pin="end"] .btn-edit')).not.toBeNull()
   expect(document.querySelector('td[data-column-pin="end"] .btn-delete use')?.getAttribute('href')).toContain('#icon-trash')
   document.querySelector<HTMLButtonElement>('.btn-edit')!.click()
   await vi.waitFor(() => expect(document.querySelector('#modal-container')!.hasAttribute('open')).toBe(true))
   await vi.waitFor(() => expect(document.querySelector<HTMLInputElement>('#color-hex')!.value).toBe('#12345680'))
+  expect(document.querySelector('#modal-form .fm-opacity-preview')).toBeNull()
+  expect(document.getElementById('color-alpha-preview')).toBe(document.querySelector('[data-color-picker-swatch]'))
+  expect(document.getElementById('color-picker')!.closest('form')).toBe(document.getElementById('modal-form'))
+  expect(document.querySelector('[data-color-rgb], [role=tablist]')).toBeNull()
   expect(document.querySelector<HTMLButtonElement>('#modal-submit')!.disabled).toBe(true)
   change('color-name', 'Renamed translucent blue')
+  const rowBeforeSave = document.querySelector('#colors-table tr')
   submit('modal-form')
   await vi.waitFor(() => expect(writes()).toHaveLength(1))
   expect(JSON.parse(String(writes()[0].init!.body))).toEqual({ name: 'Renamed translucent blue', hex_code: '#12345680' })
-  await new Promise(resolve => setTimeout(resolve, 0)) // Settle the Save-owned list render before teardown.
+  await vi.waitFor(() => expect(document.querySelector('#colors-table tr')).not.toBe(rowBeforeSave))
 })
 
 it('ignores a late RFID write response after Escape and reopening the dialog', async () => {
@@ -622,4 +642,51 @@ it.each(['failed lookup', 'later grant'])('color-open checks current authorizati
   expect(await capturedColorHooks!.openExisting(2, () => true, async () => true)).toBe(true)
   expect(calls.filter(call => call.path === '/auth/me')).toHaveLength(2)
   expect(document.querySelector<HTMLInputElement>('#color-id')!.value).toBe('2')
+})
+
+
+it('switches the wheel from a neutral mode when a plugin stages a chromatic color', async () => {
+  await boot('filaments/colors')
+  await vi.waitFor(() => expect(document.querySelector('[data-color-select]')).not.toBeNull())
+  document.querySelector<HTMLButtonElement>('#btn-new')!.click()
+  expect(document.querySelector('[data-color-neutral="black"]')!.getAttribute('aria-pressed')).toBe('true')
+  capturedColorHooks!.stage({name: 'Plugin red', hex_code: '#FF0000'})
+  expect(document.querySelector('[data-wheel-color]')!.getAttribute('aria-pressed')).toBe('true')
+  expect(document.querySelector('[data-color-neutral="black"]')!.getAttribute('aria-pressed')).toBe('false')
+  expect(document.querySelector<HTMLInputElement>('[data-wheel-hex]')!.value).toBe('#FF0000')
+})
+
+it('clears the loaded-row header after filtering selected colors to no rows', async () => {
+  await boot('filaments/colors')
+  await vi.waitFor(() => expect(document.querySelector('[data-color-select]')).not.toBeNull())
+  document.querySelector<HTMLButtonElement>('#color-select-matching')!.click()
+  document.querySelector<HTMLButtonElement>('.col-hex .fm-header-filter-trigger')!.click()
+  const panel = document.querySelector<HTMLElement>('.fm-header-filter-panel.open')!
+  const value = panel.querySelector<HTMLInputElement>('.fm-header-filter-value')!
+  value.value = 'no-match'
+  value.dispatchEvent(new Event('input', {bubbles: true}))
+  Array.from(panel.querySelectorAll('button')).find(button => button.textContent === i18n.t('filters.apply'))!.click()
+  await vi.waitFor(() => expect(document.querySelector('[data-color-select]')).toBeNull())
+  const header = document.querySelector<HTMLInputElement>('#color-select-loaded')!
+  expect(header.disabled).toBe(true)
+  expect(header.checked).toBe(false)
+  expect(header.indeterminate).toBe(false)
+})
+
+
+it('clears the loaded-row header when a successful save cannot reload colors', async () => {
+  vi.spyOn(dependencies, 'fetchAllPages')
+    .mockResolvedValueOnce({items: [{id: 2, name: 'Blue', hex_code: fixtureColorHex, usage_count: 1}]})
+    .mockRejectedValueOnce(new Error('Reload offline'))
+  await boot('filaments/colors')
+  await vi.waitFor(() => expect(document.querySelector('[data-color-select]')).not.toBeNull())
+  document.querySelector<HTMLButtonElement>('#color-select-matching')!.click()
+  document.querySelector<HTMLButtonElement>('#btn-new')!.click()
+  change('color-name', 'New color')
+  submit('modal-form')
+  await vi.waitFor(() => expect(document.querySelector('#colors-table')!.textContent).toContain(i18n.t('colors.failedLoad')))
+  expect(document.querySelector<HTMLButtonElement>('#color-select-matching')!.disabled).toBe(true)
+  const header = document.querySelector<HTMLInputElement>('#color-select-loaded')!
+  expect(header.disabled).toBe(true)
+  expect(header.checked).toBe(false)
 })

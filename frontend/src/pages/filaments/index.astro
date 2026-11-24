@@ -46,7 +46,6 @@ const { compactPicker = false } = Astro.props
       <a id="add-filament" href="/filaments/new" class="fm-btn fm-btn-primary" data-i18n="filaments.addFilament">
         Add Filament
       </a>
-      {!compactPicker && <InventoryFilterReset scope="all" />}
     </div>
   </div>
   
@@ -62,7 +61,6 @@ const { compactPicker = false } = Astro.props
       />
       <button id="filter-search-clear" class="fm-filter-search-clear" type="button" aria-label="Clear search" title="Clear search" data-i18n-aria-label="common.clearSearch" data-i18n-title="common.clearSearch">&times;</button>
     </div>
-    {compactPicker && <InventoryFilterReset scope="all" />}
     <label id="filter-group-control" class="fm-column-group-control" hidden>
       <input type="checkbox" id="filter-group" class="fm-checkbox" />
       <span data-i18n="filaments.groupByManufacturer">Group by Manufacturer</span>
@@ -72,7 +70,7 @@ const { compactPicker = false } = Astro.props
   {compactPicker && <p id="picker-selection-count" role="status"></p>}
   <div class="fm-inventory-toolbar">
     <div data-inventory-count></div>
-    <InventoryFilterReset scope="columns" />
+    <InventoryFilterReset scope="all" />
     <div class="col-picker-wrap">
       <button id="btn-columns" class="fm-btn fm-btn-outline" style="padding: 5px 10px; font-size: 0.8rem; display: flex; align-items: center; gap: 5px; white-space: nowrap;">
         <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 3v18"/><path d="M15 3v18"/></svg>
@@ -160,7 +158,7 @@ const { compactPicker = false } = Astro.props
   <script>
     import { t, initI18n, translatePage } from '../../lib/i18n'
     import { getAbortSignal, isAbortError } from '../../lib/abort'
-    import { initInventoryScroll, inventoryApiPages, inventoryLocalPages } from '../../lib/inventory-scroll'
+    import { initInventoryScroll, inventoryApiPages, inventoryLocalPages, inventoryUnfilteredTotal } from '../../lib/inventory-scroll'
     import { colorFilterParams, fetchAllPages } from '../../lib/api'
     import { colorFilterFromIds } from '../../lib/color-library-links'
     import { cachedFetch, CACHE_KEYS, invalidateCache } from '../../lib/cache'
@@ -556,7 +554,7 @@ const { compactPicker = false } = Astro.props
           ? inventoryLocalPages(async () => {
               const { items } = await fetchAllPages<Filament>(`/api/v1/filaments?${params}`)
               return sortFilaments(hasLocalColumnFilters() ? filterFilaments(items) : items)
-            }, groupBy)
+            }, groupBy, search || Object.entries(columnFilters).some(([key, value]) => isEffectiveColumnFilterActive(key, value)) ? () => inventoryUnfilteredTotal('/api/v1/filaments') : undefined)
           : inventoryApiPages<Filament>('/api/v1/filaments', params)
         if (!await filamentList.load(source, reset, (items, append) => {
           if (compactPicker) reconcilePickerSelection(items)

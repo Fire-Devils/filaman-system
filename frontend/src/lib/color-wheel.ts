@@ -1,5 +1,75 @@
 import { normalizeHexCode } from './colors'
 
+export const COLOR_NEUTRAL_PRESETS = {
+  black: { saturationTo: 20, valueFrom: 0, valueTo: 20 },
+  white: { saturationTo: 10, valueFrom: 80, valueTo: 100 },
+  grey: { saturationTo: 10, valueFrom: 35, valueTo: 65 },
+} as const
+
+type NeutralContexts = [CanvasRenderingContext2D, CanvasRenderingContext2D]
+
+function neutralContexts(size: number): NeutralContexts {
+  const context = () => {
+    const canvas = document.createElement('canvas')
+    canvas.width = canvas.height = size
+    return canvas.getContext('2d', { willReadFrequently: true })!
+  }
+  return [context(), context()]
+}
+
+function paintNeutralWheel([base, tint]: NeutralContexts, cx: number, cy: number, radius: number, saturation: number) {
+  const size = base.canvas.width
+  base.globalAlpha = 1
+  base.globalCompositeOperation = 'source-over'
+  const grayscale = base.createRadialGradient(cx, cy, 0, cx, cy, radius)
+  grayscale.addColorStop(0, '#000'); grayscale.addColorStop(1, '#fff')
+  base.fillStyle = grayscale; base.fillRect(0, 0, size, size)
+  const rainbow = tint.createConicGradient(0, cx, cy)
+  ;['#f00', '#f0f', '#00f', '#0ff', '#0f0', '#ff0', '#f00'].forEach((color, index) => rainbow.addColorStop(index / 6, color))
+  tint.fillStyle = rainbow; tint.fillRect(0, 0, size, size)
+  const center = tint.createRadialGradient(cx, cy, 0, cx, cy, radius * .78)
+  center.addColorStop(0, '#fff'); center.addColorStop(1, 'rgb(255 255 255 / 0%)')
+  tint.fillStyle = center; tint.fillRect(0, 0, size, size)
+  base.globalCompositeOperation = 'color'
+  base.globalAlpha = saturation / 100
+  base.drawImage(tint.canvas, 0, 0)
+}
+
+/** Sample the same pixels displayed by the neutral picker. */
+export function sampleNeutralWheelColor(x: number, y: number, mode: keyof typeof COLOR_NEUTRAL_PRESETS, diameter: number): string {
+  const { pixels, size } = neutralWheelPalette(mode, diameter)
+  const px = Math.max(0, Math.min(size - 1, Math.floor((x + 1) * size / 2)))
+  const py = Math.max(0, Math.min(size - 1, Math.floor((1 - y) * size / 2)))
+  const offset = (py * size + px) * 4
+  return '#' + [...pixels.slice(offset, offset + 3)].map(value => value.toString(16).padStart(2, '0')).join('').toUpperCase()
+}
+
+const neutralPalettes = new Map<string, { background: string; pixels: Uint8ClampedArray; size: number }>()
+
+/** Spread each neutral brightness band across the full shared wheel palette. */
+export function neutralWheelPalette(mode: keyof typeof COLOR_NEUTRAL_PRESETS, diameter: number) {
+  const size = Math.round(diameter), key = `${mode}:${size}`
+  const cached = neutralPalettes.get(key)
+  if (cached) return cached
+  const range = COLOR_NEUTRAL_PRESETS[mode], contexts = neutralContexts(size)
+  const [base] = contexts
+  paintNeutralWheel(contexts, size / 2, size / 2, size / 2, range.saturationTo)
+  const image = base.getImageData(0, 0, size, size), pixels = image.data
+  const min = Math.ceil(range.valueFrom * 255 / 100), max = Math.floor(range.valueTo * 255 / 100)
+  for (let i = 0; i < pixels.length; i += 4) {
+    const value = Math.max(pixels[i], pixels[i + 1], pixels[i + 2])
+    const brightness = Math.round(min + (max - min) * value / 255)
+    for (let channel = i; channel < i + 3; channel++) {
+      const tint = value ? Math.min((value - pixels[channel]) / value, range.saturationTo / 100) : 0
+      pixels[channel] = Math.max(Math.ceil(brightness * (100 - range.saturationTo) / 100), Math.round(brightness * (1 - tint)))
+    }
+  }
+  base.putImageData(image, 0, 0)
+  const palette = { pixels, size, background: `url("${base.canvas.toDataURL()}")` }
+  neutralPalettes.set(key, palette)
+  return palette
+}
+
 export type ColorWheelSample = NonNullable<ReturnType<typeof parseColorSample>>
 export type ColorWheelPoint = ColorWheelSample & { x: number; y: number }
 

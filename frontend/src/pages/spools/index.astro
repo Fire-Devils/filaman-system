@@ -32,7 +32,6 @@ import InventoryFilterReset from '../../components/InventoryFilterReset.astro'
       <a href="/spools/new" class="fm-btn fm-btn-primary" data-i18n="spools.addSpool">
         Add Spool
       </a>
-      <InventoryFilterReset scope="all" />
     </div>
   </div>
   
@@ -59,7 +58,7 @@ import InventoryFilterReset from '../../components/InventoryFilterReset.astro'
 
   <div class="fm-inventory-toolbar">
     <div data-inventory-count></div>
-    <InventoryFilterReset scope="columns" />
+    <InventoryFilterReset scope="all" />
     <div class="col-picker-wrap">
       <button id="btn-columns" class="fm-btn fm-btn-outline" style="padding: 5px 10px; font-size: 0.8rem; display: flex; align-items: center; gap: 5px; white-space: nowrap;">
         <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 3v18"/><path d="M15 3v18"/></svg>
@@ -209,7 +208,7 @@ import InventoryFilterReset from '../../components/InventoryFilterReset.astro'
     } from '../../lib/table-column-filters'
     import { formatPrice, formatRfidUid, getCurrency, initCurrency } from '../../lib/format'
     import { getAbortSignal, isAbortError } from '../../lib/abort'
-    import { initInventoryScroll, inventoryApiPages, inventoryLocalPages } from '../../lib/inventory-scroll'
+    import { initInventoryScroll, inventoryApiPages, inventoryLocalPages, inventoryUnfilteredTotal } from '../../lib/inventory-scroll'
     import { colorFilterParams, fetchAllPages } from '../../lib/api'
     import { colorFilterFromIds } from '../../lib/color-library-links'
     import type { AppDialogs } from '../../lib/form-dialog'
@@ -718,7 +717,7 @@ import InventoryFilterReset from '../../components/InventoryFilterReset.astro'
           ? inventoryLocalPages(async () => {
               const { items } = await fetchAllPages<Spool>(`/api/v1/spools?${params}`)
               return sortSpools(hasLocalColumnFilters() ? filterSpools(items) : items)
-            }, groupBy)
+            }, groupBy, () => inventoryUnfilteredTotal('/api/v1/spools'), !!search || hideSealedInput.checked || Object.values(columnFilters).some(isColumnFilterActive))
           : inventoryApiPages<Spool>('/api/v1/spools', params)
         if (!await spoolList.load(source, reset, groupBy ? renderGroupedSpools : renderSpools)) return
         localStorage.setItem('filaman-filters-spools', JSON.stringify({ columns: columnFilters, group: groupBy }))
@@ -1131,9 +1130,11 @@ import InventoryFilterReset from '../../components/InventoryFilterReset.astro'
 
     const updateFilterResets = bindTableFilterControls({
       signal: panelSignal,
-      hasColumnFilters: () => splHeaderFilters !== null && Object.values(columnFilters).some(isColumnFilterActive),
+      hasColumnFilters: () => hideSealedInput.checked || (splHeaderFilters !== null && Object.values(columnFilters).some(isColumnFilterActive)),
       onApply: applyFiltersAndRender,
       onClearColumns: () => {
+        hideSealedInput.checked = false
+        writeHideSealed(false)
         columnFilters = {}
         splHeaderFilters?.resetAll()
         updateSpoolFilterOptions()

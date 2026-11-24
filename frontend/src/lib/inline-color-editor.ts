@@ -1,3 +1,4 @@
+import { bindColorPickerPopup } from './color-picker-wheel'
 import { bindAlphaColorControls, normalizeHexCode } from './colors'
 
 export interface CreatedColor {
@@ -43,7 +44,15 @@ export function bindInlineColorEditor(options: InlineColorEditorOptions) {
     alphaHexInput: requiredElement<HTMLInputElement>('new-color-alpha-hex'),
   })
 
+  // Fetch cancellation can leave the form open; its controller owns UI disposal.
+  const lifecycle = new AbortController()
+  const popup = form.querySelector<HTMLElement>('[data-color-picker-popup]')
+  const wheel = popup ? bindColorPickerPopup(popup, hexInput, lifecycle.signal) : null
+  const wheelTrigger = document.getElementById('new-color-wheel-trigger') as HTMLButtonElement | null
+
   function close(): void {
+    wheel?.close()
+    if (wheelTrigger) wheelTrigger.disabled = true
     editorSession++
     disclosure.open = false
     nameInput.value = ''
@@ -67,8 +76,10 @@ export function bindInlineColorEditor(options: InlineColorEditorOptions) {
       input.disabled = false
     })
     colorControls.syncFromHex()
+    wheel?.reset()
+    if (wheelTrigger) wheelTrigger.disabled = false
     nameInput.focus()
-  })
+  }, { signal: lifecycle.signal })
 
   saveButton.addEventListener('click', async () => {
     const name = nameInput.value.trim()
@@ -122,6 +133,6 @@ export function bindInlineColorEditor(options: InlineColorEditorOptions) {
     } finally {
       saveButton.disabled = false
     }
-  })
-  return { close }
+  }, { signal: lifecycle.signal })
+  return { close, destroy() { close(); lifecycle.abort() } }
 }
