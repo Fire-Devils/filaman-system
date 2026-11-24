@@ -5,10 +5,12 @@
       "date": "",
       "changes": {
         "de": [
-          { "type": "feature", "text": "Plugins können jetzt eigene Schaltflächen im Filament-Editor, in der Filamentliste und in der Farbbibliothek anzeigen. Sie öffnen das Plugin in einem Seitenbereich, Rechte und Plugin-Adressen werden dabei geprüft (#288). (Beigetragen von akira69)" }
+          { "type": "feature", "text": "Plugins können jetzt eigene Schaltflächen im Filament-Editor, in der Filamentliste und in der Farbbibliothek anzeigen. Sie öffnen das Plugin in einem Seitenbereich, Rechte und Plugin-Adressen werden dabei geprüft (#288). (Beigetragen von akira69)" },
+          { "type": "feature", "text": "Farbbibliothek: Doppelte Farben lassen sich vergleichen und zusammenführen, die Zuordnungen der Filamente bleiben dabei erhalten. Unbenutzte Farben können gefiltert, markiert und nach Bestätigung gelöscht werden. Neuer Farbkreis zur Auswahl, und die Listen zeigen jetzt die Gesamtzahl statt nur der geladenen Zeilen (#292). (Beigetragen von akira69)" }
         ],
         "en": [
-          { "type": "feature", "text": "Plugins can now show their own buttons in the filament editor, the filament list and the color library. They open the plugin in a side panel, with permissions and plugin addresses checked (#288). (Contributed by akira69)" }
+          { "type": "feature", "text": "Plugins can now show their own buttons in the filament editor, the filament list and the color library. They open the plugin in a side panel, with permissions and plugin addresses checked (#288). (Contributed by akira69)" },
+          { "type": "feature", "text": "Color library: duplicate colors can be compared and merged while keeping all filament assignments. Unused colors can be filtered, selected and deleted after confirmation. A new color wheel helps picking colors, and lists now show the total count instead of only the loaded rows (#292). (Contributed by akira69)" }
         ]
       }
     },
