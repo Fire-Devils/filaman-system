@@ -2,9 +2,10 @@
 interface Props {
   idPrefix: string
   disabled?: boolean
+  showPreview?: boolean
 }
 
-const { idPrefix, disabled = false } = Astro.props
+const { idPrefix, disabled = false, showPreview = true } = Astro.props
 const enabledId = `${idPrefix}-alpha-enabled`
 const optionsId = `${idPrefix}-alpha-options`
 const sliderId = `${idPrefix}-alpha`
@@ -22,13 +23,13 @@ const previewId = `${idPrefix}-alpha-preview`
 </label>
 <div id={optionsId} class="fm-opacity-options hidden">
   <div class="fm-opacity-control-row">
-    <label class="fm-opacity-preview">
+    {showPreview && <label class="fm-opacity-preview">
       <span data-i18n="filaments.colorOpacityPreview">Preview</span>
       <span
         id={previewId}
         aria-hidden="true"
       ></span>
-    </label>
+    </label>}
 
     <div class="fm-opacity-slider">
       <div class="fm-opacity-slider-endpoints" aria-hidden="true">

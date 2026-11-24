@@ -246,13 +246,13 @@ describe('shared filament form controller', () => {
     const { controller } = await createLoadedController('edit')
     controller.applyInitialData({ colors: [{ color_id: 11, position: 1 }] })
     expect(document.querySelectorAll('#color-grid button')).toHaveLength(0)
-    expect(document.querySelectorAll('[data-color-marker]')).toHaveLength(0)
+    expect(document.querySelectorAll('.fm-header-filter-panel [data-color-marker]')).toHaveLength(0)
     expect(document.querySelector('#filament-editor-color-name')?.textContent).toContain('Red')
     document.querySelector<HTMLButtonElement>('#filament-color-launcher')!.click()
     expect(document.querySelectorAll('#color-grid button')).toHaveLength(3)
-    expect(document.querySelectorAll('[data-color-marker]')).toHaveLength(0)
+    expect(document.querySelectorAll('.fm-header-filter-panel [data-color-marker]')).toHaveLength(0)
     document.querySelector<HTMLButtonElement>('#color-filter-button')!.click()
-    expect(document.querySelectorAll('[data-color-marker]')).toHaveLength(3)
+    expect(document.querySelectorAll('.fm-header-filter-panel [data-color-marker]')).toHaveLength(3)
     controller.destroy()
   })
 
@@ -1005,7 +1005,7 @@ describe('shared filament form controller', () => {
     const { controller } = await createLoadedController()
     document.querySelector<HTMLButtonElement>('#filament-color-launcher')!.click()
     document.querySelector<HTMLButtonElement>('#color-filter-button')!.click()
-    expect([...document.querySelectorAll('[data-color-marker]')].map(node => node.getAttribute('fill')))
+    expect([...document.querySelectorAll('.fm-header-filter-panel [data-color-marker]')].map(node => node.getAttribute('fill')))
       .toEqual(['#FF0000', '#0000FF', '#FFFFFF'])
     controller.destroy()
   })
@@ -1081,13 +1081,13 @@ describe('shared filament form controller', () => {
     const { controller, form } = await createLoadedController()
     document.querySelector<HTMLButtonElement>('#filament-color-launcher')!.click()
     form.querySelector<HTMLButtonElement>('#color-filter-button')!.click()
-    expect(document.querySelectorAll('[data-color-marker]')).toHaveLength(3)
+    expect(document.querySelectorAll('.fm-header-filter-panel [data-color-marker]')).toHaveLength(3)
     const previousFetch = fetch
     vi.stubGlobal('fetch', (input: RequestInfo | URL, init?: RequestInit) => String(input).includes('/api/v1/colors?')
       ? Promise.resolve(jsonResponse({ items: [], total: 0 })) : previousFetch(input, init))
     invalidateCachePrefix(CACHE_KEYS.COLORS)
     await controller.loadReferenceData()
-    expect(document.querySelectorAll('[data-color-marker]')).toHaveLength(0)
+    expect(document.querySelectorAll('.fm-header-filter-panel [data-color-marker]')).toHaveLength(0)
     expect(form.querySelector('#color-grid')?.textContent).toContain('No colors')
     controller.destroy()
   })
@@ -1710,4 +1710,22 @@ it('preserves catalog price and refill tare zero through prepare, save and reope
   controller.resetInitialData({ ...saved.scalar, colors: saved.colors })
   expect(controller.collectPayload().scalar).toMatchObject({ price: 0, default_spool_weight_g: 0 })
   controller.destroy()
+})
+
+
+it('disposes inline wheel viewport tracking when its filament form is destroyed', async () => {
+  const viewport = Object.assign(new EventTarget(), {width: 390, height: 700, offsetLeft: 0, offsetTop: 0})
+  vi.stubGlobal('visualViewport', viewport)
+  const {controller} = await createLoadedController()
+  const popup = document.querySelector<HTMLElement>('#new-color-picker-popup')!
+  viewport.dispatchEvent(new Event('resize'))
+  expect(popup.style.getPropertyValue('--picker-viewport-width')).toBe('390px')
+  controller.destroy()
+  viewport.width = 300
+  viewport.dispatchEvent(new Event('resize'))
+  expect(popup.style.getPropertyValue('--picker-viewport-width')).toBe('390px')
+  const disclosure = document.querySelector<HTMLDetailsElement>('#new-color-disclosure')!
+  disclosure.open = true
+  disclosure.dispatchEvent(new Event('toggle'))
+  expect(document.querySelector<HTMLInputElement>('#new-color-name')!.disabled).toBe(true)
 })

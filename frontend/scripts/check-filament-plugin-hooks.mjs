@@ -103,7 +103,7 @@ try {
     else if (path.endsWith('/status')) json = { active: false }
     else if (path.endsWith('/filaments/filter-options')) json = { manufacturers: [], types: [], designations: [], diameters: [], finishes: [], subgroups: [], spool_counts: [], colors: [] }
     else if (path.endsWith('/filaments')) {
-      filamentReads++
+      if (url.searchParams.get('page_size') !== '1') filamentReads++
       if (failFilamentLoad) return route.fulfill({ status: 500, json: {} })
       if (req.frame().url().includes('/filament-picker')) {
         const ids = url.searchParams.getAll('filament_id')
@@ -633,11 +633,13 @@ try {
     assert.equal(entityReads[kind] - before, 2)
   }
   await page.goto(new URL('/filaments/colors', base).href)
-  await page.locator('#colors-table .btn-delete:disabled').waitFor()
+  await page.locator('#colors-table .btn-delete[data-usage="1"]').waitFor()
+  assert.equal(await page.locator('#colors-table .btn-delete').isDisabled(), true)
   color.usage_count = 0
   const beforeUsage = entityReads.colors
   await page.evaluate(() => window.fixtureEventSource.onmessage(new MessageEvent('message', { data: JSON.stringify({ event: 'filaments_changed' }) })))
-  await page.locator('#colors-table .btn-delete:not(:disabled)').waitFor()
+  await page.locator('#colors-table .btn-delete[data-usage="0"]').waitFor()
+  assert.equal(await page.locator('#colors-table .btn-delete').isDisabled(), false)
   assert.equal(entityReads.colors - beforeUsage, 1)
   console.log('Shared event handler: inventory rows, manufacturer aggregates and color usage follow live changes')
   assert.deepEqual(pageErrors, [])

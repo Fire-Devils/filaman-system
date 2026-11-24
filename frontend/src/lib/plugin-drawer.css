@@ -22,5 +22,10 @@
 }
 
 .plugin-launcher-overflow { position: relative; }
-.plugin-launcher-overflow > summary { cursor: pointer; }
-.plugin-launcher-overflow > div { position: absolute; inset-inline-end: 0; z-index: 45; min-width: 14rem; padding: 8px; display: grid; gap: 4px; background: var(--bg-elevated); border: 1px solid var(--border); border-radius: var(--radius-md); }
+.plugin-launcher-overflow > summary { display: flex; align-items: center; justify-content: center; gap: 8px; min-height: 44px; list-style: none; }
+.plugin-launcher-overflow > summary::-webkit-details-marker { display: none; }
+.plugin-launcher-overflow > summary::after { content: '▾'; }
+.plugin-launcher-overflow[open] > summary::after { transform: rotate(180deg); }
+.plugin-launcher-overflow > div { position: absolute; inset-inline-end: 0; z-index: 45; min-width: min(14rem, calc(100vw - 32px)); max-width: min(22rem, calc(100vw - 32px)); padding: 8px; display: grid; gap: 4px; background: var(--bg-elevated); border: 1px solid var(--border); border-radius: var(--radius-md); }
+
+.plugin-launcher-overflow > div > .fm-btn { white-space: normal; overflow-wrap: anywhere; text-align: start; }

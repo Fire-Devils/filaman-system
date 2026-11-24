@@ -9,20 +9,30 @@ import Layout from '../../layouts/Layout.astro'
 ---
 
 <Layout panel="colors" title="FilaMan - Color Library">
+  <div class="fm-colors-library">
   <div class="fm-list-toolbar">
     <h1 data-i18n="colors.title">Color Library</h1>
     <div class="fm-list-controls">
       <PluginUiLaunchers surface="colors.library" />
       <span data-inventory-count></span>
       <InventoryFilterReset scope="columns" />
+      <button id="btn-review-colors" class="fm-btn fm-btn-outline"><svg width="18" height="18" aria-hidden="true"><use href="/icons.svg?v=4#icon-broom" /></svg><span data-i18n="colors.cleanup.review">Duplicates</span></button>
       <button id="btn-new" class="fm-btn fm-btn-primary" data-i18n="colors.addColor">Add Color</button>
     </div>
   </div>
   
-  <div class="fm-card fm-inventory-table" data-compact>
+  <div class="fm-inventory-toolbar" id="color-bulk-controls">
+    <span id="color-selection-count" role="status"></span>
+    <button type="button" id="color-select-matching" class="fm-btn fm-btn-outline" data-i18n="colors.cleanup.selectAll">Select all</button>
+    <button type="button" id="color-clear-selection" class="fm-btn fm-btn-outline" hidden><svg width="18" height="18" aria-hidden="true"><use href="/icons.svg?v=4#icon-close" /></svg><span data-i18n="colors.cleanup.clearSelection">Clear selection</span></button>
+    <button type="button" id="color-delete-selected" class="fm-btn fm-btn-danger" hidden disabled><svg width="18" height="18" aria-hidden="true"><use href="/icons.svg?v=4#icon-trash" /></svg><span data-i18n="colors.cleanup.deleteSelected">Delete selected</span></button>
+    <PluginUiLaunchers surface="colors.selection" />
+  </div>
+  <div class="fm-card fm-inventory-table fm-colors-table" data-compact>
     <table class="fm-table fm-admin-table" id="colors-list-table">
       <thead>
         <tr>
+          <th data-column-selection><input id="color-select-loaded" type="checkbox" class="fm-checkbox" aria-label="Select loaded colors" data-i18n-aria-label="colors.cleanup.selectLoaded" disabled /></th>
           <th data-i18n="colors.name" data-sort="name" class="sortable col-name">Name</th>
           <th data-i18n="colors.hexCode" data-sort="hex_code" class="sortable col-hex">Hex Code</th>
           <th data-i18n="colors.usage" data-sort="usage_count" class="sortable col-usage">Usage</th>
@@ -31,13 +41,19 @@ import Layout from '../../layouts/Layout.astro'
       </thead>
       <tbody id="colors-table">
         <tr>
-          <td colspan="4" style="text-align: center; color: var(--text-muted);" data-i18n="common.loading">Loading...</td>
+          <td colspan="5" style="text-align: center; color: var(--text-muted);" data-i18n="common.loading">Loading...</td>
         </tr>
       </tbody>
     </table>
   </div>
   
   <InventoryLoadMore />
+  </div>
+
+  <FormDialog id="color-cleanup-dialog" titleId="color-cleanup-title" titleKey="colors.cleanup.title" title="Color cleanup" wide>
+    <button slot="actions" type="button" data-dialog-close class="fm-btn fm-btn-outline" data-i18n="common.close">Close</button>
+    <div id="color-cleanup-content"></div>
+  </FormDialog>
 
   <FormDialog id="modal-container" titleId="modal-title" titleKey="colors.addColor" title="Add Color" wide>
     <Fragment slot="actions">
@@ -47,13 +63,15 @@ import Layout from '../../layouts/Layout.astro'
     </Fragment>
     <form id="modal-form" class="fm-compact-form">
         <input type="hidden" id="color-id" />
-        <ColorEditorFields idPrefix="color" />
+        <ColorEditorFields idPrefix="color" wheel />
         <div id="modal-error" class="fm-alert-error hidden" role="alert"></div>
     </form>
   </FormDialog>
 
   <script>
-    import { hasPermission, type User } from '../../lib/auth'
+    import { bindColorPickerPopup } from '../../lib/color-picker-wheel'
+    import { getMe, hasPermission, type User } from '../../lib/auth'
+    import { bindColorCleanup } from '../../lib/color-library-cleanup'
     import { t, initI18n, translatePage } from '../../lib/i18n'
     import { getAbortSignal, isAbortError } from '../../lib/abort'
     import { initInventoryScroll, inventoryLocalPages } from '../../lib/inventory-scroll'
@@ -80,6 +98,7 @@ import Layout from '../../layouts/Layout.astro'
 
     mountPanel('colors', async panelSignal => {
     await initI18n()
+    const user = await getMe()
     if (panelSignal.aborted) return
 
     const modalForm = document.getElementById('modal-form') as HTMLFormElement
@@ -96,6 +115,7 @@ import Layout from '../../layouts/Layout.astro'
     let sortDirection: 'asc' | 'desc' | null = 'asc'
     let columnFilters: Record<string, ColumnFilterValue> = {}
     let colorHeaderFilters: HeaderFilterController | null = null
+    let visibleColors: ColorRecord[] = []
 
     try {
       const saved: unknown = JSON.parse(localStorage.getItem('filaman-sort-colors') || 'null')
@@ -132,14 +152,16 @@ import Layout from '../../layouts/Layout.astro'
         console.error('Failed to load colors:', error)
         document.getElementById('colors-table')!.innerHTML = `
           <tr>
-            <td colspan="4" style="text-align: center; color: var(--error-text);">${t('colors.failedLoad')}</td>
+            <td colspan="5" style="text-align: center; color: var(--error-text);">${t('colors.failedLoad')}</td>
           </tr>
         `
+        visibleColors = []
+        cleanup.syncSelection()
       }
     }
     
     const colorList = initInventoryScroll<ColorRecord>(
-      document.getElementById('colors-table')!, 'colors.colorCount', renderColorRows, undefined, panelSignal,
+      document.getElementById('colors-table')!, 'colors.colorCount', renderColorRows, () => cleanup.syncSelection(), panelSignal,
       () => ({ columns: columnFilters, sort: { key: sortKey, direction: sortDirection } }),
     )
     if (colorList.view) {
@@ -151,7 +173,11 @@ import Layout from '../../layouts/Layout.astro'
 
     function renderColors(reset = true) {
       updateFilterReset()
-      const visibleColors = colors.filter(color => Object.entries(columnFilters).every(([key, filter]) => {
+      const filtered = Object.values(columnFilters).some(isColumnFilterActive)
+      const selectAll = document.getElementById('color-select-matching')!
+      selectAll.dataset.i18n = filtered ? 'colors.cleanup.selectMatching' : 'colors.cleanup.selectAll'
+      selectAll.textContent = t(selectAll.dataset.i18n)
+      visibleColors = colors.filter(color => Object.entries(columnFilters).every(([key, filter]) => {
         const value = key === 'name' ? String(color.id) : isSortKey(key) ? color[key] : undefined
         return matchesColumnFilter(value, filter)
       }))
@@ -166,7 +192,7 @@ import Layout from '../../layouts/Layout.astro'
         })
       }
       
-      void colorList.load(inventoryLocalPages(() => visibleColors), reset)
+      void colorList.load(inventoryLocalPages(() => visibleColors, false, filtered ? () => colors.length : undefined), reset)
     }
 
     function renderColorRows(items: ColorRecord[], append: boolean) {
@@ -174,7 +200,7 @@ import Layout from '../../layouts/Layout.astro'
       if (!items.length) {
         tbody.innerHTML = `
           <tr>
-            <td colspan="4" style="text-align: center; color: var(--text-muted);">
+            <td colspan="5" style="text-align: center; color: var(--text-muted);">
               ${t('colors.noColors')}
             </td>
           </tr>
@@ -184,10 +210,11 @@ import Layout from '../../layouts/Layout.astro'
       
       const rows = items.map(c => `
         <tr>
+          <td><input type="checkbox" class="fm-checkbox" data-color-select="${c.id}" aria-label="${escapeHtml(t('colors.cleanup.selectColor', { name: c.name }))}" /></td>
           <td style="padding: 12px;">
             <div style="display: flex; align-items: center; gap: 12px;">
               <span style="display: inline-block; width: 24px; height: 24px; border-radius: 50%; background: ${toColorSwatchBackground(c.hex_code)}; border: 1px solid var(--border);"></span>
-              <span style="font-weight: 500;">${escapeHtml(c.name)}</span>
+              <span class="fm-color-name" title="${escapeHtml(c.name)}" style="font-weight: 500;">${escapeHtml(c.name)}</span>
             </div>
           </td>
           <td style="padding: 12px; font-family: monospace; color: var(--text-muted);">${escapeHtml(String(c.hex_code).toUpperCase())}</td>
@@ -215,6 +242,11 @@ import Layout from '../../layouts/Layout.astro'
       if (action.classList.contains('btn-edit')) {
         const color = colorList.get(id)
         if (color) openModal(color.id, color.name, color.hex_code)
+        return
+      }
+
+      if ((colorList.get(id)?.usage_count ?? 0) > 0) {
+        await dialogs.__fmAlert(t('colors.inUseWarning'))
         return
       }
 
@@ -287,6 +319,10 @@ import Layout from '../../layouts/Layout.astro'
           type: 'number',
           autocomplete: true,
           initialValue: columnFilters.usage_count,
+          presets: [
+            { label: t('colors.cleanup.used'), value: { type: 'number', operator: 'gt', value: '0', valueTo: '' } },
+            { label: t('colors.cleanup.unused'), value: { type: 'number', operator: 'eq', value: '0', valueTo: '' } },
+          ],
           onApply: value => applyColumnFilter('usage_count', value),
         },
       ], panelSignal)
@@ -342,6 +378,7 @@ import Layout from '../../layouts/Layout.astro'
       idInput.value = id ? String(id) : ''
       nameInput.value = name
       colorControls.reset(normalizeHexCode(hex) || '#000000')
+      pickerWheel.reset()
       error.classList.add('hidden')
       
       formState.reset()
@@ -387,6 +424,7 @@ import Layout from '../../layouts/Layout.astro'
         stage(value) {
           (document.getElementById('color-name') as HTMLInputElement).value = value.name
           colorControls.reset(value.hex_code)
+          pickerWheel.reset()
           formState.update()
         },
         async openExisting(id, isCurrent, revalidate) {
@@ -413,6 +451,7 @@ import Layout from '../../layouts/Layout.astro'
         },
       }, panelSignal,
     )
+    const pickerWheel = bindColorPickerPopup(document.querySelector<HTMLElement>('[data-color-picker-popup]')!, hexInput, panelSignal, formState.update)
     // Revert hidden alpha values too, so an opaque color can return to a clean state.
     alphaEnabled.addEventListener('change', () => {
       if (!alphaEnabled.checked) colorControls.syncFromHex()
@@ -472,6 +511,23 @@ import Layout from '../../layouts/Layout.astro'
     void mountPluginUiLaunchers(libraryHost, {
       surface: 'colors.library', workspace, isEligible: () => ({enabled: true}), context: () => ({entity: 'colors'}),
     }, panelSignal).refresh()
+    let selectionTools: ReturnType<typeof mountPluginUiLaunchers> | undefined = undefined
+    const cleanup = bindColorCleanup({
+      scope: document.body, getColors: () => colors, getVisible: () => visibleColors,
+      reload: () => loadColors(), signal: panelSignal,
+      canDelete: !!user && hasPermission(user, 'colors:delete'),
+      canSelect: !!user && hasPermission(user, 'colors:update'),
+      onSelectionChange: () => selectionTools?.updateEligibility(),
+      canMerge: !!user && ['colors:update', 'colors:delete', 'filaments:update'].every(permission => hasPermission(user, permission)),
+    })
+    selectionTools = mountPluginUiLaunchers(
+      document.querySelector<HTMLElement>('[data-plugin-ui-launchers="colors.selection"]')!, {
+        surface: 'colors.selection', workspace,
+        isEligible: () => ({enabled: cleanup.getSelectedIds().length > 0, reason: t('pluginLaunchers.selectRecords')}),
+        context: () => ({color_ids: cleanup.getSelectedIds()}),
+      }, panelSignal,
+    )
+    void selectionTools.refresh()
     setupTableControls()
     loadColors(false)
 

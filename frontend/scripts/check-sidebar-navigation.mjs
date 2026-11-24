@@ -568,6 +568,8 @@ try {
     const initialList = page.waitForResponse(listResponse)
     await page.goto(origin + '/' + inventory)
     await initialList
+    // The first response can arrive before the rows and total count finish rendering.
+    await page.locator('[data-inventory-count]').filter({ hasText: /\d/ }).waitFor()
     await page.goto(origin + '/' + inventory + '/new')
     await page.locator('#user-name').getByText('Second account').waitFor()
     authFailure = 'server'

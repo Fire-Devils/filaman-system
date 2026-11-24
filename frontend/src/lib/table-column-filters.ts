@@ -1,4 +1,4 @@
-import { COLOR_HARMONY_OFFSETS, colorWheelHueMask, colorWheelPoint, createColorWheel, hueDistance, parseColorSample, syncColorWheelMarkers, type ColorWheelPoint, type ColorWheelSample } from './color-wheel'
+import { COLOR_NEUTRAL_PRESETS, COLOR_HARMONY_OFFSETS, colorWheelHueMask, colorWheelPoint, createColorWheel, hueDistance, parseColorSample, syncColorWheelMarkers, type ColorWheelPoint, type ColorWheelSample } from './color-wheel'
 import { t } from './i18n'
 import { normalizeHexCode, toColorSwatchBackground, toOpaqueRgbHex } from './colors'
 import { extraFieldColumnSortValue, getExtraFieldColumnValue, isCheckedExtraFieldValue, renderFieldPlainText, renderUnknownFieldPlainText, type SystemExtraFieldDef } from './extra-fields'
@@ -54,6 +54,7 @@ export type HeaderFilterDefinition = {
   groupControlId?: string
   options?: HeaderFilterOption[]
   initialValue?: ColumnFilterValue
+  presets?: { label: string; value: ColumnFilterValue }[]
   onApply: (value: ColumnFilterValue) => void
 }
 
@@ -242,12 +243,6 @@ const DATE_OPERATORS: { value: DateFilterOperator; labelKey: string }[] = [
   { value: 'isEmpty', labelKey: 'filters.isEmpty' },
   { value: 'isNotEmpty', labelKey: 'filters.isNotEmpty' },
 ]
-
-const COLOR_NEUTRAL_PRESETS = {
-  black: { saturationTo: 20, valueFrom: 0, valueTo: 15 },
-  white: { saturationTo: 10, valueFrom: 85, valueTo: 100 },
-  grey: { saturationTo: 10, valueFrom: 35, valueTo: 65 },
-} satisfies Record<ColorNeutral, { saturationTo: number; valueFrom: number; valueTo: number }>
 
 const COLOR_CHROMATIC_PRESETS = [
   { key: 'red', hueFrom: 320, hueTo: 15, swatch: '#ef4444' },
@@ -678,7 +673,7 @@ function createFilterActions(
       state.trigger.focus()
     }
   })
-  return { actions, clearFilter }
+  return { actions, clearFilter, applyFilter }
 }
 
 export function bindColorFilterButton(
@@ -1021,9 +1016,27 @@ export function initHeaderColumnFilters(
     else buildTypedControls(state)
 
     const close = () => closePanel(parentState?.panel || panel)
-    const { actions } = createFilterActions(state, close, parentState
+    const { actions, applyFilter } = createFilterActions(state, close, parentState
       ? { showApply: false, clearLabel: t('filters.clearFilter', { label: def.label }) }
       : undefined)
+    if (def.presets?.length) {
+      const shortcuts = document.createElement('div')
+      shortcuts.className = 'fm-header-filter-presets'
+      for (const preset of def.presets) {
+        const button = document.createElement('button')
+        button.type = 'button'
+        button.className = 'fm-btn fm-btn-outline'
+        button.setAttribute('data-filter-preset', '')
+        button.textContent = preset.label
+        button.addEventListener('click', () => {
+          state.working = cloneFilter(preset.value)
+          syncControls(state)
+          applyFilter()
+        }, { signal })
+        shortcuts.appendChild(button)
+      }
+      panel.prepend(shortcuts)
+    }
     if (def.multiDisplay === 'colors') appendColorGridToggle(actions, state)
     panel.appendChild(actions)
 

@@ -1417,7 +1417,7 @@ export function createFilamentFormController(options: {
       spoolProfilePicker?.destroy()
       manufacturerDialog?.close()
       closeColorDialog()
-      inlineColorEditor.close()
+      inlineColorEditor.destroy()
       colorLauncher.removeEventListener('click', openColorDialog)
       byId<HTMLButtonElement>('filament-color-dialog-close').removeEventListener('click', closeColorDialog)
       byId<HTMLButtonElement>('filament-color-dialog-done').removeEventListener('click', closeColorDialog)

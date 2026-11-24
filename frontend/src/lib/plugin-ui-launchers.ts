@@ -247,7 +247,7 @@ export function mountPluginUiLaunchers(host: HTMLElement, adapter: PluginUiSurfa
         else {
           if (!overflow) {
             const details = document.createElement('details'); details.className = 'plugin-launcher-overflow'
-            const summary = document.createElement('summary'); summary.textContent = t('pluginLaunchers.more')
+            const summary = document.createElement('summary'); summary.className = 'fm-btn fm-btn-outline'; summary.textContent = t('pluginLaunchers.more')
             details.addEventListener('keydown', event => {
               if (event.key === 'Escape') { details.open = false; summary.focus(); event.preventDefault() }
             }, {signal: activeSignal})

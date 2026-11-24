@@ -69,7 +69,7 @@ try {
     else if (path.endsWith('/spools/statuses')) json = [{ id: 1, key: 'opened', label: 'Opened' }]
     else if (path.endsWith('/spools/filter-options')) json = { used_status_ids: [1], by_status: {} }
     else if (path === '/api/v1/filaments' || path === '/api/v1/spools') {
-      requests.push(url)
+      if (url.searchParams.get('page_size') !== '1') requests.push(url)
       if (url.searchParams.get('sort_by')?.startsWith('cf_')) return route.fulfill({ status: 422 })
       const items = path.endsWith('/filaments') ? filaments : spools
       const inventory = fillInventory ? [
@@ -136,7 +136,7 @@ try {
     await page.waitForFunction(list => document.querySelectorAll(`#${list}-table tr[onclick]`).length === 2, list)
     assert.match(await rows.nth(0).textContent(), /PLA Matte/)
     assert.match(await rows.nth(1).textContent(), /PETG Translucent/)
-    await page.getByRole('button', { name: 'Clear column filters', exact: true }).click()
+    await page.getByRole('button', { name: 'Clear all filters', exact: true }).click()
     await page.waitForFunction(list => document.querySelectorAll(`#${list}-table tr[onclick]`).length === 5, list)
 
     await spacedHeader.locator('.fm-header-filter-trigger').click()
@@ -144,7 +144,7 @@ try {
     await panel.getByRole('button', { name: 'Apply', exact: true }).click()
     await page.waitForFunction(list => document.querySelectorAll(`#${list}-table tr[onclick]`).length !== 5, list)
     assert.equal(await rows.count(), 1, `${list}: a spaced key filters its own values`)
-    await page.getByRole('button', { name: 'Clear column filters', exact: true }).click()
+    await page.getByRole('button', { name: 'Clear all filters', exact: true }).click()
     await page.waitForFunction(list => document.querySelectorAll(`#${list}-table tr[onclick]`).length === 5, list)
 
     await page.locator('th.col-cf_temperature .fm-header-filter-trigger').click()
@@ -154,7 +154,7 @@ try {
     await page.waitForFunction(list => document.querySelectorAll(`#${list}-table tr[onclick]`).length !== 5, list)
     assert.equal(await rows.count(), 1, `${list}: the range filter accepts the exact displayed text`)
     assert.match(await rows.first().textContent(), /PLA Matte/)
-    await page.getByRole('button', { name: 'Clear column filters', exact: true }).click()
+    await page.getByRole('button', { name: 'Clear all filters', exact: true }).click()
     await page.waitForFunction(list => document.querySelectorAll(`#${list}-table tr[onclick]`).length === 5, list)
 
     fillInventory = true

@@ -485,7 +485,7 @@ describe('linked harmony results', () => {
   it('keeps neutral limits and disables hue harmony while remembering the chromatic choice', () => {
     mount([option('White', '#FFFFFF'), option('Black', '#000000'), option('Grey', '#808080')])
     mode('triadic')
-    for (const [neutral, low, high, saturation] of [['black', 0, 15, 20], ['white', 85, 100, 10], ['grey', 35, 65, 10]] as const) {
+    for (const [neutral, low, high, saturation] of [['black', 0, 20, 20], ['white', 80, 100, 10], ['grey', 35, 65, 10]] as const) {
       document.querySelector<HTMLButtonElement>(`[data-color-neutral="${neutral}"]`)!.click()
       expect(document.querySelector('.fm-header-color-wheel')?.classList.contains('is-neutral')).toBe(true)
       expect(document.querySelector<HTMLInputElement>('[data-color-harmony="single"]')?.checked).toBe(true)
@@ -1331,7 +1331,7 @@ describe('color range header filter', () => {
     expect(wheel.dataset.neutralMode).toBe('black')
     expect(surface.hidden).toBe(false)
     expect(selection.hidden).toBe(false)
-    expect([valueFrom.value, valueTo.value]).toEqual(['0', '15'])
+    expect([valueFrom.value, valueTo.value]).toEqual(['0', '20'])
     expect([saturationFrom.value, saturationTo.value]).toEqual(['0', '20'])
     expect([hueFrom.disabled, saturationFrom.disabled, valueFrom.disabled, valueTo.disabled, valuePreview.disabled])
       .toEqual([true, true, false, false, true])
@@ -1352,12 +1352,12 @@ describe('color range header filter', () => {
     expect([saturationFrom.value, saturationTo.value]).toEqual(['0', '20'])
     expect([valueFrom.value, valueTo.value]).toEqual(['0', '22'])
     valueReset.click()
-    expect([valueFrom.value, valueTo.value]).toEqual(['0', '15'])
+    expect([valueFrom.value, valueTo.value]).toEqual(['0', '20'])
 
     document.querySelector<HTMLButtonElement>('[data-color-neutral="grey"]')!.click()
     expect([valueFrom.value, valueTo.value]).toEqual(['35', '65'])
     document.querySelector<HTMLButtonElement>('[data-color-neutral="white"]')!.click()
-    expect([valueFrom.value, valueTo.value]).toEqual(['85', '100'])
+    expect([valueFrom.value, valueTo.value]).toEqual(['80', '100'])
 
     document.querySelector<HTMLButtonElement>('[data-color-preset="orange"]')!.click()
     expect(wheel.classList.contains('is-neutral')).toBe(false)
@@ -1458,4 +1458,23 @@ describe('color range header filter', () => {
     ]).toEqual(['0', '360'])
   })
 
+})
+
+it('applies a numeric shortcut immediately and restores its complete settings when reopened', () => {
+  document.body.innerHTML = '<table><thead><tr><th>Usage</th></tr></thead></table>'
+  const onApply = vi.fn()
+  initHeaderColumnFilters(document.querySelector('table')!, [{
+    key: 'usage', label: 'Usage', columnSelector: 'th', type: 'number', onApply,
+    initialValue: { type: 'number', operator: 'between', value: '4', valueTo: '9' },
+    presets: [{ label: 'Unused', value: { type: 'number', operator: 'eq', value: '0', valueTo: '' } }],
+  }])
+  const trigger = document.querySelector<HTMLButtonElement>('.fm-header-filter-trigger')!
+  trigger.click()
+  document.querySelector<HTMLButtonElement>('[data-filter-preset]')!.click()
+  expect(onApply).toHaveBeenCalledWith({ type: 'number', operator: 'eq', value: '0', valueTo: '' })
+  expect(document.querySelector('.fm-header-filter-panel')!.classList.contains('open')).toBe(false)
+  trigger.click()
+  expect(document.querySelector<HTMLSelectElement>('.fm-header-filter-operator')!.value).toBe('eq')
+  expect(document.querySelector<HTMLInputElement>('.fm-header-filter-value')!.value).toBe('0')
+  expect(document.querySelectorAll<HTMLInputElement>('.fm-header-filter-value')[1].value).toBe('')
 })

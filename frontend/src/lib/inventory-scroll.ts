@@ -3,7 +3,7 @@ import { t } from './i18n'
 import type { ColumnFilterValue } from './table-column-filters'
 
 const batchSize = 50
-type Batch<T> = { items: T[], total: number, hasMore: boolean }
+type Batch<T> = { items: T[], total: number, hasMore: boolean, unfilteredTotal?: number }
 type Source<T> = (page: number) => Batch<T> | Promise<Batch<T>>
 type Render<T> = (items: T[], append: boolean) => void
 type InventoryView = {
@@ -57,7 +57,24 @@ export function trackListHistory<T>(main: HTMLElement | null, readData: () => T,
   }
 }
 
+export async function inventoryUnfilteredTotal(path: string): Promise<number> {
+  const params = new URLSearchParams({ page_size: '1' })
+  if (path === '/api/v1/spools') params.set('include_archived', 'true')
+  const response = await fetch(`${path}?${params}`, { credentials: 'include', signal: getAbortSignal() })
+  if (!response.ok) throw new Error(`Failed to count ${path}: ${response.status}`)
+  return (await response.json()).total
+}
+
+function optionalCount(error: unknown): undefined {
+  if (isAbortError(error)) throw error
+  return undefined
+}
+
 export function inventoryApiPages<T>(path: string, query: URLSearchParams): Source<T> {
+  const filtered = [...query.keys()].some(key => !['sort_by', 'sort_order', 'include_record_token', 'include_metrics', 'include_archived'].includes(key))
+  const countAll = filtered || (path === '/api/v1/spools' && query.get('include_archived') !== 'true')
+  let fullCount: Promise<number | undefined> | undefined
+  let previousTotal: number | undefined
   return async page => {
     const params = new URLSearchParams(query)
     params.set('page', String(page))
@@ -65,18 +82,23 @@ export function inventoryApiPages<T>(path: string, query: URLSearchParams): Sour
     const response = await fetch(`${path}?${params}`, { credentials: 'include', signal: getAbortSignal() })
     if (!response.ok) throw new Error(`Failed to fetch ${path}: ${response.status}`)
     const { items, total }: { items: T[], total: number } = await response.json()
-    return { items, total, hasMore: items.length > 0 && page * batchSize < total }
+    if (previousTotal !== undefined && previousTotal !== total) fullCount = undefined
+    previousTotal = total
+    const fullTotal = countAll ? await (fullCount ??= inventoryUnfilteredTotal(path).catch(optionalCount)) : undefined
+    return { items, total, hasMore: items.length > 0 && page * batchSize < total,
+      unfilteredTotal: fullTotal !== undefined && (filtered || total !== fullTotal) ? Math.max(total, fullTotal) : undefined }
   }
 }
 
-export function inventoryLocalPages<T>(getItems: () => T[] | Promise<T[]>, grouped = false): Source<T> {
-  let result: T[] | undefined
+export function inventoryLocalPages<T>(getItems: () => T[] | Promise<T[]>, grouped = false, getUnfilteredTotal?: () => number | Promise<number>, filtered = true): Source<T> {
+  let result: Promise<[T[], number | undefined]> | undefined
   return async page => {
-    const items = result ??= await getItems()
+    const [items, unfilteredTotal] = await (result ??= Promise.all([getItems(), Promise.resolve().then(getUnfilteredTotal).catch(optionalCount)]))
     const end = page * batchSize
     return {
       items: grouped ? items : items.slice(end - batchSize, end),
       total: items.length,
+      unfilteredTotal: unfilteredTotal !== undefined && (filtered || items.length !== unfilteredTotal) ? Math.max(items.length, unfilteredTotal) : undefined,
       hasMore: !grouped && end < items.length,
     }
   }
@@ -99,6 +121,7 @@ export function initInventoryScroll<T extends { id: number }>(
   const listHistory = trackListHistory(tbody.closest('main'), () => ({ nextPage, view: getView?.() }), signal)
   let nextPage: number = listHistory.data?.nextPage ?? 1
   let total = 0
+  let unfilteredTotal: number | undefined
   let hasMore = false
   let loading = false
   let failed = false
@@ -107,9 +130,9 @@ export function initInventoryScroll<T extends { id: number }>(
   signal?.addEventListener('abort', () => { pause(); observer.disconnect() }, { once: true })
 
   function updateControls() {
-    count.textContent = loaded.size > 0 && loaded.size < total
-      ? `${t('common.showing')} 1-${loaded.size} ${t('common.of')} ${total}`
-      : t(countKey, { count: total })
+    count.textContent = unfilteredTotal === undefined
+      ? t(countKey, { count: total })
+      : `${total} ${t('common.of')} ${t(countKey, { count: unfilteredTotal })}`
     observer.unobserve(more)
     more.hidden = !hasMore
     button.dataset.i18n = failed ? 'common.retry' : 'common.loadMore'
@@ -134,6 +157,7 @@ export function initInventoryScroll<T extends { id: number }>(
       return true
     })
     total = batch.total
+    unfilteredTotal = batch.unfilteredTotal
     hasMore = batch.hasMore
     nextPage++
     return added

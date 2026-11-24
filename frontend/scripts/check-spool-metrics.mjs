@@ -90,7 +90,7 @@ try {
     else if (path.endsWith('/public-info')) json = { currency: 'EUR', filament_lookup_source: 'disabled' }
     else if (path.endsWith('/status')) json = { active: false }
     else if (path.endsWith('/spools')) {
-      requests.push(url)
+      if (url.searchParams.get('include_metrics') === 'true') requests.push(url)
       let rows = inventory.filter(row => ['remaining_percent', 'remaining_length_m'].every(key => {
         const min = url.searchParams.get(`${key}_min`), max = url.searchParams.get(`${key}_max`)
         return (min === null || row.metrics[key] >= Number(min)) && (max === null || row.metrics[key] <= Number(max))
@@ -110,6 +110,10 @@ try {
   await page.goto(new URL('/spools', base).href)
   await page.locator('#spools-table tr[data-group-row], #spools-table tr[onclick]').first().waitFor()
   assert.equal(requests.at(-1).searchParams.get('include_metrics'), 'true', 'Native table explicitly requests metrics')
+  await page.locator('#filter-hide-sealed').check()
+  await page.locator('#filter-clear').click()
+  assert.equal(await page.locator('#filter-hide-sealed').isChecked(), false, 'Clear all filters also clears Hide sealed')
+  assert.equal(await page.evaluate(() => localStorage.getItem('filaman-hide-sealed-spools')), null)
   locationName = 'Shelf after remote rename'
   await page.evaluate(() => window.fixtureEventSource.onmessage(new MessageEvent('message', { data: JSON.stringify({ event: 'locations_changed' }) })))
   await page.locator('#spools-table .col-location').filter({ hasText: locationName }).first().waitFor()

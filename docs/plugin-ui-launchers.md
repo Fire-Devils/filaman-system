@@ -26,15 +26,16 @@ Plugins declare launchers using the optional `capabilities.ui_launchers` array (
 
 ## Supported Surfaces
 
-Five locations are mounted by this PR:
+Six locations are mounted:
 
 - `filaments.editor`
 - `colors.editor`
 - `filaments.library`
 - `colors.library`
 - `filaments.selection`
+- `colors.selection`
 
-The `colors.selection` declaration and generic context contract are recognized, but its native selection controls and UI mount belong to color-library PR #292. This PR does not add color cleanup, selection controls, color-picker changes, or database migrations.
+The `colors.selection` surface uses the native color-library selection. Users with color update permission can select records for tools without gaining permission to delete them. The tool receives a snapshot of explicit color IDs, including all matching records when selected across loaded pages.
 
 Unknown future surfaces are ignored by discovery.
 
