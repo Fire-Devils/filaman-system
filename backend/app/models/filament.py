@@ -44,6 +44,8 @@ class Manufacturer(Base, TimestampMixin):
 class Color(Base, TimestampMixin):
     __tablename__ = "colors"
 
+    record_token: Mapped[str] = mapped_column(String(32), nullable=False, default=lambda: uuid4().hex)
+
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     name: Mapped[str] = mapped_column(String(100), nullable=False)
     hex_code: Mapped[str] = mapped_column(String(9), nullable=False)

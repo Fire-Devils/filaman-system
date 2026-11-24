@@ -51,6 +51,7 @@ from app.models import (
     SpoolStatus,
 )
 from app.utils.colors import normalize_hex_color
+from app.services.color_cleanup import router as color_cleanup_router
 from app.services.color_search import filament_color_filter, filament_has_named_color
 from app.utils.query_params import parse_multi_int, parse_multi_str
 
@@ -458,6 +459,7 @@ async def delete_manufacturer(
 
 
 router_colors = APIRouter(prefix="/colors", tags=["colors"])
+router_colors.include_router(color_cleanup_router)
 
 
 @router_colors.get("", response_model=PaginatedResponse[ColorResponse])

@@ -597,6 +597,13 @@ class TestColorCRUD:
 
         assert response.status_code == 409
         assert response.json()["detail"]["code"] == "conflict"
+        saved = await db_session.execute(
+            select(FilamentColor.color_id, FilamentColor.filament_id, FilamentColor.position)
+            .join(Color, Color.id == FilamentColor.color_id)
+            .join(Filament, Filament.id == FilamentColor.filament_id)
+            .where(FilamentColor.color_id == color.id)
+        )
+        assert saved.all() == [(color.id, filament.id, 1)]
 
 
 class TestFilamentCRUD:

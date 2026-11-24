@@ -1420,8 +1420,8 @@ def _serialize_row(row: Any) -> dict[str, Any]:
     mapper = sa_inspect(type(row))
 
     for attr in mapper.column_attrs:
-        if isinstance(row, Filament) and attr.key == "record_token":
-            continue  # Restored records get fresh picker tokens, including on older hosts.
+        if isinstance(row, (Filament, Color)) and attr.key == "record_token":
+            continue  # Restored records get fresh identity tokens, including on older hosts.
         col = attr.columns[0]
         value = getattr(row, attr.key)
 
