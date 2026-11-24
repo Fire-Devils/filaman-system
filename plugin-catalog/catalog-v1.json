@@ -86,5 +86,16 @@
     "min_filaman_version": "2.0.6",
     "github_release_url": "https://github.com/Niko11111/FilaManBambuUsage/releases/download/v1.0.0/bambu_usage-1.0.0.zip",
     "sha256": "70db18b5c7be8e3f4059a1df47a1e531335b8dfa04bf601788ddcfee0313a1de"
+  },
+  {
+    "plugin_key": "centauri_cc1",
+    "name": "Elegoo Centauri Carbon 1",
+    "description": "Shows live print status, spool and CANVAS slots, and a print history with plate previews for the Elegoo Centauri Carbon 1, and books measured filament usage for single-spool prints. Needs the OpenCentauri patched firmware and LAN access to the printer on TCP port 3030. Use only one automatic usage deduction per printer.",
+    "publisher": "Un0kNow",
+    "repository_url": "https://github.com/Un0kNow/filaman-centauri-cc1",
+    "version": "0.1.14",
+    "min_filaman_version": "2.3.1",
+    "github_release_url": "https://github.com/Un0kNow/filaman-centauri-cc1/releases/download/v0.1.14/centauri_cc1-0.1.14.zip",
+    "sha256": "e41b0c8f4bc4ecacbd77c2a2007f2c7545f8e14566847ff2e708da275203b50c"
   }
 ]
