@@ -1,6 +1,18 @@
 {
   "versions": [
     {
+      "version": "UNRELEASED",
+      "date": "",
+      "changes": {
+        "de": [
+          { "type": "feature", "text": "Plugins können jetzt eigene Schaltflächen im Filament-Editor, in der Filamentliste und in der Farbbibliothek anzeigen. Sie öffnen das Plugin in einem Seitenbereich, Rechte und Plugin-Adressen werden dabei geprüft (#288). (Beigetragen von akira69)" }
+        ],
+        "en": [
+          { "type": "feature", "text": "Plugins can now show their own buttons in the filament editor, the filament list and the color library. They open the plugin in a side panel, with permissions and plugin addresses checked (#288). (Contributed by akira69)" }
+        ]
+      }
+    },
+    {
       "version": "2.8.2",
       "date": "",
       "changes": {
