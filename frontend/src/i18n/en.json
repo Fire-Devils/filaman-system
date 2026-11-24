@@ -759,6 +759,9 @@
   "colors": {
     "confirmOpenExisting": "Open {name}? Unsaved color changes will be discarded.",
     "cleanup": {
+      "mergeAction": "Merge",
+      "selectionChanged": "Selected colors were removed. Copy your result from the fields if they’re still visible, then close and select colors again.",
+      "confirmMerge": "All filament assignments to the included colors will use the chosen result. The other included library colors will be deleted. This cannot be undone.",
       "review": "Duplicates",
       "title": "Color cleanup",
       "selected": "{count} selected",
@@ -769,10 +772,10 @@
       "survivor": "Keep this color",
       "next": "Next",
       "merge": "Merge selected colors",
+      "confirmDeleteOne": "Delete this color? Only unused colors can be deleted. This cannot be undone.",
       "confirmDelete": "Delete these {count} colors? Only unused colors can be deleted. This cannot be undone.",
       "refresh": "Refresh and review again",
       "failed": "Color cleanup failed",
-      "selectTwo": "Select at least two colors to merge.",
       "selectAll": "Select all",
       "selectMatching": "Select all matching",
       "clearSelection": "Clear selection",

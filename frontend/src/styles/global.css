@@ -3433,7 +3433,7 @@ html.sidebar-collapsed #sidebar-color-mode { display: none; }
 
 #btn-review-colors, #color-bulk-controls .fm-btn { display: inline-flex; align-items: center; gap: 8px; }
 #color-bulk-controls .fm-btn[hidden] { display: none; }
-#color-cleanup-content .fm-btn { display: inline-flex; align-items: center; gap: 8px; }
+#color-cleanup-content .fm-btn, #color-cleanup-dialog .fm-admin-actions .fm-btn { display: inline-flex; align-items: center; gap: 8px; }
 @container detail-page (min-width: 46rem) {
   .fm-colors-table.fm-inventory-table[data-compact] :is(th, td) { padding-inline: 16px !important; }
 }
