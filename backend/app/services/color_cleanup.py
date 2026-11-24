@@ -6,7 +6,7 @@ from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel, Field, JsonValue, model_validator
+from pydantic import BaseModel, Field, JsonValue, field_validator, model_validator
 from sqlalchemy import delete, select, update
 from sqlalchemy.exc import IntegrityError
 
@@ -36,6 +36,15 @@ class CleanupRequest(BaseModel):
 class MergeRequest(CleanupRequest):
     survivor_id: int = Field(gt=0)
     name: str = Field(min_length=1, max_length=100)
+
+
+class CombineRequest(MergeRequest):
+    hex_code: str
+
+    @field_validator("hex_code")
+    @classmethod
+    def normalized_hex(cls, value: str) -> str:
+        return normalize_hex_color(value)
 
 
 class CleanupColor(BaseModel):
@@ -157,14 +166,26 @@ async def bulk_delete_colors(data: CleanupRequest, db: DBSession):
     RequirePermission("colors:delete"), RequirePermission("colors:update"), RequirePermission("filaments:update"),
 ])
 async def merge_colors(data: MergeRequest, db: DBSession):
+    return await _merge_reviewed_colors(data, db)
+
+
+@router.post("/combine", response_model=CleanupResult, dependencies=[
+    RequirePermission("colors:delete"), RequirePermission("colors:update"), RequirePermission("filaments:update"),
+])
+async def combine_colors(data: CombineRequest, db: DBSession):
+    return await _merge_reviewed_colors(data, db, hex_code=data.hex_code)
+
+
+async def _merge_reviewed_colors(data: MergeRequest, db, *, hex_code: str | None = None) -> CleanupResult:
     name = data.name.strip()
     async with reviewed_transaction(db, data.records) as colors:
         by_id = {color.id: color for color in colors}
         keys = {duplicate_key(color.hex_code) for color in colors}
-        if len(colors) < 2 or data.survivor_id not in by_id or None in keys or len(keys) != 1 or not name:
+        if len(colors) < 2 or data.survivor_id not in by_id or not name or (hex_code is None and (None in keys or len(keys) != 1)):
             raise HTTPException(422, detail={"code": "invalid_merge", "message": "Choose matching colors and a survivor."})
+        result_hex = hex_code if hex_code is not None else by_id[data.survivor_id].hex_code
         collision = await db.scalar(select(Color.id).where(
-            Color.name == name, Color.hex_code == by_id[data.survivor_id].hex_code,
+            Color.name == name, Color.hex_code == result_hex,
             Color.id.not_in(list(by_id)),
         ).limit(1))
         if collision is not None:
@@ -185,7 +206,7 @@ async def merge_colors(data: MergeRequest, db: DBSession):
         await db.execute(update(FilamentColor).where(FilamentColor.color_id.in_(source_ids)).values(color_id=data.survivor_id))
         await db.execute(delete(Color).where(Color.id.in_(source_ids)))
         try:
-            await db.execute(update(Color).where(Color.id == data.survivor_id).values(name=name, custom_fields=fields or None))
+            await db.execute(update(Color).where(Color.id == data.survivor_id).values(name=name, hex_code=result_hex, custom_fields=fields or None))
         except IntegrityError as exc:
             if _is_name_collision(exc):
                 raise name_collision() from exc

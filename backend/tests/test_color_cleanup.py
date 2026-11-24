@@ -1,7 +1,6 @@
 import pytest
-from sqlalchemy import select
-
 from app.models import Color, Filament, FilamentColor, Manufacturer
+from sqlalchemy import select
 
 
 async def seed(db):
@@ -73,19 +72,20 @@ async def test_merge_preserves_existing_metadata_and_all_assignment_positions(au
 
 
 @pytest.mark.asyncio
-async def test_merge_rejects_conflicting_metadata_and_stale_data(auth_client, db_session):
+@pytest.mark.parametrize('endpoint', ['merge', 'combine'])
+async def test_merge_rejects_conflicting_metadata_and_stale_data(auth_client, db_session, endpoint):
     client, csrf = auth_client
     colors = await seed(db_session)
     colors[1].custom_fields = {'note': 'different'}
     await db_session.commit()
     data = await preview(client)
     payload = {'records': reviewed(data, [c.id for c in colors[:3]]), 'survivor_id': colors[0].id,
-               'name': 'A'}
-    response = await client.post('/api/v1/colors/merge', headers={'X-CSRF-Token': csrf}, json=payload)
+               'hex_code': '#AABBCC', 'name': 'A'}
+    response = await client.post(f'/api/v1/colors/{endpoint}', headers={'X-CSRF-Token': csrf}, json=payload)
     assert response.status_code == 422
     colors[1].custom_fields = {'changed': 'since review'}
     await db_session.commit()
-    response = await client.post('/api/v1/colors/merge', headers={'X-CSRF-Token': csrf}, json=payload)
+    response = await client.post(f'/api/v1/colors/{endpoint}', headers={'X-CSRF-Token': csrf}, json=payload)
     assert response.status_code == 409
     assert len((await preview(client))['items']) == 4
 
@@ -147,7 +147,8 @@ async def test_cleanup_requires_authentication(client):
 
 
 @pytest.mark.asyncio
-async def test_read_only_user_cannot_merge_or_bulk_delete(auth_client, db_session):
+@pytest.mark.parametrize('endpoint', ['merge', 'combine'])
+async def test_read_only_user_cannot_merge_or_bulk_delete(auth_client, db_session, endpoint):
     from app.core.middleware import invalidate_auth_caches
     from app.core.security import generate_token_secret, hash_token
     from app.models import User, UserSession
@@ -168,8 +169,8 @@ async def test_read_only_user_cannot_merge_or_bulk_delete(auth_client, db_sessio
     records = reviewed(data, [color.id for color in colors])
     headers = {'X-CSRF-Token': csrf}
     assert (await client.post('/api/v1/colors/bulk-delete', headers=headers, json={'records': records})).status_code == 403
-    assert (await client.post('/api/v1/colors/merge', headers=headers, json={
-        'records': records[:2], 'survivor_id': records[0]['id'], 'name': 'Reader',
+    assert (await client.post(f'/api/v1/colors/{endpoint}', headers=headers, json={
+        'records': records[:2], 'survivor_id': records[0]['id'], 'hex_code': '#AABBCC', 'name': 'Reader',
     })).status_code == 403
 
 
@@ -199,7 +200,8 @@ def test_all_matching_selection_can_exceed_ten_thousand():
 
 
 @pytest.mark.asyncio
-async def test_revalidation_uses_current_locking_reads_for_records_and_assignments(auth_client, db_session, monkeypatch):
+@pytest.mark.parametrize('endpoint', ['merge', 'combine'])
+async def test_revalidation_uses_current_locking_reads_for_records_and_assignments(auth_client, db_session, monkeypatch, endpoint):
     from sqlalchemy.dialects import mysql
     from sqlalchemy.sql import Select
 
@@ -215,8 +217,8 @@ async def test_revalidation_uses_current_locking_reads_for_records_and_assignmen
         return await execute(statement, *args, **kwargs)
 
     monkeypatch.setattr(db_session, 'execute', observe)
-    response = await client.post('/api/v1/colors/merge', headers={'X-CSRF-Token': csrf}, json={
-        'records': reviewed(data, [a.id, b.id]), 'survivor_id': b.id, 'name': 'Merged',
+    response = await client.post(f'/api/v1/colors/{endpoint}', headers={'X-CSRF-Token': csrf}, json={
+        'records': reviewed(data, [a.id, b.id]), 'survivor_id': b.id, 'hex_code': '#123456', 'name': 'Merged',
     })
     assert response.status_code == 200, response.text
     assert any('FROM colors' in sql and 'FOR UPDATE' in sql for sql in statements)
@@ -392,9 +394,8 @@ async def test_merge_updates_only_affected_filament_timestamps(auth_client, db_s
 async def test_database_errors_roll_back_without_becoming_stale_review_conflicts(db_session, monkeypatch, error_type):
     from unittest.mock import AsyncMock
 
-    from sqlalchemy.exc import IntegrityError, OperationalError
-
     from app.services.color_cleanup import ReviewedColor, reviewed_transaction, snapshot
+    from sqlalchemy.exc import IntegrityError, OperationalError
 
     colors = await seed(db_session)
     data = await snapshot(db_session, [colors[0].id])
@@ -410,7 +411,8 @@ async def test_database_errors_roll_back_without_becoming_stale_review_conflicts
 
 
 @pytest.mark.asyncio
-async def test_late_name_collision_reports_specific_error_and_rolls_back_assignments(auth_client, db_session, monkeypatch):
+@pytest.mark.parametrize('endpoint', ['merge', 'combine'])
+async def test_late_name_collision_reports_specific_error_and_rolls_back_assignments(auth_client, db_session, monkeypatch, endpoint):
     from sqlalchemy import insert
     from sqlalchemy.sql.dml import Update
 
@@ -435,8 +437,8 @@ async def test_late_name_collision_reports_specific_error_and_rolls_back_assignm
         return await execute(statement, *args, **kwargs)
 
     monkeypatch.setattr(db_session, 'execute', insert_after_preflight)
-    response = await client.post('/api/v1/colors/merge', headers={'X-CSRF-Token': csrf}, json={
-        'records': reviewed(data, [a_id, b_id]), 'survivor_id': b_id, 'name': 'Late collision',
+    response = await client.post(f'/api/v1/colors/{endpoint}', headers={'X-CSRF-Token': csrf}, json={
+        'records': reviewed(data, [a_id, b_id]), 'survivor_id': b_id, 'hex_code': '#123456', 'name': 'Late collision',
     })
     assert response.status_code == 409, response.text
     assert response.json()['detail']['code'] == 'color_name_collision'
@@ -457,9 +459,8 @@ async def test_late_name_collision_reports_specific_error_and_rolls_back_assignm
     ('UNIQUE constraint failed: colors.id', {}, False),
 ])
 def test_name_collision_classification_does_not_mask_other_database_errors(message, attributes, collision):
-    from sqlalchemy.exc import IntegrityError
-
     from app.services.color_cleanup import _is_name_collision
+    from sqlalchemy.exc import IntegrityError
 
     error = Exception(*(message if isinstance(message, tuple) else (message,)))
     for key, value in attributes.items():
@@ -468,20 +469,28 @@ def test_name_collision_classification_does_not_mask_other_database_errors(messa
 
 
 @pytest.mark.asyncio
-async def test_cancelled_merge_publishes_all_committed_changes(db_session, tmp_path, monkeypatch):
+@pytest.mark.parametrize('combine', [False, True])
+async def test_cancelled_merge_publishes_all_committed_changes(db_session, tmp_path, monkeypatch, combine):
     import asyncio
     import json
 
     from app.core import primary_socket
     from app.core.event_bus import event_bus
-    from app.services.color_cleanup import MergeRequest, merge_colors, snapshot
+    from app.services.color_cleanup import (
+        CombineRequest,
+        MergeRequest,
+        combine_colors,
+        merge_colors,
+        snapshot,
+    )
 
     a, b, *_ = await seed(db_session)
     data = (await snapshot(db_session)).model_dump()
     monkeypatch.setattr(primary_socket, '_runtime_dir', tmp_path / 'private')
     async with event_bus.run(), event_bus.subscribe() as notices:
-        request = asyncio.create_task(merge_colors(MergeRequest(
-            records=reviewed(data, [a.id, b.id]), survivor_id=b.id, name='Committed merge',
+        request_model, operation = (CombineRequest, combine_colors) if combine else (MergeRequest, merge_colors)
+        request = asyncio.create_task(operation(request_model(
+            hex_code='#ABCDEF80', records=reviewed(data, [a.id, b.id]), survivor_id=b.id, name='Committed merge',
         ), db_session))
         try:
             assert json.loads(await asyncio.wait_for(anext(notices), 5))['event'] == 'colors_changed'
@@ -494,3 +503,117 @@ async def test_cancelled_merge_publishes_all_committed_changes(db_session, tmp_p
             if not request.done():
                 request.cancel()
             await asyncio.gather(request, return_exceptions=True)
+
+
+@pytest.mark.asyncio
+async def test_combine_different_hex_preserves_stops_and_survivor_references(auth_client, db_session):
+    client, csrf = auth_client
+    colors = [Color(name=name, hex_code=value) for name, value in [
+        ('Red', '#FF0000'), ('Blue', '#0000FF'), ('Alpha', '#11223380'), ('Unrelated', '#FFFFFF'),
+    ]]
+    maker = Manufacturer(name='Combine maker')
+    db_session.add_all([*colors, maker])
+    await db_session.flush()
+    filaments = [Filament(manufacturer_id=maker.id, designation=f'Combine {i}', material_type='PLA', diameter_mm=1.75) for i in range(3)]
+    db_session.add_all(filaments)
+    await db_session.flush()
+    links = [FilamentColor(filament_id=filaments[0].id, color_id=color.id, position=i, display_name_override=f'stop {i}') for i, color in enumerate([colors[0], colors[1], colors[0], colors[2]])]
+    links += [FilamentColor(filament_id=filaments[i].id, color_id=colors[j].id, position=0) for i, j in [(1, 1), (2, 3)]]
+    db_session.add_all(links)
+    await db_session.commit()
+    ids, filament_ids = [c.id for c in colors], [f.id for f in filaments]
+    original = [(x.id, x.filament_id, x.position, x.display_name_override) for x in links]
+    before = [f.updated_at for f in filaments]
+    response = await client.post('/api/v1/colors/combine', headers={'X-CSRF-Token': csrf}, json={
+        'records': reviewed(await preview(client), ids[:3]), 'survivor_id': ids[1], 'name': ' Combined ', 'hex_code': ' abcdef80 ',
+    })
+    assert response.status_code == 200, response.text
+    assert response.json() == {'changed': 2}
+    db_session.expire_all()
+    result = await db_session.get(Color, ids[1])
+    assert (result.name, result.hex_code) == ('Combined', '#ABCDEF80')
+    saved = (await db_session.scalars(select(FilamentColor).order_by(FilamentColor.id))).all()
+    assert [(x.id, x.filament_id, x.position, x.display_name_override) for x in saved] == original
+    assert [x.color_id for x in saved] == [ids[1]] * 5 + [ids[3]]
+    timestamps = [(await db_session.get(Filament, fid)).updated_at for fid in filament_ids]
+    assert timestamps[0] > before[0] and timestamps[1] > before[1] and timestamps[2] == before[2]
+    assert [c['id'] for c in (await preview(client))['items']] == [ids[1], ids[3]]
+
+
+@pytest.mark.asyncio
+async def test_duplicate_merge_ignores_extra_hex_and_keeps_legacy_contract(auth_client, db_session):
+    client, csrf = auth_client
+    a, b, *_ = await seed(db_session)
+    response = await client.post('/api/v1/colors/merge', headers={'X-CSRF-Token': csrf}, json={
+        'records': reviewed(await preview(client), [a.id, b.id]), 'survivor_id': b.id, 'name': 'Legacy', 'hex_code': 'invalid',
+    })
+    assert response.status_code == 200, response.text
+    assert next(c for c in (await preview(client))['items'] if c['id'] == b.id)['hex_code'] == '#AABBCCFF'
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('change', [
+    {'hex_code': None}, {'hex_code': 'bad hex'}, {'hex_code': ''}, {'name': ' '}, {'name': 'x' * 101},
+    {'survivor_id': 999999}, {'records': []}, {'omit_hex': True}, {'one': True}, {'duplicate': True},
+])
+async def test_combine_validates_result_without_changes(auth_client, db_session, change):
+    client, csrf = auth_client
+    colors = await seed(db_session)
+    before = await preview(client)
+    records = reviewed(before, [colors[0].id, colors[3].id])
+    payload = {'records': records, 'survivor_id': colors[0].id, 'name': 'Result', 'hex_code': '#abc8', **change}
+    if change.get('omit_hex'):
+        del payload['hex_code']
+    if change.get('one'):
+        payload['records'] = records[:1]
+    if change.get('duplicate'):
+        payload['records'] = [records[0], records[0]]
+    response = await client.post('/api/v1/colors/combine', headers={'X-CSRF-Token': csrf}, json=payload)
+    assert response.status_code == 422, response.text
+    assert await preview(client) == before
+
+
+@pytest.mark.asyncio
+async def test_combine_checks_final_hex_collision_and_normalizes_shorthand(auth_client, db_session):
+    client, csrf = auth_client
+    a, b, c, _ = await seed(db_session)
+    c.name, c.hex_code = 'Result', '#AABBCC88'
+    await db_session.commit()
+    before = await preview(client)
+    payload = {'records': reviewed(before, [a.id, b.id]), 'survivor_id': b.id, 'name': 'Result', 'hex_code': '#abc8'}
+    response = await client.post('/api/v1/colors/combine', headers={'X-CSRF-Token': csrf}, json=payload)
+    assert response.status_code == 409, response.text
+    assert response.json()['detail']['code'] == 'color_name_collision'
+    assert await preview(client) == before
+    payload['name'] = 'New result'
+    response = await client.post('/api/v1/colors/combine', headers={'X-CSRF-Token': csrf}, json=payload)
+    assert response.status_code == 200, response.text
+    assert next(c for c in (await preview(client))['items'] if c['id'] == b.id)['hex_code'] == '#AABBCC88'
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('change', ['delete', 'edit', 'assignment'])
+async def test_combine_rejects_changed_sources_atomically(auth_client, db_session, change):
+    client, csrf = auth_client
+    a, _, _, b = await seed(db_session)
+    data = await preview(client)
+    ids = [a.id, b.id]
+    if change == 'delete':
+        await db_session.delete(b)
+    elif change == 'edit':
+        b.hex_code = '#123456'
+    else:
+        maker = Manufacturer(name='Changed assignment maker')
+        db_session.add(maker)
+        await db_session.flush()
+        filament = Filament(manufacturer_id=maker.id, designation='Changed', material_type='PLA', diameter_mm=1.75)
+        db_session.add(filament)
+        await db_session.flush()
+        db_session.add(FilamentColor(filament_id=filament.id, color_id=b.id, position=1))
+    await db_session.commit()
+    changed = await preview(client)
+    response = await client.post('/api/v1/colors/combine', headers={'X-CSRF-Token': csrf}, json={
+        'records': reviewed(data, ids), 'survivor_id': ids[0], 'name': 'Combined', 'hex_code': '#ABCDEF',
+    })
+    assert response.status_code == 409, response.text
+    assert await preview(client) == changed
