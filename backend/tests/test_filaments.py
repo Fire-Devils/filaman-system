@@ -1925,3 +1925,27 @@ async def test_manufacturer_profile_catalog_roundtrip_keeps_native_shape(auth_cl
     response = await client.get(f"/api/v1/manufacturers/{created['id']}")
     assert response.json()["custom_fields"] == metadata
     assert response.json()["empty_spool_weight_g"] == 0
+
+
+@pytest.mark.asyncio
+async def test_color_detail_counts_distinct_filaments_and_preserves_legacy_list(auth_client, db_session):
+    client, _ = auth_client
+    maker = await _create_manufacturer(db_session)
+    color = await _create_color(db_session, name='Shared detail', hex_code='#123456')
+    unused = await _create_color(db_session, name='Unused detail', hex_code='#654321')
+    for index in range(3):
+        filament = await _create_filament(db_session, maker.id, designation=f'Shared {index}')
+        db_session.add(FilamentColor(filament_id=filament.id, color_id=color.id, position=1))
+    await db_session.commit()
+    # A merge can retain multiple stops using the same swatch on one filament.
+    db_session.add(FilamentColor(filament_id=filament.id, color_id=color.id, position=2))
+    await db_session.commit()
+    detail = await client.get(f'/api/v1/colors/{color.id}')
+    assert detail.status_code == 200
+    assert detail.json()['usage_count'] == 3
+    listing = await client.get('/api/v1/colors')
+    assert next(item['usage_count'] for item in listing.json()['items'] if item['id']==color.id) == 4
+    assert (await client.get(f'/api/v1/colors/{unused.id}')).json()['usage_count'] == 0
+    missing = await client.get('/api/v1/colors/2147483647')
+    assert missing.status_code == 404
+    assert missing.json()['detail']['code'] == 'not_found'

@@ -1,0 +1,9 @@
+---
+import PluginDrawer from './PluginDrawer.astro'
+interface Props { surface: string }
+const {surface} = Astro.props
+---
+<div data-plugin-ui-launchers={surface} style="display: contents">
+  <div data-plugin-hook-actions style="display: contents"></div>
+  <PluginDrawer titleId={`plugin-${surface.replace('.', '-')}-heading`} selection={surface.endsWith('.selection')} />
+</div>

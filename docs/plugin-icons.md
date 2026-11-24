@@ -78,9 +78,13 @@ An integration that already declares `capabilities.filament_ui.editor` can opt i
 }
 ```
 
-`style` accepts `text` (the default) or `icon`. The icon button uses the plugin name as its accessible label and falls back to the puzzle icon. Create and selection launchers keep their text labels.
+`style` accepts `text` (the default) or `icon`. The icon button uses the plugin name as its accessible label and falls back to the puzzle icon. The shared launcher host honors the icon style on Create and Edit; older hosts honor it only on Edit. Legacy selection launchers keep text labels.
 
 `allow_auto_open` defaults to false. If enabled in the manifest, the plugin can offer a checkbox that sets the same-origin browser storage key `filaman:plugin:<plugin_key>:open-on-edit` to the string `true`. Clear the key when the user switches it off. Installing the plugin never enables the preference. FilaMan opens at most one opted-in plugin, in discovery order, after the editor is ready. The existing editor permissions and draft staging rules apply.
+
+## Launchers on other pages
+
+Use the optional `capabilities.ui_launchers` contract for host-owned buttons on supported editor, library and selection surfaces. See [Plugin UI launchers](plugin-ui-launchers.md) for declarations, context protocols, permissions and compatibility. Keep legacy filament declarations for older hosts; new entries do not enable auto-open.
 
 ## Example SVG
 

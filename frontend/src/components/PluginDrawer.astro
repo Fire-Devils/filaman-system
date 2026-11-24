@@ -1,0 +1,11 @@
+---
+interface Props { titleId: string; selection?: boolean }
+const { titleId, selection = false } = Astro.props
+---
+<dialog class="fm-form-dialog fm-plugin-drawer filament-plugin-dialog" class:list={{ 'filament-plugin-selection': selection }} aria-labelledby={titleId}>
+  <div class="fm-section-header">
+    <h2 id={titleId}></h2>
+    <button type="button" class="fm-btn fm-btn-outline" data-i18n="common.close" autofocus>Close</button>
+  </div>
+  <div data-plugin-hook-content></div>
+</dialog>

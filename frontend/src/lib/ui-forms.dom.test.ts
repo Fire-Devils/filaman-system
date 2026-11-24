@@ -10,6 +10,7 @@ import * as scanner from './tag-scanner'
 import * as escape from './extra-fields'
 import * as actions from './table-actions'
 import * as colors from './colors'
+import { hasPermission } from './auth'
 import { colorUsageHtml } from './color-library-links'
 import * as inventoryScroll from './inventory-scroll'
 import * as filters from './table-column-filters'
@@ -22,12 +23,18 @@ import { initColumnLocks } from './column-locks'
 
 const calls: { path: string; init?: RequestInit }[] = []
 let failSave = false
+type ColorHookOptions = Parameters<typeof import('./color-plugin-hooks').mountColorPluginHooks>[2]
+let capturedColorHooks: ColorHookOptions | undefined
+let fixtureUser: {is_superadmin: boolean; permissions: string[]} = {is_superadmin: true, permissions: []}
 let fixtureColorHex = '#12345680'
 let intercept: ((path: string, init?: RequestInit) => Response | Promise<Response> | undefined) | undefined
 const settings = { login_disabled: false, currency: 'EUR', rfid_protocol: 'openspool', rfid_extended_data_enabled: false, rfid_display_colons: true, default_spool_core_weight_g: 0, bambu_unmatched_profile_fallback: 'generic', filament_lookup_source: 'filamandb' }
 const printer = { id: 4, name: 'Example printer', driver_key: 'moonraker', driver_config: { url: 'http://printer.local', enabled: true, targets: [{ slot: 1 }] } }
 const dependencies = {
   ...dialog, ...state, ...driver, ...i18n, ...abort, ...scanner, ...escape, ...actions, ...colors, ...filters, ...inventoryScroll, ...locationTypes, ...driverLocations, api, createExtraFieldDefinitionDialog, copyText, initColumnLocks, colorUsageHtml,
+  mountColorPluginHooks: (_host: HTMLElement, _workspace: HTMLDialogElement, options: ColorHookOptions) => { capturedColorHooks = options; return {close() {}, refresh: async () => [], updateEligibility() {}} },
+  mountPluginUiLaunchers: () => ({refresh: async () => [], updateEligibility() {}}),
+  hasPermission, getMe: async () => fixtureUser,
   fetchAllPages: async () => ({ items: [{ id: 2, name: 'Translucent blue', hex_code: fixtureColorHex, usage_count: 1 }] }),
   initI18n: async () => {}, initCurrency: async () => {}, initMaterialPresets: () => {}, initColumnPicker: () => {}, initColumnResize: () => {},
   invalidateCachePrefix: () => {}, CACHE_KEYS: { LOCATIONS: 'locations' },
@@ -45,6 +52,8 @@ function submit(id: string) { document.getElementById(id)!.dispatchEvent(new Eve
 function writes() { return calls.filter(call => call.init?.method && call.init.method !== 'GET') }
 beforeEach(() => {
   calls.length = 0
+  capturedColorHooks = undefined
+  fixtureUser = {is_superadmin: true, permissions: []}
   failSave = false
   fixtureColorHex = '#12345680'
   intercept = undefined
@@ -57,9 +66,11 @@ beforeEach(() => {
     const overridden = intercept?.(path, init)
     if (overridden) return overridden
     if (init?.method && init.method !== 'GET') return failSave ? Response.json({ message: 'Save failed' }, { status: 400 }) : Response.json({ success: true })
+    if (path === '/auth/me') return Response.json(fixtureUser)
     if (path === '/api/v1/me') return Response.json({ email: 'test@example.com', display_name: 'Test', language: 'en' })
     if (path.includes('app-settings')) return Response.json(settings)
     if (path.includes('/admin/system/plugins')) return Response.json([{ driver_key: 'moonraker', plugin_type: 'printer_driver', is_active: true, config_schema: { properties: { url: { type: 'string' }, enabled: { type: 'boolean' }, targets: { type: 'array' } } } }])
+    if (path === '/api/v1/colors/2') return Response.json({id: 2, name: 'Translucent blue', hex_code: fixtureColorHex, usage_count: 1})
     if (path === '/api/v1/printers') return Response.json({ items: [printer] })
     if (path === '/api/v1/printers/4') return Response.json(printer)
     return Response.json([])
@@ -133,6 +144,7 @@ it('retains structured driver config when editing through the printer dialog', a
   await boot('printers/index')
   await vi.waitFor(() => expect(document.querySelector('.btn-edit')).not.toBeNull())
   document.querySelector<HTMLButtonElement>('.btn-edit')!.click()
+  await vi.waitFor(() => expect(document.querySelector('#modal-container')!.hasAttribute('open')).toBe(true))
   await vi.waitFor(() => expect(document.querySelector<HTMLDialogElement>('#modal-container')!.open).toBe(true))
   expect(document.querySelector<HTMLButtonElement>('#modal-submit')!.disabled).toBe(true)
   change('printer-name', 'Updated printer')
@@ -147,6 +159,7 @@ it.each([['en', 'Edit'], ['de', 'Bearbeiten']] as const)('retains quoted locatio
   await vi.waitFor(() => expect(document.querySelector('.btn-edit')).not.toBeNull())
   expect(document.querySelector('.btn-edit')!.getAttribute('aria-label')).toBe(label)
   document.querySelector<HTMLButtonElement>('.btn-edit')!.click()
+  await vi.waitFor(() => expect(document.querySelector('#modal-container')!.hasAttribute('open')).toBe(true))
   expect(document.querySelector<HTMLInputElement>('#location-name')!.value).toBe('Shelf "A" <blue>')
   expect(document.querySelector<HTMLDialogElement>('#modal-container')!.open).toBe(true)
   expect(document.querySelector<HTMLDialogElement>('#rfid-modal')!.open).toBe(false)
@@ -341,12 +354,14 @@ it('preserves alpha colors and keeps in-use Delete unavailable', async () => {
   expect(document.querySelector('td[data-column-pin="end"] .btn-edit')).not.toBeNull()
   expect(document.querySelector('td[data-column-pin="end"] .btn-delete use')?.getAttribute('href')).toContain('#icon-trash')
   document.querySelector<HTMLButtonElement>('.btn-edit')!.click()
-  expect(document.querySelector<HTMLInputElement>('#color-hex')!.value).toBe('#12345680')
+  await vi.waitFor(() => expect(document.querySelector('#modal-container')!.hasAttribute('open')).toBe(true))
+  await vi.waitFor(() => expect(document.querySelector<HTMLInputElement>('#color-hex')!.value).toBe('#12345680'))
   expect(document.querySelector<HTMLButtonElement>('#modal-submit')!.disabled).toBe(true)
   change('color-name', 'Renamed translucent blue')
   submit('modal-form')
   await vi.waitFor(() => expect(writes()).toHaveLength(1))
   expect(JSON.parse(String(writes()[0].init!.body))).toEqual({ name: 'Renamed translucent blue', hex_code: '#12345680' })
+  await new Promise(resolve => setTimeout(resolve, 0)) // Settle the Save-owned list render before teardown.
 })
 
 it('ignores a late RFID write response after Escape and reopening the dialog', async () => {
@@ -393,6 +408,7 @@ it('keeps user management usable when the role catalog is forbidden, without cha
   await vi.waitFor(() => expect(document.querySelector<HTMLDialogElement>('#password-modal')!.open).toBe(false))
   expect(writes()[0].path).toBe('/api/v1/admin/users/7/reset-password')
   document.querySelector<HTMLButtonElement>('.btn-edit')!.click()
+  await vi.waitFor(() => expect(document.querySelector('#modal-container')!.hasAttribute('open')).toBe(true))
   await vi.waitFor(() => expect(document.querySelector<HTMLInputElement>('#user-id')!.value).toBe('7'))
   expect(document.querySelector('#roles-checkboxes')!.textContent).toBe(i18n.t('admin.rolesUnavailable'))
   change('user-display-name', 'Updated editor')
@@ -415,6 +431,7 @@ it('keeps the user draft open when role assignment fails, then retries without c
   await boot('admin/users')
   await vi.waitFor(() => expect(document.querySelector('.btn-edit')).not.toBeNull())
   document.querySelector<HTMLButtonElement>('.btn-edit')!.click()
+  await vi.waitFor(() => expect(document.querySelector('#modal-container')!.hasAttribute('open')).toBe(true))
   await vi.waitFor(() => expect(document.querySelector<HTMLInputElement>('#user-email')!.value).toBe(user.email))
   change('user-display-name', 'Updated editor')
   submit('modal-form')
@@ -508,13 +525,101 @@ it('mutes Save after reverting an opaque color through the opacity controls', as
   await boot('filaments/colors')
   await vi.waitFor(() => expect(document.querySelector('.btn-edit')).not.toBeNull())
   document.querySelector<HTMLButtonElement>('.btn-edit')!.click()
+  await vi.waitFor(() => expect(document.querySelector('#modal-container')!.hasAttribute('open')).toBe(true))
   const save = document.querySelector<HTMLButtonElement>('#modal-submit')!
   expect(save.disabled).toBe(true)
   change('color-alpha-enabled', true)
   change('color-alpha-value', '50')
   expect(save.disabled).toBe(false)
   change('color-alpha-enabled', false)
-  expect(document.querySelector<HTMLInputElement>('#color-hex')!.value).toBe('#FF0000')
+  await vi.waitFor(() => expect(document.querySelector<HTMLInputElement>('#color-hex')!.value).toBe('#FF0000'))
   expect(save.disabled).toBe(true)
   expect(writes()).toHaveLength(0)
+})
+
+
+it('plugin color-open preserves a create-only draft instead of entering inaccessible edit mode', async () => {
+  fixtureUser = {is_superadmin: false, permissions: ['colors:create']}
+  await boot('filaments/colors')
+  document.querySelector<HTMLButtonElement>('#btn-new')!.click(); change('color-name', 'Unsaved draft')
+  const confirm = vi.fn(async () => true); Object.assign(window, {__fmConfirm: confirm})
+  expect(await capturedColorHooks!.openExisting(2, () => true, async () => true)).toBe(false)
+  expect(document.querySelector<HTMLInputElement>('#color-name')!.value).toBe('Unsaved draft')
+  expect(confirm).not.toHaveBeenCalled()
+})
+
+it.each(['deleted', 'revoked', 'removed', 'manual', 'updated'])('plugin color-open revalidates a %s target after human confirmation', async outcome => {
+  await boot('filaments/colors')
+  document.querySelector<HTMLButtonElement>('#btn-new')!.click(); change('color-name', 'Unsaved draft')
+  let confirmed = false
+  intercept = (path, init) => {
+    if (init?.method && init.method !== 'GET') return
+    if (path === '/auth/me') return Response.json({is_superadmin: !(confirmed && outcome === 'revoked'), permissions: []})
+    if (path === '/api/v1/colors/2') return confirmed && outcome === 'deleted'
+      ? Response.json({detail: 'Deleted'}, {status: 404})
+      : Response.json({id: 2, name: confirmed ? 'Fresh target' : 'Old target', hex_code: '#AABBCC', usage_count: 9})
+  }
+  const confirm = vi.fn(async () => { confirmed = true; if (outcome === 'manual') change('color-name', 'New manual draft'); return true })
+  Object.assign(window, {__fmConfirm: confirm})
+  const opened = await capturedColorHooks!.openExisting(2, () => true, async () => outcome !== 'removed')
+  expect(confirm).toHaveBeenCalledWith(expect.any(String), {okLabel: 'Open color', isDanger: false})
+  expect(opened).toBe(outcome === 'updated')
+  expect(document.querySelector<HTMLInputElement>('#color-name')!.value).toBe(outcome === 'updated' ? 'Fresh target' : outcome === 'manual' ? 'New manual draft' : 'Unsaved draft')
+  if (opened) expect(capturedColorHooks!.read().usage_count).toBe(9)
+})
+
+
+it('uses the distinct-filament detail count when entering the native color editor', async () => {
+  intercept = path => path === '/api/v1/colors/2'
+    ? Response.json({id: 2, name: 'Fresh native', hex_code: '#12345680', usage_count: 2}) : undefined
+  await boot('filaments/colors')
+  await vi.waitFor(() => expect(document.querySelector('.btn-edit')).not.toBeNull())
+  document.querySelector<HTMLButtonElement>('.btn-edit')!.click()
+  await vi.waitFor(() => expect(document.querySelector('#modal-container')!.hasAttribute('open')).toBe(true))
+  await vi.waitFor(() => expect(capturedColorHooks!.read().fields.name).toBe('Fresh native'))
+  expect(capturedColorHooks!.read().usage_count).toBe(2)
+})
+
+
+it('does not show a superseded color-detail error over a newer native draft', async () => {
+  let release!: (value: Response) => void
+  intercept = path => path === '/api/v1/colors/2' ? new Promise(resolve => {release = resolve}) : undefined
+  await boot('filaments/colors')
+  await vi.waitFor(() => expect(document.querySelector('.btn-edit')).not.toBeNull())
+  const alert = vi.fn(); Object.assign(window, {__fmAlert: alert})
+  document.querySelector<HTMLButtonElement>('.btn-edit')!.click()
+  document.querySelector<HTMLButtonElement>('#btn-new')!.click()
+  change('color-name', 'New draft')
+  release(Response.json({message: 'Deleted'}, {status: 404}))
+  await new Promise(resolve => setTimeout(resolve, 0))
+  expect(alert).not.toHaveBeenCalled()
+  expect(document.querySelector<HTMLInputElement>('#color-name')!.value).toBe('New draft')
+})
+
+
+it('does not bind an obsolete color page after delayed initialization', async () => {
+  let release!: () => void, started!: () => void
+  const reading = new Promise<void>(resolve => {started = resolve})
+  const initialized = new Promise<void>(resolve => {release = resolve})
+  const lifecycle = new AbortController()
+  const pending = bootAstroPage('filaments/colors', {...dependencies, initI18n: () => {started(); return initialized}}, lifecycle.signal)
+  await reading
+  lifecycle.abort()
+  document.body.innerHTML = '<main>Another panel</main>'
+  release()
+  await expect(pending).resolves.toBeUndefined()
+  expect(document.body.textContent).toBe('Another panel')
+})
+
+
+it.each(['failed lookup', 'later grant'])('color-open checks current authorization after a %s snapshot', async initial => {
+  fixtureUser = {is_superadmin: false, permissions: ['colors:create']}
+  await bootAstroPage('filaments/colors', {...dependencies, getMe: async () => initial === 'failed lookup' ? null : fixtureUser})
+  document.querySelector<HTMLButtonElement>('#btn-new')!.click()
+  change('color-name', 'Unsaved draft')
+  intercept = path => path === '/auth/me' ? Response.json({is_superadmin: true, permissions: []}) : undefined
+  Object.assign(window, {__fmConfirm: vi.fn(async () => true)})
+  expect(await capturedColorHooks!.openExisting(2, () => true, async () => true)).toBe(true)
+  expect(calls.filter(call => call.path === '/auth/me')).toHaveLength(2)
+  expect(document.querySelector<HTMLInputElement>('#color-id')!.value).toBe('2')
 })

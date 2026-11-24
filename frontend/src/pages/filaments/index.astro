@@ -3,6 +3,7 @@ import Layout from '../../layouts/Layout.astro'
 import InventoryLoadMore from '../../components/InventoryLoadMore.astro'
 import InventoryFilterReset from '../../components/InventoryFilterReset.astro'
 import FilamentPluginHooks from '../../components/FilamentPluginHooks.astro'
+import PluginUiLaunchers from '../../components/PluginUiLaunchers.astro'
 
 interface Props { compactPicker?: boolean }
 const { compactPicker = false } = Astro.props
@@ -36,6 +37,7 @@ const { compactPicker = false } = Astro.props
   <div class="fm-list-toolbar">
     <h1 data-i18n="filaments.title">Filaments</h1>
     <div class="fm-list-controls">
+      {!compactPicker && <PluginUiLaunchers surface="filaments.library" />}
       <a href="/filaments/colors" class="fm-btn fm-btn-outline fm-color-library-link">
         <span class="fm-color-library-icon" aria-hidden="true"></span>
         <span data-i18n="colors.title">Color Library</span>
@@ -185,6 +187,7 @@ const { compactPicker = false } = Astro.props
     } from '../../lib/table-column-filters'
     import { formatPrice, getCurrency, initCurrency } from '../../lib/format'
     import { filamentColorValues, inventoryColorMatcher, toColorSwatchBackground } from '../../lib/colors'
+    import { mountPluginUiLaunchers } from '../../lib/plugin-ui-launchers'
     import { mountFilamentPluginHooks } from '../../lib/filament-plugin-hooks'
     import type { AppDialogs } from '../../lib/form-dialog'
     import { mountPanel } from '../../lib/panel-navigation'
@@ -1057,11 +1060,17 @@ const { compactPicker = false } = Astro.props
       }
     }, { signal: panelSignal })
 
+    const libraryTools = document.querySelector<HTMLElement>('[data-plugin-ui-launchers="filaments.library"]')
+    if (!compactPicker && !selectForSpool && libraryTools) void mountPluginUiLaunchers(libraryTools, {
+      surface: 'filaments.library', workspace: libraryTools.closest<HTMLElement>('.fm-main') || document.body,
+      isEligible: () => ({enabled: true}), context: () => ({entity: 'filaments'}),
+    }, panelSignal).refresh()
+
     // ── Bulk Selection & Actions ──────────────────────────────
     const hooks = document.querySelector<HTMLElement>('[data-filament-plugin-hooks]')
-    if (!compactPicker && !selectForSpool && hooks) mountFilamentPluginHooks(hooks, {
+    const filamentPlugins = !compactPicker && !selectForSpool && hooks ? mountFilamentPluginHooks(hooks, {
       mode: 'selection', selectedIds: selectedFilamentIds, expectedFilaments: selectedPickerFilaments,
-    }, panelSignal)
+    }, panelSignal) : undefined
 
     const selectionLimit = compactPicker ? 50 : Infinity
     function setFilamentSelected(id: number, checked: boolean): boolean {
@@ -1081,6 +1090,7 @@ const { compactPicker = false } = Astro.props
     }
 
     function updateBulkBar() {
+      filamentPlugins?.updateEligibility()
       if (selectForSpool) return
       const bar = document.getElementById('bulk-action-bar')!
       const countEl = document.getElementById('bulk-count')!

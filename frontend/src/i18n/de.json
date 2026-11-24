@@ -754,6 +754,7 @@
     "importFromTagSelectManually": "Bitte Filament manuell auswählen"
   },
   "colors": {
+    "confirmOpenExisting": "{name} öffnen? Ungespeicherte Farbänderungen werden verworfen.",
     "colorCount": "{count} Farbe(n)",
     "title": "Farbbibliothek",
     "addColor": "Farbe hinzufügen",
@@ -2533,5 +2534,13 @@
     "lot": "Charge {lot}",
     "select": "Zu verknüpfende Spule",
     "failed": "Der Vorschlag konnte nicht übernommen werden."
+  },
+  "pluginLaunchers": {
+    "replaceAction": "Werkzeug ersetzen",
+    "openColor": "Farbe öffnen",
+    "retry": "Plugin-Werkzeuge erneut laden",
+    "more": "Weitere Plugin-Werkzeuge",
+    "replace": "Offenes Plugin-Werkzeug ersetzen? Die ungespeicherte Unterhaltung wird geschlossen.",
+    "selectRecords": "Zuerst Datensätze auswählen"
   }
 }

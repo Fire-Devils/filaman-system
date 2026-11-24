@@ -753,6 +753,7 @@
     "printJobs": "Prints"
   },
   "colors": {
+    "confirmOpenExisting": "Open {name}? Unsaved color changes will be discarded.",
     "colorCount": "{count} color(s)",
     "title": "Color Library",
     "addColor": "Add Color",
@@ -2532,5 +2533,13 @@
     "lot": "lot {lot}",
     "select": "Spool to link",
     "failed": "The suggestion could not be applied."
+  },
+  "pluginLaunchers": {
+    "replaceAction": "Replace tool",
+    "openColor": "Open color",
+    "retry": "Retry plugin tools",
+    "more": "More plugin tools",
+    "replace": "Replace the open plugin tool? Its unsaved conversation will close.",
+    "selectRecords": "Select records first"
   }
 }

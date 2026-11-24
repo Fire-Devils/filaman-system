@@ -1,0 +1,10 @@
+---
+import PluginDrawer from './PluginDrawer.astro'
+---
+<div data-color-plugin-hooks>
+  <div data-plugin-hook-actions></div>
+  <PluginDrawer titleId="color-plugin-heading" />
+</div>
+<style>
+  [data-color-plugin-hooks], [data-plugin-hook-actions] { display: contents; }
+</style>
