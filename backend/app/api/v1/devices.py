@@ -232,7 +232,28 @@ async def device_heartbeat(
     if data.firmware_project:
         device.firmware_project = data.firmware_project
     await db.commit()
-    return {"status": "ok"}
+
+    result: dict = {"status": "ok"}
+    if data.firmware_project and data.firmware_version:
+        entry = await _current_firmware(db, data.firmware_project)
+        if (
+            entry is not None
+            and entry.version != data.firmware_version
+            # This version already failed on the device and was rolled back.
+            and not (device.last_ota_result == "rolled_back" and device.last_ota_to == entry.version)
+        ):
+            result["firmware_update"] = entry.version
+    return result
+
+
+async def _current_firmware(db, project: str) -> DeviceFirmware | None:
+    return (
+        await db.execute(
+            select(DeviceFirmware).where(
+                DeviceFirmware.project == project, DeviceFirmware.is_current.is_(True)
+            )
+        )
+    ).scalar_one_or_none()
 
 
 @router.get("/firmware/latest", response_model=dict)
@@ -241,13 +262,7 @@ async def get_latest_firmware(
     project: str,
     device: Device = Depends(get_current_device),
 ):
-    entry = (
-        await db.execute(
-            select(DeviceFirmware).where(
-                DeviceFirmware.project == project, DeviceFirmware.is_current.is_(True)
-            )
-        )
-    ).scalar_one_or_none()
+    entry = await _current_firmware(db, project)
     if entry is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,

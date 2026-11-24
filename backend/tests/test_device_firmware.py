@@ -247,6 +247,42 @@ async def test_heartbeat_with_target_version_marks_started_update_ok(auth_client
     assert (item["last_ota_from"], item["last_ota_to"]) == ("1.0.0", "1.1.0")
 
 
+async def _hb(client, token, version="1.0.0", project=ESP32):
+    r = await client.post(
+        "/api/v1/devices/heartbeat",
+        json={"ip_address": "10.0.0.5", "firmware_version": version, "firmware_project": project},
+        headers=dh(token),
+    )
+    assert r.status_code == 200
+    return r.json()
+
+
+@pytest.mark.asyncio
+async def test_heartbeat_firmware_hint(auth_client, device_token):
+    client, csrf = auth_client
+    token, _ = device_token
+    assert await _hb(client, token) == {"status": "ok"}  # no firmware for project
+    assert (await upload(client, csrf, make_image(version="1.1.0"))).status_code in (200, 201)
+    assert await _hb(client, token, "1.0.0") == {"status": "ok", "firmware_update": "1.1.0"}
+    assert await _hb(client, token, "1.1.0") == {"status": "ok"}
+    assert await _hb(client, token, "1.0.0", project=S3) == {"status": "ok"}
+
+
+@pytest.mark.asyncio
+async def test_heartbeat_firmware_hint_suppressed_after_rollback(auth_client, device_token):
+    client, csrf = auth_client
+    token, _ = device_token
+    assert (await upload(client, csrf, make_image(version="1.1.0"))).status_code in (200, 201)
+    await client.post(
+        "/api/v1/devices/ota-report",
+        json={"from_version": "1.0.0", "to_version": "1.1.0", "result": "rolled_back"},
+        headers=dh(token),
+    )
+    assert await _hb(client, token, "1.0.0") == {"status": "ok"}
+    assert (await upload(client, csrf, make_image(version="1.2.0"))).status_code in (200, 201)
+    assert await _hb(client, token, "1.0.0") == {"status": "ok", "firmware_update": "1.2.0"}
+
+
 @pytest.mark.asyncio
 async def test_admin_endpoints_forbidden_without_permission(client, normal_user, db_session):
     secret = generate_token_secret()
