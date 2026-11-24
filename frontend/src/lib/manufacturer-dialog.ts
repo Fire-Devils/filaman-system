@@ -188,6 +188,7 @@ export function createManufacturerDialog(options: {
       ${metric('archived_spool_count', 'manufacturers.archivedSpools', 'archive', spoolUrl('archived'), 'metric-archived')}
     </div><div class="manufacturer-inventory-context"><div class="manufacturer-materials">${(current.materials as string[] || []).map(material => `<span>${e(material)}</span>`).join('')}</div><div class="manufacturer-values">
       <a href="${e(spoolUrl('active'))}"><span>${label('manufacturers.totalValueAvailable')}</span><strong>${e(formatPrice(current.total_price_available as number, getCurrency()))}</strong></a>
+      <a href="${e(spoolUrl('active'))}"><span>${label('manufacturers.remainingValueAvailable')}</span><strong>${e(formatPrice((current.remaining_price_available ?? current.total_price_available) as number, getCurrency()))}</strong></a>
       <a href="${e(spoolUrl('all'))}"><span>${label('manufacturers.totalSpentAllTime')}</span><strong>${e(formatPrice(current.total_price_all as number, getCurrency()))}</strong></a>
     </div></div>`
   }
@@ -349,7 +350,7 @@ export function createManufacturerDialog(options: {
       if (active) {
         const wasNew = !current
         // Mutation responses do not calculate aggregates; retain the list's inventory stats.
-        const stats = Object.fromEntries(['filament_count', 'spool_count', 'archived_spool_count', 'materials', 'total_price_available', 'total_price_all'].filter(key => current?.[key] !== undefined).map(key => [key, current![key]]))
+        const stats = Object.fromEntries(['filament_count', 'spool_count', 'archived_spool_count', 'materials', 'total_price_available', 'remaining_price_available', 'total_price_all'].filter(key => current?.[key] !== undefined).map(key => [key, current![key]]))
         current = { ...current, ...saved, ...stats }
         if (logoJobs.some(([source]) => source.saveLogo) && !logoFailed) {
           const refreshed = await request<Manufacturer>(`/manufacturers/${saved.id}`, { signal: controller.signal }).catch(() => null)

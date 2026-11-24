@@ -92,6 +92,7 @@ class ManufacturerResponse(ManufacturerSummaryResponse):
     spool_count: int = 0
     archived_spool_count: int = 0
     total_price_available: float = 0.0
+    remaining_price_available: float = 0.0
     total_price_all: float = 0.0
     materials: list[str] = []
 

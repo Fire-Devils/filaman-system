@@ -5,10 +5,12 @@
       "date": "",
       "changes": {
         "de": [
-          { "type": "fix", "text": "„Aus FilaManDB laden“ im Filament-Formular übernimmt jetzt auch die Farbe von Katalogeinträgen, die ihre Farbe nur als Einzelwert (hex_color) statt als Farbliste führen, z. B. die Polymaker-Serie „Polylite - …“ (#293)." }
+          { "type": "fix", "text": "„Aus FilaManDB laden“ im Filament-Formular übernimmt jetzt auch die Farbe von Katalogeinträgen, die ihre Farbe nur als Einzelwert (hex_color) statt als Farbliste führen, z. B. die Polymaker-Serie „Polylite - …“ (#293)." },
+          { "type": "feature", "text": "Das Dashboard und die Hersteller-Ansicht zeigen zusätzlich den „Restwert (verfügbar)“: der Kaufpreis jeder Spule anteilig nach Restgewicht (Spulen ohne bekannte Kapazität zählen mit vollem Preis, Spulen ohne Kaufpreis mit 0). Der bisherige Gesamtwert heißt jetzt „Kaufwert (verfügbar)“ und bleibt unverändert; die API liefert neu `remaining_value_available` bzw. `remaining_price_available` (#290)." }
         ],
         "en": [
-          { "type": "fix", "text": "\"Load from FilaManDB\" in the filament form now also takes over the color of catalog entries that store it only as a single value (hex_color) instead of a color list, e.g. the Polymaker \"Polylite - …\" series (#293)." }
+          { "type": "fix", "text": "\"Load from FilaManDB\" in the filament form now also takes over the color of catalog entries that store it only as a single value (hex_color) instead of a color list, e.g. the Polymaker \"Polylite - …\" series (#293)." },
+          { "type": "feature", "text": "The dashboard and manufacturer view additionally show \"Remaining value (available)\": each spool's purchase price pro rata by remaining weight (spools with unknown capacity count at full price, spools without a purchase price at 0). The former total value is now called \"Purchase value (available)\" and is unchanged; the API gains `remaining_value_available` and `remaining_price_available` (#290)." }
         ]
       }
     },

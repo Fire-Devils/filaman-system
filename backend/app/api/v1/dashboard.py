@@ -7,6 +7,7 @@ from sqlalchemy import case, func, or_, select
 from app.api.deps import DBSession, PrincipalDep
 from app.models import Filament, Location, Manufacturer, Spool, SpoolStatus
 from app.services.material_presets import load_presets, match_preset
+from app.services.spool_metrics import remaining_value_expression
 from app.services.spool_moisture import EXCLUDED_STATUS_KEYS, compute_moisture
 
 router = APIRouter(prefix="/dashboard", tags=["dashboard"])
@@ -76,6 +77,7 @@ class EmptySpool(BaseModel):
 class DashboardStatsResponse(BaseModel):
     spool_distribution: dict[str, int]
     total_value_available: float
+    remaining_value_available: float
     filament_count_active: int
     filament_count_used: int
     filament_stats: list[FilamentStat]
@@ -373,8 +375,13 @@ async def get_dashboard_stats(
 
     # Gesamtwert verfügbarer Spulen
     total_value_stmt = (
-        select(func.coalesce(func.sum(Spool.purchase_price), 0), func.count(Spool.id))
+        select(
+            func.coalesce(func.sum(Spool.purchase_price), 0),
+            func.count(Spool.id),
+            func.coalesce(func.sum(remaining_value_expression(db.get_bind().dialect.name)), 0),
+        )
         .join(SpoolStatus, Spool.status_id == SpoolStatus.id)
+        .outerjoin(Filament, Spool.filament_id == Filament.id)
         .where(SpoolStatus.key != "archived")
     )
 
@@ -410,7 +417,7 @@ async def get_dashboard_stats(
     filament_count_active_res = await db.execute(filament_count_active_stmt)
     filament_count_used_res = await db.execute(filament_count_used_stmt)
 
-    total_value_available, spool_count_total = total_val_res.one()
+    total_value_available, spool_count_total, remaining_value_available = total_val_res.one()
 
     dist_row = dist_res.first()
     spool_distribution = {
@@ -486,6 +493,7 @@ async def get_dashboard_stats(
     return DashboardStatsResponse(
         spool_distribution=spool_distribution,
         total_value_available=float(total_value_available),
+        remaining_value_available=float(remaining_value_available),
         filament_count_active=int(filament_count_active_res.scalar() or 0),
         filament_count_used=int(filament_count_used_res.scalar() or 0),
         filament_stats=filament_stats,

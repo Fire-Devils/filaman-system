@@ -36,6 +36,7 @@ from app.api.v1.schemas_filament import (
     ResolveFilamentFromTagRequest,
     ResolveFilamentFromTagResponse,
 )
+from app.services.spool_metrics import remaining_value_expression
 from app.services.bambu_idx import clear_bambu_idx_for_filament
 from app.core.config import MANUFACTURER_LOGO_DIR, settings
 from app.core.db_utils import get_next_available_id
@@ -78,6 +79,7 @@ async def list_manufacturers(
     archived_spool_counts: dict[int, int] = {}
     total_price_available: dict[int, float] = {}
     total_price_all: dict[int, float] = {}
+    remaining_price_available: dict[int, float] = {}
     materials_map: dict[int, list[str]] = {m.id: [] for m in items}
 
     if mfr_ids:
@@ -109,6 +111,9 @@ async def list_manufacturers(
                 .filter(SpoolStatus.key != "archived")
                 .label("active_price"),
                 func.sum(Spool.purchase_price).label("total_price"),
+                func.sum(remaining_value_expression(db.get_bind().dialect.name))
+                .filter(SpoolStatus.key != "archived")
+                .label("remaining_price"),
             )
             .join(Spool, Spool.filament_id == Filament.id)
             .join(SpoolStatus, Spool.status_id == SpoolStatus.id)
@@ -128,11 +133,12 @@ async def list_manufacturers(
                 materials_map[mfr_id].append(mat_type)
 
         for row in spool_stats_result.all():
-            mfr_id, active_c, archived_c, active_p, total_p = row
+            mfr_id, active_c, archived_c, active_p, total_p, remaining_p = row
             active_spool_counts[mfr_id] = active_c or 0
             archived_spool_counts[mfr_id] = archived_c or 0
             total_price_available[mfr_id] = active_p or 0.0
             total_price_all[mfr_id] = total_p or 0.0
+            remaining_price_available[mfr_id] = float(remaining_p or 0.0)
 
     items_out = [
         ManufacturerResponse.model_validate(
@@ -142,6 +148,7 @@ async def list_manufacturers(
                 "spool_count": active_spool_counts.get(m.id, 0),
                 "archived_spool_count": archived_spool_counts.get(m.id, 0),
                 "total_price_available": total_price_available.get(m.id, 0.0),
+                "remaining_price_available": remaining_price_available.get(m.id, 0.0),
                 "total_price_all": total_price_all.get(m.id, 0.0),
                 "materials": sorted(materials_map.get(m.id, [])),
             }

@@ -31,6 +31,17 @@ def _usable(value, *, positive=False):
     )
 
 
+def remaining_value_expression(dialect_name="sqlite"):
+    """Per-spool value: price scaled by remaining percent; full price if capacity unknown."""
+    pct = spool_metric_expressions(dialect_name)["remaining_percent"]
+    price = Spool.purchase_price
+    return case(
+        (price.is_(None), 0),
+        (pct.is_(None), price),
+        else_=price * pct / 100,
+    )
+
+
 def spool_metric_expressions(dialect_name="sqlite"):
     # Numeric intermediates avoid PostgreSQL floating-point overflow on legacy data.
     mysql = dialect_name in {"mysql", "mariadb"}
