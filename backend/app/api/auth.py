@@ -87,19 +87,13 @@ async def login(
             .options(selectinload(User.roles))
         )
         candidates = list(result.scalars().all())
-        user = None
         if len(candidates) == 1:
             user = candidates[0]
-        elif candidates:
+        else:
             # Legacy data: several users whose emails differ only by case.
+            # Only an exact match is accepted; never probe the password against
+            # several accounts, as that would bypass the per-account lockout.
             user = next((u for u in candidates if u.email == data.email.strip()), None)
-            if user is None:
-                for cand in candidates:
-                    if cand.password_hash and await verify_password_async(
-                        data.password, cand.password_hash
-                    ):
-                        user = cand
-                        break
 
         if user is None or user.password_hash is None:
             # Perform dummy password check to prevent timing-based user enumeration

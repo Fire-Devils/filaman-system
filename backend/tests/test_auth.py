@@ -618,3 +618,36 @@ class TestLoginEmailCaseInsensitive:
                 json={"email": email, "password": "correctpassword"},
             )
             assert response.status_code == 200, email
+
+    @pytest.mark.asyncio
+    async def test_login_ambiguous_legacy_emails_require_exact_match(
+        self, client: AsyncClient, db_session
+    ):
+        db_session.add_all(
+            [
+                User(
+                    email="Dup@Example.com",
+                    password_hash=hash_password("passwordone"),
+                    is_active=True,
+                ),
+                User(
+                    email="dup@example.com",
+                    password_hash=hash_password("passwordtwo"),
+                    is_active=True,
+                ),
+            ]
+        )
+        await db_session.commit()
+
+        exact = await client.post(
+            "/auth/login",
+            json={"email": "Dup@Example.com", "password": "passwordone"},
+        )
+        assert exact.status_code == 200
+
+        # No exact match: the password must not be probed against both accounts.
+        ambiguous = await client.post(
+            "/auth/login",
+            json={"email": "DUP@EXAMPLE.COM", "password": "passwordtwo"},
+        )
+        assert ambiguous.status_code == 401
