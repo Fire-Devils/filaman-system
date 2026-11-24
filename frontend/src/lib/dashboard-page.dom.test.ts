@@ -16,14 +16,14 @@ function archiveButton(kind: 'single' | 'bulk') {
 
 async function boot(canArchive = false, poll = async () => Response.json([
   { location_id: 9, location_name: "Dry <box>", spool_count: 5, total_weight_g: 3000 },
-]), summaryReady?: Promise<void>, currencyReady?: Promise<void>) {
+]), summaryReady?: Promise<void>, currencyReady?: Promise<void>, valuation: { remaining_value: number | null; unknown_spool_count: number } = { remaining_value: 1.2, unknown_spool_count: 0 }) {
   const fetch = vi.fn(async (path: string, init?: RequestInit) => {
     if (path === '/api/v1/dashboard/locations') return poll()
     if (init?.method) return Response.json({ detail: 'Not permitted' }, { status: 403 })
     await summaryReady
     return Response.json({
       spool_count_total: 1, filament_count_total: 2, filament_count_active: 1, filament_count_used: 0,
-      spool_distribution: { full: 0, normal: 0, low: 1, critical: 0, empty: 0 }, total_value_available: 3, remaining_value_available: 1.5,
+      spool_distribution: { full: 0, normal: 0, low: 1, critical: 0, empty: 0 }, total_value_available: 3, valuation,
       manufacturers_with_spools: [{ id: 7, name: 'Maker <clear>', spool_count: 2 }],
       low_stock_spools: [{ spool_id: 3, filament_designation: 'Sample', filament_type: 'PLA', manufacturer_name: 'Maker', remaining_weight_g: 50 }],
       low_stock_filaments: [{ filament_id: 5, filament_designation: 'Black <PETG>', filament_type: 'PETG', manufacturer_name: 'Maker', total_remaining_g: 600, low_stock_threshold_g: 700, spool_count: 2 }],
@@ -259,19 +259,21 @@ it("refreshes Locations independently of the initial summary request", async () 
   const fetch = await boot(false, undefined, new Promise(() => {}))
 
   await vi.advanceTimersByTimeAsync(15000)
-  expect(fetch.mock.calls.map(([path]) => path)).toEqual(["/api/v1/dashboard/stats?limit=20&include_totals=true", "/api/v1/dashboard/locations"])
+  expect(fetch.mock.calls.map(([path]) => path)).toEqual(["/api/v1/dashboard/stats?limit=20&include_totals=true&include_valuation=true", "/api/v1/dashboard/locations"])
   expect(document.querySelector("#location-stats")!.textContent).toContain("5 dashboard.spools")
 })
 
 it('loads summary counts on entry and fetches fresh problem spools only when the dialog opens', async () => {
   let setCurrency!: () => void
   const fetch = await boot(false, undefined, undefined, new Promise(resolve => { setCurrency = resolve }))
-  expect(fetch.mock.calls.map(([path]) => path)).toEqual(['/api/v1/dashboard/stats?limit=20&include_totals=true'])
+  expect(fetch.mock.calls.map(([path]) => path)).toEqual(['/api/v1/dashboard/stats?limit=20&include_totals=true&include_valuation=true'])
   expect(document.querySelector('#stat-total-filaments')!.textContent).toBe('2')
   expect(document.querySelector('#stat-total-value')!.textContent).toBe('—')
   setCurrency()
   await vi.waitFor(() => expect(document.querySelector('#stat-total-value')!.textContent).toBe('€3'))
-  expect(document.querySelector('#stat-remaining-value')!.textContent).toBe('€1.5')
+  expect(document.querySelector('#stat-remaining-value')!.textContent).toBe('€1.2')
+  expect(document.querySelector('#stat-total-value')!.textContent).toBe('€3')
+  expect(document.querySelector('#stat-value-coverage')!.classList.contains('hidden')).toBe(true)
   expect(fetch.fetchAllPages).not.toHaveBeenCalled()
   fetch.fetchAllPages.mockRejectedValueOnce(new Error('Offline'))
   document.querySelector<HTMLButtonElement>('#problem-spools')!.click()
@@ -293,4 +295,13 @@ it('ignores an older drilldown response after closing and reopening the dialog',
   finish({ items: [], total: 0 })
   await new Promise(resolve => setTimeout(resolve, 0))
   expect(document.querySelector('#modal-content a')?.getAttribute('href')).toBe('/spools/3')
+})
+
+
+it('shows an unknown total instead of zero when every spool lacks a valuation', async () => {
+  await boot(false, undefined, undefined, undefined, { remaining_value: null, unknown_spool_count: 1 })
+  await vi.waitFor(() => expect(document.querySelector('#stat-value-coverage')!.textContent).toBe('inventoryValue.incomplete'))
+  expect(document.querySelector('#stat-remaining-value')!.textContent).toBe('—')
+  expect(document.querySelector('#stat-total-value')!.textContent).toBe('€3')
+  expect(document.querySelector('#stat-value-coverage')!.classList.contains('hidden')).toBe(false)
 })

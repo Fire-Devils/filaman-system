@@ -78,7 +78,7 @@ describe('shared manufacturer dialog', () => {
         status: 200,
       }),
     )
-    vi.stubGlobal('fetch', fetchStub)
+    vi.stubGlobal('fetch', (url: string, init?: RequestInit) => url.includes('include_valuation=true') ? Promise.resolve(Response.json({})) : fetchStub(url, init))
     const onSaved = vi.fn()
     const dialog = createManufacturerDialog({
       filamentDbActive: false,
@@ -127,7 +127,7 @@ describe('shared manufacturer dialog', () => {
         status: 200,
       }),
     )
-    vi.stubGlobal('fetch', fetchStub)
+    vi.stubGlobal('fetch', (url: string, init?: RequestInit) => url.includes('include_valuation=true') ? Promise.resolve(Response.json({})) : fetchStub(url, init))
     const onSaved = vi.fn()
     const dialog = createManufacturerDialog({
       filamentDbActive: false,
@@ -153,7 +153,7 @@ describe('shared manufacturer dialog', () => {
     const fetchStub = vi.fn()
       .mockResolvedValueOnce(Response.json({ id: 7, name: 'First change' }))
       .mockImplementationOnce(() => new Promise<Response>(resolve => { finishSecondSave = resolve }))
-    vi.stubGlobal('fetch', fetchStub)
+    vi.stubGlobal('fetch', (url: string, init?: RequestInit) => url.includes('include_valuation=true') ? Promise.resolve(Response.json({})) : fetchStub(url, init))
     const onSaved = vi.fn().mockReturnValueOnce(refresh)
     const dialog = createManufacturerDialog({ onSaved })
     dialog.open({ id: 7, name: 'Original' })
@@ -216,7 +216,7 @@ describe('manufacturer view/edit layout', () => {
       normalize: (raw: Record<string, unknown>) => raw as CatalogEntry,
       load: vi.fn().mockResolvedValue({ id: 'abc', name: 'Maker', website: '', contact_email: 'new@example.test', description: '', details: { active: true } }) }
     const fetchStub = vi.fn().mockImplementation(async (_url, options) => new Response(JSON.stringify({ id: 3, ...JSON.parse(options.body) })))
-    vi.stubGlobal('fetch', fetchStub)
+    vi.stubGlobal('fetch', (url: string, init?: RequestInit) => url.includes('include_valuation=true') ? Promise.resolve(Response.json({})) : fetchStub(url, init))
     const dialog = createManufacturerDialog({ sources: [source], onSaved: vi.fn() })
     dialog.open({ id: 3, name: 'Maker', url: 'https://local.test', custom_fields: { untouched: 42, catalog_sources: { other: { id: 'abc' } } } }, { mode: 'view' })
     await vi.waitFor(() => expect(document.querySelector('[data-catalog-compare]')).not.toBeNull())
@@ -239,7 +239,7 @@ it('keeps provider metadata and shows the selected catalog entry after apply/sav
   const source = { key: 'other', label: 'Other DB', endpoint: '/other', normalize: (raw: Record<string, unknown>) => raw as CatalogEntry, load: async () => entry }
   let resolveSave!: (response: Response) => void
   const fetchStub = vi.fn().mockImplementation(() => new Promise<Response>(resolve => { resolveSave = resolve }))
-  vi.stubGlobal('fetch', fetchStub)
+  vi.stubGlobal('fetch', (url: string, init?: RequestInit) => url.includes('include_valuation=true') ? Promise.resolve(Response.json({})) : fetchStub(url, init))
   const dialog = createManufacturerDialog({ sources: [source], onSaved: vi.fn() })
   dialog.open({ id: 3, name: 'Local maker', custom_fields: { catalog_sources: { other: { id: 'abc', sync: { enabled: true } } } } }, { mode: 'view' })
   await vi.waitFor(() => expect(document.querySelector('[data-catalog-compare]')).not.toBeNull())
@@ -443,4 +443,47 @@ describe('manufacturer catalog display freshness', () => {
     document.querySelector<HTMLButtonElement>('[data-manufacturer-cancel]')!.click()
     expect(document.querySelector('.manufacturer-source-summary strong')!.textContent).toBe('Fresh catalog')
   })
+})
+
+it.each([
+  [{ remaining_value: 8.25, unknown_spool_count: 1 }, '€8.25', true],
+  [{ remaining_value: null, unknown_spool_count: 2 }, '—', true],
+  [{ remaining_value: 0, unknown_spool_count: 0 }, '€0.00', false],
+])('renders known, unknown and empty manufacturer value without changing purchase totals', (valuation, expected, partial) => {
+  const dialog = createManufacturerDialog({ onSaved: vi.fn() })
+  dialog.open({ id: 7, name: 'Maker', total_price_available: 30, remaining_price_available: 25, total_price_all: 50, valuation }, { mode: 'view' })
+  const values = document.querySelector('.manufacturer-values')!
+  expect(values.querySelector('[data-manufacturer-remaining-value]')?.textContent).toBe(expected)
+  expect(values.querySelector('[data-manufacturer-value-coverage]')).not.toBeNull()
+  expect((values.querySelector('[data-manufacturer-value-coverage]') as HTMLElement).hidden).toBe(!partial)
+  expect(values.textContent).toContain('€30.00')
+  expect(values.textContent).toContain('€50.00')
+})
+
+it('ignores a late valuation response after another manufacturer opens', async () => {
+  let finish!: (response: Response) => void
+  vi.stubGlobal('fetch', vi.fn(() => new Promise(resolve => { finish = resolve })))
+  const dialog = createManufacturerDialog({ onSaved: vi.fn() })
+  dialog.open({ id: 7, name: 'First' }, { mode: 'view' })
+  dialog.open({ id: 8, name: 'Second', valuation: { remaining_value: 3, unknown_spool_count: 0 } }, { mode: 'view' })
+  finish(Response.json({ valuation: { remaining_value: 999, unknown_spool_count: 0 } }))
+  await new Promise(resolve => setTimeout(resolve, 0))
+  expect(document.querySelector('[data-manufacturer-remaining-value]')?.textContent).toBe('€3.00')
+})
+
+it('updates valuation without replacing an open manufacturer draft', async () => {
+  let finish!: (response: Response) => void
+  vi.stubGlobal('fetch', vi.fn(() => new Promise(resolve => { finish = resolve })))
+  const dialog = createManufacturerDialog({ onSaved: vi.fn() })
+  dialog.open({ id: 7, name: 'Maker' }, { mode: 'view' })
+  document.querySelector<HTMLButtonElement>('[data-manufacturer-edit]')!.click()
+  const name = document.querySelector<HTMLInputElement>('[data-manufacturer-name]')!
+  name.value = 'Unsaved maker'
+  name.dispatchEvent(new Event('input', { bubbles: true }))
+  name.focus()
+  finish(Response.json({ valuation: { remaining_value: 8, unknown_spool_count: 1 } }))
+  await vi.waitFor(() => expect(document.querySelector('[data-manufacturer-remaining-value]')?.textContent).toBe('€8.00'))
+  expect(document.querySelector('[data-manufacturer-name]')).toBe(name)
+  expect(document.activeElement).toBe(name)
+  expect(name.value).toBe('Unsaved maker')
 })

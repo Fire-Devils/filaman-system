@@ -609,7 +609,8 @@ try {
     const startedRead = new Promise(resolve => { started = resolve })
     heldEntityReads.set(kind, { started, fail, release: new Promise(resolve => { release = resolve }) })
     const before = entityReads[kind]
-    await page.evaluate(kind => localStorage.removeItem(`filaman-cache:${kind}`), kind)
+    const cacheKind = kind === 'manufacturers' ? 'manufacturers:valuation' : kind
+    await page.evaluate(key => localStorage.removeItem(`filaman-cache:${key}`), cacheKind)
     await page.goto(new URL(kind === 'colors' ? '/filaments/colors' : `/${kind}`, base).href)
     await startedRead
     const updated = `${kind} after unfinished ${fail ? 'failed ' : ''}read resync`
@@ -627,7 +628,7 @@ try {
     await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))))
     assert.equal(await rows.getByText(updated, { exact: true }).count(), 1)
     if (kind !== 'colors') {
-      const cached = await page.evaluate(kind => JSON.parse(localStorage.getItem(`filaman-cache:${kind}`)), kind)
+      const cached = await page.evaluate(key => JSON.parse(localStorage.getItem(`filaman-cache:${key}`)), cacheKind)
       assert.equal(cached.data.items[0].name, updated)
     }
     assert.equal(entityReads[kind] - before, 2)

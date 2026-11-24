@@ -254,3 +254,10 @@ it('uses the existing French error label when saving a spool draft throws a non-
   expect(link.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))).toBe(false)
   expect(document.getElementById('error-message')!.textContent).toBe('Erreur')
 })
+
+it('keeps read-only remaining value out of the new-spool form', async () => {
+  const container = await AstroContainer.create()
+  const html = await container.renderToString(SpoolForm)
+  expect(html).toContain('name="purchase_price"')
+  expect(html).not.toContain('inventoryValue.remaining')
+})

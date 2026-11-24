@@ -40,6 +40,7 @@ from app.api.v1.schemas_spool import (
     SpoolEventResponse,
     SpoolResponse,
     SpoolMetrics,
+    SpoolValuation,
     SpoolStatusResponse,
     SpoolUpdate,
     StatusChangeRequest,
@@ -597,6 +598,7 @@ async def list_spools(
     type: list[str] | None = Query(None),
     include_archived: bool = Query(False),
     include_metrics: bool = Query(False),
+    include_valuation: bool = Query(False),
     low_or_empty: bool = False,
     remaining_percent_min: Annotated[float | None, Query(allow_inf_nan=False)] = None,
     remaining_percent_max: Annotated[float | None, Query(allow_inf_nan=False)] = None,
@@ -605,12 +607,13 @@ async def list_spools(
     search: str | None = Query(None, max_length=200),
     sort_by: str = Query(
         "id",
-        pattern="^(id|filament_id|status_id|location_id|remaining_weight_g|purchase_date|purchase_price|last_used_at|created_at|lot_number|initial_total_weight_g|empty_spool_weight_g|manufacturer|material|mfr_color|remaining_percent|remaining_length_m|effective_remaining_weight_g)$",
+        pattern="^(id|filament_id|status_id|location_id|remaining_weight_g|purchase_date|purchase_price|last_used_at|created_at|lot_number|initial_total_weight_g|empty_spool_weight_g|manufacturer|material|mfr_color|remaining_percent|remaining_length_m|effective_remaining_weight_g|remaining_value)$",
     ),
     sort_order: str = Query("desc", pattern="^(asc|desc)$"),
 ):
     # -- Build filter conditions (shared between data query and count query) --
-    metrics = spool_metric_expressions(db.get_bind().dialect.name)
+    include_metrics = include_metrics or include_valuation
+    metrics = spool_metric_expressions(db.get_bind().dialect.name, include_valuation=include_valuation or sort_by == "remaining_value")
     bounds = {
         "remaining_percent": (remaining_percent_min, remaining_percent_max),
         "remaining_length_m": (remaining_length_m_min, remaining_length_m_max),
@@ -741,7 +744,7 @@ async def list_spools(
     # -- Data query --
     query = select(Spool)
     if include_metrics:
-        query = query.add_columns(*metrics.values())
+        query = query.add_columns(*(value for key, value in metrics.items() if key != "remaining_value" or include_valuation))
     if needs_filament_join or needs_manufacturer_join:
         query = query.join(Filament, Spool.filament_id == Filament.id, isouter=metrics_used)
     if needs_manufacturer_join:
@@ -1191,18 +1194,23 @@ async def list_all_spool_events(
 
     return PaginatedResponse(items=items, page=page, page_size=page_size, total=total)
 
-def _spool_with_metrics(spool, percent, length, effective_weight):
-    return SpoolResponse.model_validate(spool).model_copy(update={
+def _spool_with_metrics(spool, percent, length, effective_weight, *valuation):
+    update = {
         "metrics": SpoolMetrics(remaining_percent=percent, remaining_length_m=length, effective_remaining_weight_g=effective_weight),
-    })
+    }
+    if valuation:
+        update["valuation"] = SpoolValuation(remaining_value=valuation[0])
+    return SpoolResponse.model_validate(spool).model_copy(update=update)
 
 
 @router_spools.get("/{spool_id}", response_model=SpoolResponse)
 async def get_spool(spool_id: int, db: DBSession, principal: PrincipalDep,
-                    include_metrics: bool = Query(False)):
+                    include_metrics: bool = Query(False),
+                    include_valuation: bool = Query(False)):
+    include_metrics = include_metrics or include_valuation
     query = select(Spool)
     if include_metrics:
-        query = query.add_columns(*spool_metric_expressions(db.get_bind().dialect.name).values()).outerjoin(Filament, Spool.filament_id == Filament.id)
+        query = query.add_columns(*spool_metric_expressions(db.get_bind().dialect.name, include_valuation=include_valuation).values()).outerjoin(Filament, Spool.filament_id == Filament.id)
     result = await db.execute(
         query
         .where(Spool.id == spool_id)

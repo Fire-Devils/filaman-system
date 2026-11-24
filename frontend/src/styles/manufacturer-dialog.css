@@ -511,3 +511,7 @@
   color: var(--accent-3);
   background: color-mix(in srgb, var(--accent-3) 12%, transparent);
 }
+
+.manufacturer-values [data-manufacturer-valuation] { flex-wrap: wrap; }
+.manufacturer-values [data-manufacturer-remaining-value] { white-space: nowrap; flex-shrink: 0; }
+.manufacturer-values [data-manufacturer-value-coverage] { flex-basis: 100%; color: var(--text-muted); font-size: .7rem; }

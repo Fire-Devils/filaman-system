@@ -13,6 +13,7 @@ try {
     colors: [{ position: 1, color: { hex_code: '#B15821', name: 'Copper' } }, { position: 2, color: { hex_code: '#FFBB00', name: 'Gold' } }] }
   const spool = { id: 16, filament_id: 10, status_id: 1, filament, location_id: 2, remaining_weight_g: 500,
     initial_total_weight_g: 1250, empty_spool_weight_g: 250, low_weight_threshold_g: 100,
+    purchase_price: 20, valuation: { remaining_value: 10 },
     custom_fields: {}, custom_field_definitions: {}, metrics: { remaining_percent: 50, remaining_length_m: 167.6418097083822 } }
   const inventory = Array.from({ length: 51 }, (_, i) => ({ ...spool, id: i + 1,
     metrics: { remaining_percent: [5, 50, 90][i % 3], remaining_length_m: [17, 168, 302][i % 3] } }))
@@ -146,6 +147,8 @@ try {
   await locationFilter.waitFor()
   assert.equal(await firstSpool.locator('.col-filament').getByText('Spool #1', { exact: true }).isVisible(), false)
   await page.locator('#btn-columns').click()
+  assert.equal(await page.locator('th.col-remaining_value').isVisible(), false, 'Remaining value is optional')
+  await page.locator('#columns-dropdown').getByLabel('Remaining value', { exact: true }).check()
   await page.locator('#columns-dropdown').getByLabel('Remaining %', { exact: true }).check()
   await page.locator('#columns-dropdown').getByLabel('Estimated remaining length (m)', { exact: true }).check()
   await page.locator('#btn-columns').click()
@@ -153,6 +156,14 @@ try {
   await page.locator('#spools-table .col-remaining_percent').first().waitFor()
   assert.equal(await page.locator('th.col-remaining_percent').isVisible(), true, 'Optional columns survive reload')
   assert.equal(await page.locator('th.col-remaining_length_m').isVisible(), true)
+  assert.equal(await page.locator('th.col-remaining_value').isVisible(), true)
+  assert.match(await page.locator('#spools-table .col-remaining_value').first().textContent(), /10/)
+  assert.equal(requests.at(-1).searchParams.get('include_valuation'), 'true')
+  assert.equal(await page.locator('th.col-remaining_value .fm-header-sort-trigger').count(), 1, 'Remaining value retains its keyboard sort control after translation')
+  await page.locator('th.col-remaining_value .fm-header-sort-trigger').focus()
+  await page.keyboard.press('Enter')
+  await page.waitForFunction(() => document.querySelector('th.col-remaining_value')?.classList.contains('sort-asc'))
+  assert.equal(requests.at(-1).searchParams.get('sort_by'), 'remaining_value')
   const beforeSort = requests.length
   await page.locator('th.col-remaining_percent').click({ position: { x: 8, y: 8 } })
   await page.waitForFunction(() => document.querySelector('th.col-remaining_percent')?.classList.contains('sort-asc'))
@@ -175,10 +186,13 @@ try {
   const fullReelPaths = await page.locator('.spool-reel-corner path').count()
   await page.waitForTimeout(300)
   const printerReadsBeforeWeight = printerReads
+  assert.match(await page.locator('#spool-remaining-value').textContent(), /10/)
+  spool.valuation = { remaining_value: 5 }
   spool.remaining_weight_g = 250
   spool.metrics = { remaining_percent: 25, remaining_length_m: 84 }
   await page.evaluate(() => window.dispatchEvent(new CustomEvent('filaman:data-changed', { detail: { event: 'spools_changed' } })))
   await page.locator('.spool-remaining-grams').filter({ hasText: '250 g' }).waitFor({ timeout: 5000 })
+  assert.match(await page.locator('#spool-remaining-value').textContent(), /5/)
   assert.equal(printerReads, printerReadsBeforeWeight, 'Inventory weight events do not query every printer')
   let releaseWeight
   holdWeightRead = new Promise(resolve => { releaseWeight = resolve })
@@ -203,10 +217,12 @@ try {
   await draft.focus()
   await draft.evaluate(input => { window.fixtureDraftInput = input })
   for (const [weight, percent, length] of [[125, 12.5, 42], [null, null, null], [0, 0, 0]]) {
+    spool.valuation = { remaining_value: percent === null ? null : 20 * percent / 100 }
     spool.remaining_weight_g = weight
     spool.metrics = { remaining_percent: percent, remaining_length_m: length }
     await page.evaluate(() => window.dispatchEvent(new CustomEvent('filaman:data-changed', { detail: { event: 'spools_changed' } })))
     await page.locator('.spool-remaining-grams').filter({ hasText: weight === null ? '—' : `${weight} g` }).waitFor()
+    assert.match(await page.locator('#spool-remaining-value').textContent(), percent === null ? /—/ : new RegExp(String(20 * percent / 100)))
     assert.equal(await draft.inputValue(), 'UNSAVED LOT')
     assert.ok(await draft.evaluate(input => input === window.fixtureDraftInput && document.activeElement === input), 'Refresh retains the original focused draft input')
     assert.equal(await page.locator('[form="spool-inline-form"][type="submit"]').isDisabled(), false, 'Refresh does not reset dirty Save state')

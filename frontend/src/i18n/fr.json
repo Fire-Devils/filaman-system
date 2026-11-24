@@ -1,4 +1,8 @@
 {
+  "inventoryValue": {
+    "remaining": "Valeur restante",
+    "incomplete": "Sous-total connu · {count} bobines sans valeur calculable"
+  },
   "app": {
     "name": "FilaMan",
     "subtitle": "Gestion de filament",

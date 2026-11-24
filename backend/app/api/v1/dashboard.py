@@ -5,6 +5,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import case, func, or_, select
 
 from app.api.deps import DBSession, PrincipalDep
+from app.api.v1.schemas import InventoryValuation
 from app.models import Filament, Location, Manufacturer, Spool, SpoolStatus
 from app.services.material_presets import load_presets, match_preset
 from app.services.spool_metrics import remaining_value_expression
@@ -75,6 +76,7 @@ class EmptySpool(BaseModel):
 
 
 class DashboardStatsResponse(BaseModel):
+    valuation: InventoryValuation | None = Field(None, exclude_if=lambda value: value is None)
     spool_distribution: dict[str, int]
     total_value_available: float
     remaining_value_available: float
@@ -181,6 +183,7 @@ async def get_dashboard_stats(
     principal: PrincipalDep,
     limit: int = Query(20, ge=1, le=50),
     include_totals: bool = False,
+    include_valuation: bool = False,
 ):
     # Spulen-Verteilung berechnen (Optimiert: DB-seitige Aggregation)
     spool_distribution_stmt = (
@@ -489,6 +492,21 @@ async def get_dashboard_stats(
             "spool_count_total": spool_count_total,
             "filament_count_total": await db.scalar(select(func.count(Filament.id))) or 0,
         }
+
+    if include_valuation:
+        value = remaining_value_expression(db.get_bind().dialect.name, known_only=True).label("remaining_value")
+        valued = (
+            select(value).select_from(Spool)
+            .outerjoin(Filament, Spool.filament_id == Filament.id)
+            .join(SpoolStatus, Spool.status_id == SpoolStatus.id)
+            .where(SpoolStatus.key != "archived")
+            .subquery()
+        )
+        total, unknown = (await db.execute(select(
+            func.sum(valued.c.remaining_value),
+            func.count() - func.count(valued.c.remaining_value),
+        ).select_from(valued))).one()
+        totals["valuation"] = InventoryValuation(remaining_value=0 if spool_count_total == 0 else total, unknown_spool_count=unknown)
 
     return DashboardStatsResponse(
         spool_distribution=spool_distribution,

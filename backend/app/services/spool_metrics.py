@@ -31,10 +31,18 @@ def _usable(value, *, positive=False):
     )
 
 
-def remaining_value_expression(dialect_name="sqlite"):
-    """Per-spool value: price scaled by remaining percent; full price if capacity unknown."""
+def remaining_value_expression(dialect_name="sqlite", *, known_only=False):
+    """Preserve legacy full-price estimates unless only known purchase value is requested."""
     pct = spool_metric_expressions(dialect_name)["remaining_percent"]
     price = Spool.purchase_price
+    if known_only:
+        mysql = dialect_name in {"mysql", "mariadb"}
+        numeric = Double if mysql else Numeric
+        value = cast(price, numeric) * (cast(pct, numeric) / 100)
+        return cast(
+            case((and_(_usable(price), _usable(value)), value)),
+            Double if mysql else Float,
+        )
     return case(
         (price.is_(None), 0),
         (pct.is_(None), price),
@@ -42,7 +50,7 @@ def remaining_value_expression(dialect_name="sqlite"):
     )
 
 
-def spool_metric_expressions(dialect_name="sqlite"):
+def spool_metric_expressions(dialect_name="sqlite", *, include_valuation=False):
     # Numeric intermediates avoid PostgreSQL floating-point overflow on legacy data.
     mysql = dialect_name in {"mysql", "mariadb"}
     numeric = Double if mysql else Numeric
@@ -139,7 +147,7 @@ def spool_metric_expressions(dialect_name="sqlite"):
             length,
         )
     )
-    return {
+    metrics = {
         "remaining_percent": cast(percent, Double if mysql else Float).label(
             "remaining_percent"
         ),
@@ -150,3 +158,9 @@ def spool_metric_expressions(dialect_name="sqlite"):
             case((_usable(effective), effective)), Double if mysql else Float
         ).label("effective_remaining_weight_g"),
     }
+
+    if include_valuation:
+        metrics["remaining_value"] = remaining_value_expression(
+            dialect_name, known_only=True
+        ).label("remaining_value")
+    return metrics

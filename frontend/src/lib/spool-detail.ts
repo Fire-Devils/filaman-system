@@ -38,6 +38,7 @@ interface SpoolDetailData {
 }
 
 interface SpoolDetailDisplay {
+  remainingValue?: string
   coreDisabled?: string
   coreGlobalDefault?: string
 }
@@ -79,6 +80,7 @@ export function buildSpoolDetailSections(spool: SpoolDetailData, display: SpoolD
       titleKey: 'spools.purchaseDetails',
       rows: [
         { key: 'purchase_price', labelKey: 'spools.purchasePrice', value: empty(spool.purchase_price), field: { type: 'number', step: '0.01' } },
+        { key: 'remaining_value', labelKey: 'inventoryValue.remaining', value: display.remainingValue ?? '—' },
         { key: 'purchase_date', labelKey: 'spools.purchaseDate', value: empty(spool.purchase_date), field: { type: 'date' } },
         { key: 'lot_number', labelKey: 'spools.lotNumber', value: empty(spool.lot_number), field: { type: 'text' } },
       ],
