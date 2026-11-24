@@ -2,11 +2,11 @@ import logging
 import shutil
 import sys
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
-from app.core.security import hash_password_async
+from app.core.security import hash_password_async, normalize_email
 from app.models import Permission, Role, SpoolStatus, User, UserRole
 from app.models.plugin import InstalledPlugin
 from app.services.plugin_service import PLUGINS_DIR, PluginInstallService
@@ -355,8 +355,12 @@ async def seed_admin_user_from_env(db: AsyncSession) -> None:
     if not settings.admin_email or not settings.admin_password:
         return
 
-    result = await db.execute(select(User).where(User.email == settings.admin_email))
-    if result.scalar_one_or_none() is not None:
+    result = await db.execute(
+        select(User.id).where(
+            func.lower(User.email) == normalize_email(settings.admin_email)
+        )
+    )
+    if result.scalars().first() is not None:
         return
 
     password_hash = await hash_password_async(settings.admin_password)
@@ -365,7 +369,7 @@ async def seed_admin_user_from_env(db: AsyncSession) -> None:
     admin_role = admin_role_result.scalar_one_or_none()
 
     user = User(
-        email=settings.admin_email,
+        email=normalize_email(settings.admin_email),
         password_hash=password_hash,
         display_name=settings.admin_display_name or "Admin",
         language=settings.admin_language or "en",

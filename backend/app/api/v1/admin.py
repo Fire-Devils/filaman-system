@@ -12,6 +12,7 @@ from app.core.security import (
     generate_token_secret,
     hash_password_async,
     hash_token,
+    normalize_email,
 )
 from app.models import Device, Permission, Role, RolePermission, User, UserRole
 
@@ -196,15 +197,17 @@ async def create_user(
 ):
     if data.is_superadmin:
         _require_unrestricted_superadmin(principal)
-    result = await db.execute(select(User).where(User.email == data.email))
-    if result.scalar_one_or_none():
+    result = await db.execute(
+        select(User.id).where(func.lower(User.email) == normalize_email(data.email))
+    )
+    if result.scalars().first() is not None:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail={"code": "conflict", "message": "Email already exists"},
         )
 
     user = User(
-        email=data.email,
+        email=normalize_email(data.email),
         password_hash=await hash_password_async(data.password),
         display_name=data.display_name,
         language=data.language,
@@ -261,7 +264,20 @@ async def update_user(
 
     if user.is_superadmin or data.is_superadmin:
         _require_unrestricted_superadmin(principal)
-    await _write_user(db, user, data.model_dump(exclude_unset=True), principal)
+    changes = data.model_dump(exclude_unset=True)
+    if changes.get("email") is not None:
+        changes["email"] = normalize_email(changes["email"])
+        dup = await db.execute(
+            select(User.id).where(
+                func.lower(User.email) == changes["email"], User.id != user.id
+            )
+        )
+        if dup.scalars().first() is not None:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail={"code": "conflict", "message": "Email already exists"},
+            )
+    await _write_user(db, user, changes, principal)
     return user
 
 

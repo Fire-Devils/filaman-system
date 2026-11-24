@@ -59,6 +59,37 @@ class TestAdminUsersListCreate:
         assert response.json()["detail"]["code"] == "conflict"
 
 
+    @pytest.mark.asyncio
+    async def test_create_user_duplicate_email_case_insensitive(
+        self, auth_client, db_session
+    ):
+        client, csrf_token = auth_client
+        db_session.add(User(email="A@x.de", password_hash=hash_password("pw")))
+        await db_session.commit()
+
+        response = await client.post(
+            "/api/v1/admin/users",
+            json={"email": "a@x.de", "password": "duplicate"},
+            headers={"X-CSRF-Token": csrf_token},
+        )
+
+        assert response.status_code == 409
+        assert response.json()["detail"]["code"] == "conflict"
+
+    @pytest.mark.asyncio
+    async def test_create_user_stores_email_lowercase(self, auth_client):
+        client, csrf_token = auth_client
+
+        response = await client.post(
+            "/api/v1/admin/users",
+            json={"email": " New.Case@Example.COM ", "password": "pw12345678"},
+            headers={"X-CSRF-Token": csrf_token},
+        )
+
+        assert response.status_code == 201
+        assert response.json()["email"] == "new.case@example.com"
+
+
 class TestAdminUserDetailUpdateDelete:
     @pytest.mark.asyncio
     async def test_get_user_returns_roles(self, auth_client, db_session):

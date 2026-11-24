@@ -596,3 +596,25 @@ class TestAuthMiddleware:
         )
 
         assert response.status_code == 200
+
+
+class TestLoginEmailCaseInsensitive:
+    @pytest.mark.asyncio
+    async def test_login_ignores_email_case_and_whitespace(
+        self, client: AsyncClient, db_session
+    ):
+        db_session.add(
+            User(
+                email="Mixed@Example.com",
+                password_hash=hash_password("correctpassword"),
+                is_active=True,
+            )
+        )
+        await db_session.commit()
+
+        for email in ("mixed@example.com", "MIXED@EXAMPLE.COM "):
+            response = await client.post(
+                "/auth/login",
+                json={"email": email, "password": "correctpassword"},
+            )
+            assert response.status_code == 200, email

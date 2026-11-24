@@ -4,10 +4,10 @@ import argparse
 import asyncio
 import getpass
 import sys
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from app.core.database import async_session_maker
-from app.core.security import hash_password_async
+from app.core.security import hash_password_async, normalize_email
 from app.models.user import User
 
 
@@ -27,9 +27,12 @@ async def reset_password_core(email: str, new_password: str, session) -> str:
         ValueError: If user not found
     """
     result = await session.execute(
-        select(User).where(User.email == email, User.deleted_at.is_(None))
+        select(User).where(
+            func.lower(User.email) == normalize_email(email), User.deleted_at.is_(None)
+        )
     )
-    user = result.scalar_one_or_none()
+    matches = list(result.scalars().all())
+    user = next((u for u in matches if u.email == email), matches[0] if matches else None)
     
     if not user:
         raise ValueError(f"User with email '{email}' not found")

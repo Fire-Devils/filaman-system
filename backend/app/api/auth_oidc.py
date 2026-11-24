@@ -7,12 +7,17 @@ import httpx
 from fastapi import APIRouter, HTTPException, Request, status
 from fastapi.responses import RedirectResponse
 from jose import jwt
-from sqlalchemy import delete, select, update
+from sqlalchemy import delete, func, select, update
 
 from app.api.deps import DBSession
 from app.core.config import settings
 from app.core.oidc_crypto import decrypt_secret
-from app.core.security import generate_token_secret, hash_password_async, hash_token
+from app.core.security import (
+    generate_token_secret,
+    hash_password_async,
+    hash_token,
+    normalize_email,
+)
 from app.models import OIDCAuthState, OIDCSettings, OAuthIdentity, User, UserSession
 
 router = APIRouter(prefix="/auth/oidc", tags=["auth"])
@@ -237,8 +242,11 @@ async def oidc_callback(request: Request, db: DBSession):
     else:
         if not email_verified or not email:
             return RedirectResponse("/login?error=oidc_no_user", status_code=302)
-        result = await db.execute(select(User).where(User.email == email))
-        user = result.scalar_one_or_none()
+        result = await db.execute(
+            select(User).where(func.lower(User.email) == normalize_email(email))
+        )
+        matches = list(result.scalars().all())
+        user = next((u for u in matches if u.email == email), matches[0] if matches else None)
         if user is None:
             return RedirectResponse("/login?error=oidc_no_user", status_code=302)
         identity = OAuthIdentity(

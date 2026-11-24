@@ -78,3 +78,8 @@ def generate_device_code() -> str:
     """Generate a 6-character alphanumeric code for device registration."""
     alphabet = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ"
     return "".join(secrets.choice(alphabet) for _ in range(6))
+
+
+def normalize_email(value: str) -> str:
+    """Normalize an e-mail address for storage and case-insensitive lookup."""
+    return value.strip().lower()

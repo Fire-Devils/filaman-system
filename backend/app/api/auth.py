@@ -2,7 +2,7 @@ from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, HTTPException, Request, Response, status
 from pydantic import BaseModel
-from sqlalchemy import select, update
+from sqlalchemy import func, select, update
 from sqlalchemy.orm import selectinload
 
 from app.api.deps import DBSession, PrincipalDep
@@ -11,6 +11,7 @@ from app.core.security import (
     generate_token_secret,
     hash_password,
     hash_token,
+    normalize_email,
     verify_password_async,
 )
 from app.models import AppSettings, User, UserSession
@@ -82,10 +83,23 @@ async def login(
     else:
         result = await db.execute(
             select(User)
-            .where(User.email == data.email)
+            .where(func.lower(User.email) == normalize_email(data.email))
             .options(selectinload(User.roles))
         )
-        user = result.scalar_one_or_none()
+        candidates = list(result.scalars().all())
+        user = None
+        if len(candidates) == 1:
+            user = candidates[0]
+        elif candidates:
+            # Legacy data: several users whose emails differ only by case.
+            user = next((u for u in candidates if u.email == data.email.strip()), None)
+            if user is None:
+                for cand in candidates:
+                    if cand.password_hash and await verify_password_async(
+                        data.password, cand.password_hash
+                    ):
+                        user = cand
+                        break
 
         if user is None or user.password_hash is None:
             # Perform dummy password check to prevent timing-based user enumeration

@@ -1,6 +1,18 @@
 {
   "versions": [
     {
+      "version": "UNRELEASED",
+      "date": "",
+      "changes": {
+        "de": [
+          { "type": "fix", "text": "Login-E-Mail-Adressen werden jetzt unabhängig von Groß-/Kleinschreibung erkannt (#295)." }
+        ],
+        "en": [
+          { "type": "fix", "text": "Login e-mail addresses are now matched case-insensitively (#295)." }
+        ]
+      }
+    },
+    {
       "version": "2.8.0",
       "date": "",
       "changes": {
