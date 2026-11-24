@@ -6,11 +6,13 @@
       "changes": {
         "de": [
           { "type": "feature", "text": "Plugins können jetzt eigene Schaltflächen im Filament-Editor, in der Filamentliste und in der Farbbibliothek anzeigen. Sie öffnen das Plugin in einem Seitenbereich, Rechte und Plugin-Adressen werden dabei geprüft (#288). (Beigetragen von akira69)" },
-          { "type": "feature", "text": "Farbbibliothek: Doppelte Farben lassen sich vergleichen und zusammenführen, die Zuordnungen der Filamente bleiben dabei erhalten. Unbenutzte Farben können gefiltert, markiert und nach Bestätigung gelöscht werden. Neuer Farbkreis zur Auswahl, und die Listen zeigen jetzt die Gesamtzahl statt nur der geladenen Zeilen (#292). (Beigetragen von akira69)" }
+          { "type": "feature", "text": "Farbbibliothek: Doppelte Farben lassen sich vergleichen und zusammenführen, die Zuordnungen der Filamente bleiben dabei erhalten. Unbenutzte Farben können gefiltert, markiert und nach Bestätigung gelöscht werden. Neuer Farbkreis zur Auswahl, und die Listen zeigen jetzt die Gesamtzahl statt nur der geladenen Zeilen (#292). (Beigetragen von akira69)" },
+          { "type": "feature", "text": "Der Restwert einer Spule wird jetzt auch in der Spulendetailansicht und als optionale, sortierbare Spalte in der Spulenliste angezeigt. Spulen ohne Preis oder Kapazität werden als unbekannt markiert statt still mitgezählt, archivierte Spulen zählen nicht mehr zu den Summen (#298). (Beigetragen von akira69)" }
         ],
         "en": [
           { "type": "feature", "text": "Plugins can now show their own buttons in the filament editor, the filament list and the color library. They open the plugin in a side panel, with permissions and plugin addresses checked (#288). (Contributed by akira69)" },
-          { "type": "feature", "text": "Color library: duplicate colors can be compared and merged while keeping all filament assignments. Unused colors can be filtered, selected and deleted after confirmation. A new color wheel helps picking colors, and lists now show the total count instead of only the loaded rows (#292). (Contributed by akira69)" }
+          { "type": "feature", "text": "Color library: duplicate colors can be compared and merged while keeping all filament assignments. Unused colors can be filtered, selected and deleted after confirmation. A new color wheel helps picking colors, and lists now show the total count instead of only the loaded rows (#292). (Contributed by akira69)" },
+          { "type": "feature", "text": "A spool's remaining value is now also shown on the spool detail page and as an optional, sortable column in the spool list. Spools without price or capacity are flagged as unknown instead of being silently counted, and archived spools no longer count towards the totals (#298). (Contributed by akira69)" }
         ]
       }
     },
