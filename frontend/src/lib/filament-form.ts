@@ -77,6 +77,9 @@ export type FilamentFormData = Record<string, unknown> & {
 
 type CatalogFilament = Record<string, unknown> & {
   name?: string | null
+  hex_color?: string | null
+  color_name?: string | null
+  color_mode?: string | null
   designation?: string | null
   colors?: Array<{ hex_code?: string | null; color_name?: string | null; name?: string | null; position?: number }> | null
   manufacturer?: {
@@ -88,6 +91,11 @@ type CatalogFilament = Record<string, unknown> & {
   } | null
   material?: { key?: string | null; name?: string | null } | null
   spool_profile?: Partial<SpoolProfile> | null
+}
+export function catalogColors(item: Pick<CatalogFilament, 'colors' | 'hex_color' | 'color_name'>): NonNullable<CatalogFilament['colors']> {
+  if (item.colors && item.colors.length > 0) return item.colors
+  if (item.hex_color) return [{ hex_code: item.hex_color, color_name: item.color_name || '', position: 1 }]
+  return []
 }
 type FormSnapshot = Record<string, string>
 
@@ -768,7 +776,7 @@ export function createFilamentFormController(options: {
         placeholder: t('filamentdbLookup.searchFilament'),
         extraParams: scopedToManufacturer ? { manufacturer_name: selectedManufacturerName() } : {},
         renderItem(item) {
-          const colors = (item.colors || [])
+          const colors = catalogColors(item)
             .map(color => `<span style="display:inline-block;width:12px;height:12px;border-radius:50%;background:${toColorSwatchBackground(color.hex_code)};border:1px solid var(--border);vertical-align:middle"></span>`)
             .join(' ')
           const traits = Object.entries(item.traits || {})
@@ -830,9 +838,9 @@ export function createFilamentFormController(options: {
                 price: item.price ?? null,
                 currency: item.currency || null,
                 shop_url: item.shop_url || null,
-                color_mode: (item.colors || []).length > 1 ? 'multi' : 'single',
+                color_mode: catalogColors(item).length > 1 ? 'multi' : 'single',
                 multi_color_style: item.multi_color_style || null,
-                colors: (item.colors || []).map((color, index) => ({
+                colors: catalogColors(item).map((color, index) => ({
                   hex_code: color.hex_code || '',
                   color_name: color.color_name || color.name || '',
                   position: color.position || index + 1,

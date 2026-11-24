@@ -1,6 +1,18 @@
 {
   "versions": [
     {
+      "version": "UNRELEASED",
+      "date": "",
+      "changes": {
+        "de": [
+          { "type": "fix", "text": "„Aus FilaManDB laden“ im Filament-Formular übernimmt jetzt auch die Farbe von Katalogeinträgen, die ihre Farbe nur als Einzelwert (hex_color) statt als Farbliste führen, z. B. die Polymaker-Serie „Polylite - …“ (#293)." }
+        ],
+        "en": [
+          { "type": "fix", "text": "\"Load from FilaManDB\" in the filament form now also takes over the color of catalog entries that store it only as a single value (hex_color) instead of a color list, e.g. the Polymaker \"Polylite - …\" series (#293)." }
+        ]
+      }
+    },
+    {
       "version": "2.7.0",
       "date": "",
       "changes": {
