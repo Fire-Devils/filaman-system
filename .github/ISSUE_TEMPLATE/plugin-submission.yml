@@ -2,6 +2,10 @@ name: Submit a plugin
 description: Propose a plugin or a new version for the FilaMan catalog.
 title: 'Plugin submission: '
 body:
+  - type: markdown
+    attributes:
+      value: |
+        Want a custom plugin icon? Follow the [Plugin Icon Developer Guide](https://github.com/Fire-Devils/filaman-system/blob/devel/docs/plugin-icons.md) before packaging your release ZIP. Icons are optional.
   - type: input
     id: repository
     attributes:
