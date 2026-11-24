@@ -223,7 +223,7 @@ const { id } = Astro.params
       window.location.href = '/spools'
     }
 
-    const editSession = createDetailEditSession<any>(`/api/v1/spools/${id}?include_metrics=true`, () => t('spools.failedLoadSingle'))
+    const editSession = createDetailEditSession<any>(`/api/v1/spools/${id}?include_metrics=true&include_valuation=true`, () => t('spools.failedLoadSingle'))
     let spool: any = null
     let spoolMissing = false
     let spoolNeedsRefresh = false
@@ -261,7 +261,7 @@ const { id } = Astro.params
       try {
         // Sequential fetching mit Caching für bessere SQLite-Performance
         const [spoolRes, statusesRes, locationsData, sysFieldsRes, filamentSysFieldsRes] = await fetchSequential([
-          () => fetch(`/api/v1/spools/${id}?include_metrics=true`, { credentials: 'include', signal: getAbortSignal() }),
+          () => fetch(`/api/v1/spools/${id}?include_metrics=true&include_valuation=true`, { credentials: 'include', signal: getAbortSignal() }),
           () => fetch('/api/v1/spools/statuses', { credentials: 'include', signal: getAbortSignal() }),
           () => cachedFetchAllPages(CACHE_KEYS.LOCATIONS, '/api/v1/locations').then(d => d.items).catch(() => []),
           () => fetch('/api/v1/system-extra-fields?target_type=spool', { credentials: 'include', signal: getAbortSignal() }),
@@ -355,7 +355,7 @@ const { id } = Astro.params
           const uid = spool[row.key]
           return `<span class="filament-spec-value">${uid ? `${escapeExtraFieldHtml(formatRfidUid(uid))} <button type="button" class="remove-rfid-tag" data-slot="${row.key === 'rfid_uid' ? 1 : 2}" aria-label="${t('rfid.removeTag')}" style="border: 0; background: transparent; color: var(--text-muted); cursor: pointer;">×</button>` : '—'}</span>`
         }
-        return `<span class="filament-spec-value">${escapeExtraFieldHtml(row.value)}</span>`
+        return `<span class="filament-spec-value"${row.key === 'remaining_value' ? ' id="spool-remaining-value"' : ''}>${escapeExtraFieldHtml(row.value)}</span>`
       }
       const rawValue = spool[row.key]
       if (row.key === 'filament_id') {
@@ -695,7 +695,7 @@ const { id } = Astro.params
     async function refreshRemainingWeight() {
       const request = ++remainingRequest
       try {
-        const response = await fetch(`/api/v1/spools/${id}?include_metrics=true`, { credentials: 'include', signal: getAbortSignal() })
+        const response = await fetch(`/api/v1/spools/${id}?include_metrics=true&include_valuation=true`, { credentials: 'include', signal: getAbortSignal() })
         if (request !== remainingRequest) return
         if (response.status === 404) {
           spoolMissing = true
@@ -705,9 +705,12 @@ const { id } = Astro.params
         if (!response.ok) return
         const latest = await response.json()
         if (request !== remainingRequest || !spool || latest.id !== spool.id) return
-        if (JSON.stringify([spool.remaining_weight_g, spool.metrics]) === JSON.stringify([latest.remaining_weight_g, latest.metrics])) return
+        if (JSON.stringify([spool.remaining_weight_g, spool.metrics, spool.valuation]) === JSON.stringify([latest.remaining_weight_g, latest.metrics, latest.valuation])) return
         spool.remaining_weight_g = latest.remaining_weight_g
         spool.metrics = latest.metrics
+        spool.valuation = latest.valuation
+        const valueOutput = document.getElementById('spool-remaining-value')
+        if (valueOutput) valueOutput.textContent = spool.valuation?.remaining_value == null ? '—' : formatPrice(spool.valuation.remaining_value, getCurrency())
         // Update only read-only output; replacing the form would discard drafts and focus.
         const hero = document.querySelector('.spool-hero')
         if (!hero) return
@@ -787,6 +790,7 @@ const { id } = Astro.params
         purchase_price: spool.purchase_price == null ? null : formatPrice(spool.purchase_price, getCurrency()),
         purchase_date: formatSpoolDate(spool.purchase_date),
       }, {
+        remainingValue: spool.valuation?.remaining_value == null ? '—' : formatPrice(spool.valuation.remaining_value, getCurrency()),
         coreDisabled: t('common.off'),
         coreGlobalDefault: t('spools.spoolCoreWeightPlaceholder'),
       })

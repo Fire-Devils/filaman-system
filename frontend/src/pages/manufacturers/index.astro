@@ -264,7 +264,7 @@ import InventoryFilterReset from '../../components/InventoryFilterReset.astro'
 
     async function loadManufacturers(reset = true) {
       try {
-        const data = await cachedFetchAllPages<ManufacturerRow>(CACHE_KEYS.MANUFACTURERS, '/api/v1/manufacturers')
+        const data = await cachedFetchAllPages<ManufacturerRow>(`${CACHE_KEYS.MANUFACTURERS}:valuation`, '/api/v1/manufacturers?include_valuation=true')
         if (panelSignal.aborted) return
         manufacturers = data.items
         updateHeaderFilterOptions(manufacturers)

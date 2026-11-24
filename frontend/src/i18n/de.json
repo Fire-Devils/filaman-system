@@ -1,4 +1,8 @@
 {
+  "inventoryValue": {
+    "remaining": "Restwert",
+    "incomplete": "Bekannter Restwert · {count} Spulen ohne berechenbaren Restwert"
+  },
   "app": {
     "name": "FilaMan",
     "subtitle": "Filament-Verwaltung",

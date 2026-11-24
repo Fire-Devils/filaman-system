@@ -10,6 +10,7 @@ import { t } from './i18n'
 
 export type Manufacturer = {
   id: number
+  valuation?: { remaining_value: number | null; unknown_spool_count: number }
   name: string
   url?: string | null
   empty_spool_weight_g?: number | null
@@ -182,13 +183,14 @@ export function createManufacturerDialog(options: {
     const spoolUrl = (scope: string) => `/spools?${base}&status_scope=${scope}`
     const metric = (key: string, title: string, name: string, href: string, tone: string) =>
       `<a class="manufacturer-metric ${tone}" href="${e(href)}">${icon(name)}<strong>${e(count(key))}</strong><span class="manufacturer-metric-label">${label(title)}</span><span class="manufacturer-metric-arrow" aria-hidden="true">→</span></a>`
+    const valuation = current.valuation
     stats.innerHTML = `<div class="manufacturer-metrics">
       ${metric('filament_count', 'manufacturers.filaments', 'filaments', filamentUrl, 'metric-filaments')}
       ${metric('spool_count', 'manufacturers.availableSpools', 'spools', spoolUrl('active'), 'metric-spools')}
       ${metric('archived_spool_count', 'manufacturers.archivedSpools', 'archive', spoolUrl('archived'), 'metric-archived')}
     </div><div class="manufacturer-inventory-context"><div class="manufacturer-materials">${(current.materials as string[] || []).map(material => `<span>${e(material)}</span>`).join('')}</div><div class="manufacturer-values">
       <a href="${e(spoolUrl('active'))}"><span>${label('manufacturers.totalValueAvailable')}</span><strong>${e(formatPrice(current.total_price_available as number, getCurrency()))}</strong></a>
-      <a href="${e(spoolUrl('active'))}"><span>${label('manufacturers.remainingValueAvailable')}</span><strong>${e(formatPrice((current.remaining_price_available ?? current.total_price_available) as number, getCurrency()))}</strong></a>
+      <a data-manufacturer-valuation href="${e(spoolUrl('active'))}"><span>${label('manufacturers.remainingValueAvailable')}</span><strong data-manufacturer-remaining-value>${valuation?.remaining_value == null ? '—' : e(formatPrice(valuation.remaining_value, getCurrency()))}</strong><small data-manufacturer-value-coverage ${valuation?.unknown_spool_count ? '' : 'hidden'}>${valuation?.unknown_spool_count ? e(t('inventoryValue.incomplete', { count: valuation.unknown_spool_count })) : ''}</small></a>
       <a href="${e(spoolUrl('all'))}"><span>${label('manufacturers.totalSpentAllTime')}</span><strong>${e(formatPrice(current.total_price_all as number, getCurrency()))}</strong></a>
     </div></div>`
   }
@@ -291,6 +293,16 @@ export function createManufacturerDialog(options: {
     setMode(!manufacturer || mode?.mode !== 'view')
     renderStats(); renderSources(); logo()
     overlay.showModal()
+    if (current && !current.valuation && mode?.mode === 'view') {
+      const id = current.id
+      void request<Manufacturer>(`/manufacturers/${id}?include_valuation=true`, { signal: controller.signal }).then(fresh => {
+        if (activeSession !== session || !overlay.open || current?.id !== id) return
+        current.valuation = fresh.valuation
+        renderStats()
+      }).catch(err => {
+        if (!isAbortError(err)) console.error('Failed to load manufacturer valuation:', err)
+      })
+    }
     overlay.classList.add('open')
     form.scrollTop = 0
     if (editing) inputs.name.focus()
@@ -350,7 +362,7 @@ export function createManufacturerDialog(options: {
       if (active) {
         const wasNew = !current
         // Mutation responses do not calculate aggregates; retain the list's inventory stats.
-        const stats = Object.fromEntries(['filament_count', 'spool_count', 'archived_spool_count', 'materials', 'total_price_available', 'remaining_price_available', 'total_price_all'].filter(key => current?.[key] !== undefined).map(key => [key, current![key]]))
+        const stats = Object.fromEntries(['filament_count', 'spool_count', 'archived_spool_count', 'materials', 'total_price_available', 'remaining_price_available', 'total_price_all', 'valuation'].filter(key => current?.[key] !== undefined).map(key => [key, current![key]]))
         current = { ...current, ...saved, ...stats }
         if (logoJobs.some(([source]) => source.saveLogo) && !logoFailed) {
           const refreshed = await request<Manufacturer>(`/manufacturers/${saved.id}`, { signal: controller.signal }).catch(() => null)

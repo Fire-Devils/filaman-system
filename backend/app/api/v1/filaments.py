@@ -14,7 +14,7 @@ from app.api.v1.printers import (
     _proxy_to_primary,
     pick_bambuddy_driver,
 )
-from app.api.v1.schemas import PaginatedResponse
+from app.api.v1.schemas import InventoryValuation, PaginatedResponse
 from app.api.v1.schemas_filament import (
     BulkFilamentDeleteRequest,
     BulkFilamentUpdateRequest,
@@ -65,6 +65,7 @@ async def list_manufacturers(
     principal: PrincipalDep,
     page: int = Query(1, ge=1),
     page_size: int = Query(50, ge=1, le=200),
+    include_valuation: bool = Query(False),
 ):
     # Base query for manufacturers
     query = select(Manufacturer).order_by(Manufacturer.name)
@@ -80,6 +81,7 @@ async def list_manufacturers(
     total_price_available: dict[int, float] = {}
     total_price_all: dict[int, float] = {}
     remaining_price_available: dict[int, float] = {}
+    valuations: dict[int, InventoryValuation] = {}
     materials_map: dict[int, list[str]] = {m.id: [] for m in items}
 
     if mfr_ids:
@@ -98,6 +100,14 @@ async def list_manufacturers(
 
         # Comprehensive spool stats query
         # We need sum of prices and counts for both active and archived
+        valuation_columns = []
+        if include_valuation:
+            value = remaining_value_expression(db.get_bind().dialect.name, known_only=True)
+            active = SpoolStatus.key != "archived"
+            valuation_columns = [
+                func.sum(value).filter(active),
+                func.count(Spool.id).filter(active) - func.count(value).filter(active),
+            ]
         spool_stats_stmt = (
             select(
                 Filament.manufacturer_id,
@@ -114,6 +124,7 @@ async def list_manufacturers(
                 func.sum(remaining_value_expression(db.get_bind().dialect.name))
                 .filter(SpoolStatus.key != "archived")
                 .label("remaining_price"),
+                *valuation_columns,
             )
             .join(Spool, Spool.filament_id == Filament.id)
             .join(SpoolStatus, Spool.status_id == SpoolStatus.id)
@@ -133,7 +144,12 @@ async def list_manufacturers(
                 materials_map[mfr_id].append(mat_type)
 
         for row in spool_stats_result.all():
-            mfr_id, active_c, archived_c, active_p, total_p, remaining_p = row
+            mfr_id, active_c, archived_c, active_p, total_p, remaining_p, *valuation_values = row
+            if include_valuation:
+                valuations[mfr_id] = InventoryValuation(
+                    remaining_value=0 if not active_c else valuation_values[0],
+                    unknown_spool_count=valuation_values[1],
+                )
             active_spool_counts[mfr_id] = active_c or 0
             archived_spool_counts[mfr_id] = archived_c or 0
             total_price_available[mfr_id] = active_p or 0.0
@@ -144,6 +160,7 @@ async def list_manufacturers(
         ManufacturerResponse.model_validate(
             {
                 **m.__dict__,
+                **({"valuation": valuations.get(m.id, InventoryValuation(remaining_value=0, unknown_spool_count=0))} if include_valuation else {}),
                 "filament_count": fil_counts.get(m.id, 0),
                 "spool_count": active_spool_counts.get(m.id, 0),
                 "archived_spool_count": archived_spool_counts.get(m.id, 0),
@@ -195,7 +212,8 @@ async def create_manufacturer(
 
 @router.get("/{manufacturer_id}", response_model=ManufacturerResponse)
 async def get_manufacturer(
-    manufacturer_id: int, db: DBSession, principal: PrincipalDep
+    manufacturer_id: int, db: DBSession, principal: PrincipalDep,
+    include_valuation: bool = Query(False),
 ):
     result = await db.execute(
         select(Manufacturer).where(Manufacturer.id == manufacturer_id)
@@ -206,6 +224,18 @@ async def get_manufacturer(
             status_code=status.HTTP_404_NOT_FOUND,
             detail={"code": "not_found", "message": "Manufacturer not found"},
         )
+    if include_valuation:
+        value = remaining_value_expression(db.get_bind().dialect.name, known_only=True)
+        total, unknown, count = (await db.execute(
+            select(func.sum(value), func.count(Spool.id) - func.count(value), func.count(Spool.id))
+            .select_from(Spool)
+            .join(Filament, Spool.filament_id == Filament.id)
+            .join(SpoolStatus, Spool.status_id == SpoolStatus.id)
+            .where(Filament.manufacturer_id == manufacturer_id, SpoolStatus.key != "archived")
+        )).one()
+        return ManufacturerResponse.model_validate(manufacturer).model_copy(update={
+            "valuation": InventoryValuation(remaining_value=0 if count == 0 else total, unknown_spool_count=unknown),
+        })
     return manufacturer
 
 

@@ -141,7 +141,7 @@ try {
       '/api/v1/dashboard/stats': {
         spool_count_total: 2, filament_count_total: 1, filament_count_active: 1, filament_count_used: 1,
         spool_distribution: { full: 1, normal: 0, low: 1, critical: 0, empty: 0 },
-        total_value_available: 3, filament_stats: [], location_stats: [], manufacturers_with_spools: [], low_stock_spools: [],
+        total_value_available: 3, valuation: { remaining_value: 1.2, unknown_spool_count: 1 }, filament_stats: [], location_stats: [], manufacturers_with_spools: [], low_stock_spools: [],
       },
       '/api/v1/labels/print-requests/pending': pendingPrint,
     }
@@ -174,6 +174,10 @@ try {
   await sidebar.waitFor()
   await page.waitForFunction(() => document.getElementById('stat-total-spools')?.textContent === '2')
   await dismissChangelog()
+  await page.locator('#stat-remaining-value').filter({ hasText: /1[,.]20/ }).waitFor()
+  assert.match(await page.locator('#stat-total-value').textContent(), /3/)
+  assert.equal(await page.locator('[data-i18n="dashboard.remainingValue"]').textContent(), 'Restwert (verfügbar)')
+  assert.match(await page.locator('#stat-value-coverage').textContent(), /1 Spulen/)
   assert.equal(requests.some(path => path === '/api/v1/spools' || path === '/api/v1/filaments'), false)
   await page.locator('#problem-spools').click()
   await page.locator('#spool-modal a[href="/spools/3"]').first().waitFor()

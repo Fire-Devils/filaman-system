@@ -1,4 +1,8 @@
 {
+  "inventoryValue": {
+    "remaining": "Remaining value",
+    "incomplete": "Known subtotal · {count} spools could not be valued"
+  },
   "app": {
     "name": "FilaMan",
     "subtitle": "Filament Management",

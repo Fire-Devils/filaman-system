@@ -10,6 +10,7 @@ from pydantic import (
     model_validator,
 )
 
+from app.api.v1.schemas import InventoryValuation
 from app.api.v1.schemas_entity_extra_field import (
     EntityExtraFieldDefinitions,
     optional_entity_definitions_field,
@@ -88,6 +89,7 @@ class ManufacturerSummaryResponse(BaseModel):
 
 
 class ManufacturerResponse(ManufacturerSummaryResponse):
+    valuation: InventoryValuation | None = Field(None, exclude_if=lambda value: value is None)
     filament_count: int = 0
     spool_count: int = 0
     archived_spool_count: int = 0

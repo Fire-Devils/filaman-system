@@ -3,6 +3,13 @@ import { describe, expect, it } from 'vitest'
 import { buildSpoolDetailSections, buildSpoolUpdatePayload, formatSpoolDate } from './spool-detail'
 
 describe('spool detail', () => {
+  it('shows remaining purchase value as a read-only purchase detail', () => {
+    const section = buildSpoolDetailSections({}, { remainingValue: '€8.00' }).find(section => section.key === 'purchase')!
+    expect(section.rows.find(row => row.key === 'remaining_value')).toEqual({ key: 'remaining_value', labelKey: 'inventoryValue.remaining', value: '€8.00' })
+    const unknown = buildSpoolDetailSections({}).find(section => section.key === 'purchase')!
+    expect(unknown.rows.find(row => row.key === 'remaining_value')?.value).toBe('—')
+  })
+
   it('keeps threshold editing in physical Spool details without repeating hero facts', () => {
     const sections = buildSpoolDetailSections({ status: 'Opened', remaining: '500 g', location: 'Shelf A', low_weight_threshold_g: 100 })
     expect(sections.flatMap(section => section.rows).map(row => row.key)).not.toContain('status')

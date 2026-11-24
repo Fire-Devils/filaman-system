@@ -28,7 +28,7 @@ const label = (key: string) => en.spools[key.replace('spools.', '') as keyof typ
           <h2 class="filament-spec-title spool-section-heading"><span data-i18n={section.titleKey}>{label(section.titleKey)}</span></h2>
           <div class="filament-spec-rows">
             {section.key === 'spool' && <label class="filament-spec-row" for="spool_quantity"><span class="filament-spec-label" data-i18n="spools.quantity">Quantity</span><input type="number" id="spool_quantity" name="spool_quantity" value="1" min="1" step="1" class="fm-input spool-edit-input" /></label>}
-            {section.rows.filter(row => row.key !== 'filament_id').map(row => row.key === 'spool_core_weight_g' ?
+            {section.rows.filter(row => row.field && row.key !== 'filament_id').map(row => row.key === 'spool_core_weight_g' ?
               <div class="filament-spec-row spool-core-row">
                 <span class="filament-spec-label" data-i18n={row.labelKey}>{label(row.labelKey)}</span>
                 <div class="spool-core-edit">

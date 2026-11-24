@@ -133,7 +133,12 @@ class SpoolMetrics(BaseModel):
     effective_remaining_weight_g: float | None
 
 
+class SpoolValuation(BaseModel):
+    remaining_value: float | None
+
+
 class SpoolResponse(BaseModel):
+    valuation: SpoolValuation | None = Field(None, exclude_if=lambda value: value is None)
     metrics: SpoolMetrics | None = Field(None, exclude_if=lambda value: value is None)
     label_field_aliases: dict[str, str | dict[str, Any]] | None = Field(None, exclude_if=lambda value: value is None)
     id: int

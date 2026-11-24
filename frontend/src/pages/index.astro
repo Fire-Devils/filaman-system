@@ -44,7 +44,7 @@ import FormDialog from '../components/FormDialog.astro'
         <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="dashboard-value-icon" aria-hidden="true"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v14c0 4 16 4 16 0V5M4 12c0 4 16 4 16 0"/></svg>
         <div>
           <div><strong id="stat-total-value">—</strong><span data-i18n="dashboard.totalValue">Purchase value (available)</span></div>
-          <div title="Pro rata by remaining weight" data-i18n-title="dashboard.remainingValueHint"><strong id="stat-remaining-value">—</strong><span data-i18n="dashboard.remainingValue">Remaining value (available)</span></div>
+          <div title="Pro rata by remaining weight" data-i18n-title="dashboard.remainingValueHint"><strong id="stat-remaining-value">—</strong><span data-i18n="dashboard.remainingValue">Remaining value (available)</span><span id="stat-value-coverage" class="hidden"></span></div>
         </div>
       </div>
     </div>
@@ -183,6 +183,7 @@ import FormDialog from '../components/FormDialog.astro'
     }
     interface LocationStat { location_id: number; location_name: string; spool_count: number; total_weight_g: number }
     interface DashboardStats {
+      valuation?: { remaining_value: number | null; unknown_spool_count: number }
       spool_count_total: number; filament_count_total: number
       filament_count_active: number; filament_count_used: number; total_value_available: number; remaining_value_available?: number
       spool_distribution: Record<'full' | 'normal' | 'low' | 'critical' | 'empty', number>
@@ -554,7 +555,7 @@ import FormDialog from '../components/FormDialog.astro'
       const requestId = ++summaryRequestId
       const locationsRequest = ++locationRequestId
       try {
-        const response = await fetch('/api/v1/dashboard/stats?limit=20&include_totals=true', {
+        const response = await fetch('/api/v1/dashboard/stats?limit=20&include_totals=true&include_valuation=true', {
           credentials: 'include', signal: getAbortSignal(),
         })
         if (!response.ok) throw new Error(`Dashboard summary returned ${response.status}`)
@@ -696,7 +697,11 @@ import FormDialog from '../components/FormDialog.astro'
         await currencyReady
         if (!panelSignal.aborted && requestId === summaryRequestId) {
           document.getElementById('stat-total-value')!.textContent = formatPrice(dashboardData.total_value_available, getCurrency())
-          document.getElementById('stat-remaining-value')!.textContent = formatPrice(dashboardData.remaining_value_available ?? dashboardData.total_value_available, getCurrency())
+          const valuation = dashboardData.valuation
+          document.getElementById('stat-remaining-value')!.textContent = valuation?.remaining_value == null ? '—' : formatPrice(valuation.remaining_value, getCurrency())
+          const coverage = document.getElementById('stat-value-coverage')!
+          coverage.classList.toggle('hidden', !valuation?.unknown_spool_count)
+          coverage.textContent = valuation?.unknown_spool_count ? t('inventoryValue.incomplete', { count: valuation.unknown_spool_count }) : ''
         }
       } catch (error) {
         if (!isAbortError(error)) console.error('Failed to load dashboard:', error)

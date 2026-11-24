@@ -86,6 +86,7 @@ import InventoryFilterReset from '../../components/InventoryFilterReset.astro'
           <th data-i18n="spools.colRemainingPercent" data-sort="remaining_percent" class="sortable col-remaining_percent">Remaining %</th>
           <th data-i18n="spools.colRemainingLength" data-sort="remaining_length_m" class="sortable col-remaining_length_m">Estimated remaining length (m)</th>
           <th data-i18n="spools.location" data-sort="location_id" class="sortable col-location">Location</th>
+          <th data-sort="remaining_value" class="sortable col-remaining_value"><span class="fm-header-filter-heading" data-i18n="inventoryValue.remaining">Remaining value</span></th>
           <th data-i18n="spools.colPrice" data-sort="purchase_price" class="sortable col-price">Price</th>
           <th data-i18n="spools.colMfrColor" data-sort="mfr_color" class="sortable col-mfr_color">Mfr. Color</th>
           <th data-i18n="spools.colLot" data-sort="lot_number" class="sortable col-lot">Lot</th>
@@ -257,6 +258,7 @@ import InventoryFilterReset from '../../components/InventoryFilterReset.astro'
       remaining_weight_g: number | null
       metrics?: import('../../lib/spool-reel').SpoolMetrics | null
       low_weight_threshold_g: number
+      valuation?: { remaining_value: number | null }
       purchase_price: number | null
       purchase_date: string | null
       last_used_at: string | null
@@ -411,6 +413,7 @@ import InventoryFilterReset from '../../components/InventoryFilterReset.astro'
       if (key === 'material') return getMaterialType(item)
       if (key === 'colors') return filamentColorValues(getFilamentForSpool(item), 'name')[0]?.toLowerCase() || ''
       if (key === 'mfr_color') return getFilamentForSpool(item)?.manufacturer_color_name ?? ''
+      if (key === 'remaining_value') return item.valuation?.remaining_value
       if (key === 'remaining_percent' || key === 'remaining_length_m') return item.metrics?.[key]
       return item[key]
     }
@@ -425,7 +428,7 @@ import InventoryFilterReset from '../../components/InventoryFilterReset.astro'
       return [...spools].sort((a, b) => {
         const aVal = sortValue(a)
         const bVal = sortValue(b)
-        if (sortBy === 'remaining_percent' || sortBy === 'remaining_length_m' || sortBy === 'remaining_weight_g') {
+        if (sortBy === 'remaining_percent' || sortBy === 'remaining_length_m' || sortBy === 'remaining_weight_g' || sortBy === 'remaining_value') {
           if (aVal == null || bVal == null) return aVal == null ? (bVal == null ? a.id - b.id : 1) : -1
           return (Number(aVal) - Number(bVal)) * (sortDirection === 'asc' ? 1 : -1) || a.id - b.id
         }
@@ -683,7 +686,7 @@ import InventoryFilterReset from '../../components/InventoryFilterReset.astro'
       const isArchivedSelected = !!archivedStatus && statusIds.includes(String(archivedStatus.id))
 
       // Build query params for backend
-      const params = new URLSearchParams({ include_metrics: 'true' })
+      const params = new URLSearchParams({ include_metrics: 'true', include_valuation: 'true' })
       for (const key of ['remaining_percent', 'remaining_length_m']) {
         const filter = columnFilters[key]
         if (filter?.type !== 'number' || !isColumnFilterActive(filter)) continue
@@ -825,6 +828,7 @@ import InventoryFilterReset from '../../components/InventoryFilterReset.astro'
           <td class="col-remaining_percent" style="padding: 12px; font-family: monospace;">${metrics.percentText ?? '—'}</td>
           <td class="col-remaining_length_m" style="padding: 12px; font-family: monospace;">${metrics.lengthText ?? '—'}</td>
           <td class="col-location" style="padding: 12px;">${escapeHtml(getLocationName(s.location_id))}</td>
+          <td class="col-remaining_value" style="padding: 12px; font-family: monospace;">${s.valuation?.remaining_value != null ? formatPrice(s.valuation.remaining_value, currency) : '—'}</td>
           <td class="col-price" style="padding: 12px; font-family: monospace;">${s.purchase_price != null ? formatPrice(s.purchase_price, currency) : '-'}</td>
           <td class="col-mfr_color" style="padding: 12px; color: var(--text-muted);">${fil?.manufacturer_color_name || '-'}</td>
           <td class="col-lot" style="padding: 12px; color: var(--text-muted);">${s.lot_number || '-'}</td>
@@ -1163,6 +1167,7 @@ import InventoryFilterReset from '../../components/InventoryFilterReset.astro'
           { key: 'moisture', label: t('moisture.column') },
           { key: 'remaining_percent', label: t('spools.colRemainingPercent') },
           { key: 'remaining_length_m', label: t('spools.colRemainingLength') },
+          { key: 'remaining_value', label: t('inventoryValue.remaining') },
           { key: 'price', label: t('spools.colPrice') },
           { key: 'mfr_color', label: t('spools.colMfrColor') },
           { key: 'lot', label: t('spools.colLot') },

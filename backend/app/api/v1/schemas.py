@@ -18,3 +18,8 @@ class ErrorResponse(BaseModel):
 
 class MessageResponse(BaseModel):
     message: str
+
+
+class InventoryValuation(BaseModel):
+    remaining_value: float | None
+    unknown_spool_count: int
