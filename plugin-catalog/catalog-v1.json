@@ -93,9 +93,9 @@
     "description": "Shows live print status, spool and CANVAS slots, and a print history with plate previews for the Elegoo Centauri Carbon 1, and books measured filament usage for single-spool prints. Needs the OpenCentauri patched firmware and LAN access to the printer on TCP port 3030. Use only one automatic usage deduction per printer.",
     "publisher": "Un0kNow",
     "repository_url": "https://github.com/Un0kNow/filaman-centauri-cc1",
-    "version": "0.1.14",
+    "version": "0.1.15",
     "min_filaman_version": "2.3.1",
-    "github_release_url": "https://github.com/Un0kNow/filaman-centauri-cc1/releases/download/v0.1.14/centauri_cc1-0.1.14.zip",
-    "sha256": "e41b0c8f4bc4ecacbd77c2a2007f2c7545f8e14566847ff2e708da275203b50c"
+    "github_release_url": "https://github.com/Un0kNow/filaman-centauri-cc1/releases/download/v0.1.15/centauri_cc1-0.1.15.zip",
+    "sha256": "6def378947adee8422e4eea34e4d5a3750646a938cb215c62549a39bb429cc8d"
   }
 ]
