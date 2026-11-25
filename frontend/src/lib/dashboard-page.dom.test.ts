@@ -273,7 +273,7 @@ it('loads summary counts on entry and fetches fresh problem spools only when the
   await vi.waitFor(() => expect(document.querySelector('#stat-total-value')!.textContent).toBe('€3'))
   expect(document.querySelector('#stat-remaining-value')!.textContent).toBe('€1.2')
   expect(document.querySelector('#stat-total-value')!.textContent).toBe('€3')
-  expect(document.querySelector('#stat-value-coverage')!.classList.contains('hidden')).toBe(true)
+  expect(document.querySelector('#stat-remaining-value-box')!.getAttribute('title')).toBe('dashboard.remainingValueHint')
   expect(fetch.fetchAllPages).not.toHaveBeenCalled()
   fetch.fetchAllPages.mockRejectedValueOnce(new Error('Offline'))
   document.querySelector<HTMLButtonElement>('#problem-spools')!.click()
@@ -300,8 +300,7 @@ it('ignores an older drilldown response after closing and reopening the dialog',
 
 it('shows an unknown total instead of zero when every spool lacks a valuation', async () => {
   await boot(false, undefined, undefined, undefined, { remaining_value: null, unknown_spool_count: 1 })
-  await vi.waitFor(() => expect(document.querySelector('#stat-value-coverage')!.textContent).toBe('inventoryValue.incomplete'))
+  await vi.waitFor(() => expect(document.querySelector('#stat-remaining-value-box')!.getAttribute('title')).toBe('dashboard.remainingValueHint\ninventoryValue.incomplete'))
   expect(document.querySelector('#stat-remaining-value')!.textContent).toBe('—')
   expect(document.querySelector('#stat-total-value')!.textContent).toBe('€3')
-  expect(document.querySelector('#stat-value-coverage')!.classList.contains('hidden')).toBe(false)
 })

@@ -1,6 +1,18 @@
 {
   "versions": [
     {
+      "version": "UNRELEASED",
+      "date": "",
+      "changes": {
+        "de": [
+          { "type": "improvement", "text": "Dashboard: Die Kachel mit Kauf- und Restwert verschiebt das Layout nicht mehr. Die Beträge sind kleiner, und der Hinweis auf Spulen ohne berechenbaren Restwert erscheint jetzt beim Darüberfahren mit der Maus (markiert mit *)." }
+        ],
+        "en": [
+          { "type": "improvement", "text": "Dashboard: The purchase and remaining value card no longer shifts the layout. The amounts are smaller, and the note about spools without a calculable remaining value now appears on hover (marked with *)." }
+        ]
+      }
+    },
+    {
       "version": "2.9.1",
       "date": "",
       "changes": {

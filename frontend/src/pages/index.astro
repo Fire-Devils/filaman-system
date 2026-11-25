@@ -40,11 +40,11 @@ import FormDialog from '../components/FormDialog.astro'
           <span data-i18n="dashboard.lowAndEmptySpools">Low &amp; Empty Spools</span>
         </div>
       </button>
-      <div class="fm-card dashboard-metric">
+      <div class="fm-card dashboard-metric dashboard-value-metric">
         <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="dashboard-value-icon" aria-hidden="true"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v14c0 4 16 4 16 0V5M4 12c0 4 16 4 16 0"/></svg>
         <div>
           <div><strong id="stat-total-value">—</strong><span data-i18n="dashboard.totalValue">Purchase value (available)</span></div>
-          <div title="Pro rata by remaining weight" data-i18n-title="dashboard.remainingValueHint"><strong id="stat-remaining-value">—</strong><span data-i18n="dashboard.remainingValue">Remaining value (available)</span><span id="stat-value-coverage" class="hidden"></span></div>
+          <div id="stat-remaining-value-box" title="Pro rata by remaining weight" data-i18n-title="dashboard.remainingValueHint"><strong id="stat-remaining-value">—</strong><span data-i18n="dashboard.remainingValue">Remaining value (available)</span></div>
         </div>
       </div>
     </div>
@@ -101,6 +101,8 @@ import FormDialog from '../components/FormDialog.astro'
     .dashboard-metric > div { min-width: 0; }
     .dashboard-metric strong, .dashboard-metric-count { display: block; color: var(--text); font-size: 1.5rem; font-weight: 700; line-height: 1.25; text-decoration: none; overflow-wrap: anywhere; }
     .dashboard-metric span { display: block; color: var(--text-muted); font-size: .8rem; }
+    .dashboard-value-metric > div { display: grid; gap: 6px; }
+    .dashboard-value-metric strong { font-size: 1.15rem; line-height: 1.2; }
     .db-icon { flex-shrink: 0; fill: var(--accent); }
     .dashboard-metric-icon { display: flex; }
     .dashboard-value-icon { flex-shrink: 0; color: var(--accent); }
@@ -698,10 +700,12 @@ import FormDialog from '../components/FormDialog.astro'
         if (!panelSignal.aborted && requestId === summaryRequestId) {
           document.getElementById('stat-total-value')!.textContent = formatPrice(dashboardData.total_value_available, getCurrency())
           const valuation = dashboardData.valuation
-          document.getElementById('stat-remaining-value')!.textContent = valuation?.remaining_value == null ? '—' : formatPrice(valuation.remaining_value, getCurrency())
-          const coverage = document.getElementById('stat-value-coverage')!
-          coverage.classList.toggle('hidden', !valuation?.unknown_spool_count)
-          coverage.textContent = valuation?.unknown_spool_count ? t('inventoryValue.incomplete', { count: valuation.unknown_spool_count }) : ''
+          const unknownCount = valuation?.unknown_spool_count ?? 0
+          const remainingText = valuation?.remaining_value == null ? '—' : formatPrice(valuation.remaining_value, getCurrency())
+          document.getElementById('stat-remaining-value')!.textContent = unknownCount && valuation?.remaining_value != null ? `${remainingText} *` : remainingText
+          const remainingBox = document.getElementById('stat-remaining-value-box')!
+          const hint = t('dashboard.remainingValueHint')
+          remainingBox.title = unknownCount ? `${hint}\n${t('inventoryValue.incomplete', { count: unknownCount })}` : hint
         }
       } catch (error) {
         if (!isAbortError(error)) console.error('Failed to load dashboard:', error)
