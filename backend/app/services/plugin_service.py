@@ -41,6 +41,7 @@ from app.services.plugin_icon_service import (
 
 logger = logging.getLogger(__name__)
 _PEER_RECOVERY_TIMEOUT = 20
+PLUGIN_ROUTER_PREFLIGHT_TIMEOUT_SECONDS = 120
 
 
 def is_integration_slug(slug: str) -> bool:
@@ -209,7 +210,7 @@ print('Plugin router validated')
         stderr=asyncio.subprocess.PIPE,
     )
     try:
-        stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=30)
+        stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=PLUGIN_ROUTER_PREFLIGHT_TIMEOUT_SECONDS)
     except TimeoutError as exc:
         raise PluginInstallError("Plugin router validation timed out", "invalid_plugin_router") from exc
     finally:

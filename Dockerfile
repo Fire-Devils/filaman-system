@@ -44,10 +44,13 @@ RUN pip install uv
 COPY backend/pyproject.toml backend/uv.lock ./
 
 # Install backend dependencies
-RUN uv pip install --system --no-cache -r pyproject.toml
+RUN uv pip install --system --no-cache --compile-bytecode -r pyproject.toml
 
 # Copy backend source
 COPY backend/ ./
+
+# Precompile bytecode so plugin router preflight (fresh subprocess) starts fast on slow ARM devices
+RUN python -m compileall -q /app/backend
 
 # --- Final Image Stage ---
 FROM python:3.11-slim-trixie

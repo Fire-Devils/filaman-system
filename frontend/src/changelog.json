@@ -1,6 +1,18 @@
 {
   "versions": [
     {
+      "version": "UNRELEASED",
+      "date": "",
+      "changes": {
+        "de": [
+          { "type": "fix", "text": "Plugins mit eigenem Serverteil (z. B. Bambu Usage Tracking, FilaMan Swatch) ließen sich auf langsameren Geräten teils nicht installieren (\"Plugin router validation timed out\"). Das Image enthält jetzt vorkompilierten Bytecode, und das Zeitlimit der Prüfung wurde auf 120 Sekunden erhöht (#303)." }
+        ],
+        "en": [
+          { "type": "fix", "text": "Plugins with their own server part (e.g. Bambu Usage Tracking, FilaMan Swatch) could fail to install on slower devices with \"Plugin router validation timed out\". The image now ships precompiled bytecode and the validation timeout was raised to 120 seconds (#303)." }
+        ]
+      }
+    },
+    {
       "version": "2.9.0",
       "date": "",
       "changes": {
