@@ -18,6 +18,7 @@ import FormSection from '../../../components/FormSection.astro'
     <p class="fm-field-hint" data-i18n="filamentdb.syncLinkedDesc">Checks all local filaments linked to the FilamentDB for updates. No new filaments or manufacturers are created.</p>
     <button style="justify-self: start;" id="btn-sync-linked" class="fm-btn fm-btn-outline" data-i18n="filamentdb.syncLinkedCheck">Check for updates</button>
     <div id="sync-linked-result" style="display: none;"></div>
+    <div id="unlinked-area" style="display: none;"></div>
     </FormSection>
   </div>
 
@@ -109,7 +110,7 @@ import FormSection from '../../../components/FormSection.astro'
   <script>
     import { t, initI18n } from '../../../lib/i18n'
     import { getAbortSignal, isAbortError } from '../../../lib/abort'
-    import { checkFilamentDbActive } from '../../../lib/filamentdb-lookup'
+    import { checkFilamentDbActive, FILAMENTDB_SITE_URL } from '../../../lib/filamentdb-lookup'
     import { toColorSwatchBackground } from '../../../lib/colors'
     import { mountPanel } from '../../../lib/panel-navigation'
 
@@ -1140,7 +1141,8 @@ import FormSection from '../../../components/FormSection.astro'
           html += `<ul style="padding-left: 20px; font-size: 0.85rem; color: var(--text-muted);">${data.warnings.map(w => `<li>${escapeHtml(w)}</li>`).join('')}</ul>`
         }
         if (data.unlinked_count > 0) {
-          html += `<div style="padding-bottom: 8px; font-size: 0.85rem; color: var(--text-muted);">${escapeHtml(t('filamentdb.syncLinkedUnlinkedHint'))}</div>`
+          html += `<div style="padding-bottom: 8px; font-size: 0.85rem; color: var(--text-muted);">${escapeHtml(t('filamentdb.syncLinkedUnlinkedHint'))}
+            <button id="btn-unlinked-check" class="fm-btn fm-btn-outline" style="font-size: 0.75rem; padding: 2px 8px; margin-left: 6px;">${escapeHtml(t('filamentdb.unlinkedCheck'))}</button></div>`
         }
         if (data.manufacturers.length === 0) {
           html += linkedMsg(t('filamentdb.syncLinkedUpToDate'))
@@ -1159,6 +1161,7 @@ import FormSection from '../../../components/FormSection.astro'
             </ul></details>`
         }
         out.innerHTML = html
+        document.getElementById('btn-unlinked-check')?.addEventListener('click', () => loadUnlinked())
         const tree = document.getElementById('sync-linked-tree')
         if (tree) {
           wireLinkedTree(tree)
@@ -1171,6 +1174,130 @@ import FormSection from '../../../components/FormSection.astro'
         btn.disabled = false
       }
     })
+
+    // ---- Nicht verknuepfte Filamente pruefen und verknuepfen ----
+    interface UnlinkedSuggestion {
+      fdb_id: number; designation: string; manufacturer_name: string; material_type: string
+      colors: string[]; score: number; exact: boolean; already_linked_to: number | null
+    }
+    interface UnlinkedItem {
+      local_id: number; designation: string; manufacturer_name: string; material_type: string
+      colors: string[]; suggestion: UnlinkedSuggestion | null
+    }
+
+    function safeHexDots(colors: string[]): string {
+      return (colors || []).filter(c => /^#?[0-9a-f]{6,8}$/i.test(c)).map(c => {
+        const hex = c.startsWith('#') ? c : '#' + c
+        return `<span style="display: inline-block; width: 12px; height: 12px; border-radius: 50%; border: 1px solid var(--border); background: ${hex}; vertical-align: middle; margin-right: 2px;"></span>`
+      }).join('')
+    }
+
+    function renderUnlinkedItem(it: UnlinkedItem): string {
+      const s = it.suggestion
+      const local = `<a href="/filaments/${it.local_id}" style="font-weight: 500;">${escapeHtml(it.designation)}</a>
+        <span style="font-size: 0.75rem; color: var(--text-muted);">${escapeHtml(it.material_type)}</span> ${safeHexDots(it.colors)}`
+      if (!s) {
+        return `<div style="padding: 6px 0; border-top: 1px solid var(--border); font-size: 0.85rem; margin-left: 24px;">${local}
+          <div style="font-size: 0.8rem; color: var(--text-muted);">${escapeHtml(t('filamentdb.unlinkedNoMatch'))}
+            · <a href="/filaments/${it.local_id}/edit">${escapeHtml(t('filamentdb.unlinkedEdit'))}</a>
+            · <a href="${FILAMENTDB_SITE_URL}" target="_blank" rel="noopener noreferrer">${escapeHtml(t('filamentdb.unlinkedSubmit'))}</a></div></div>`
+      }
+      const checked = s.exact && s.already_linked_to == null ? 'checked' : ''
+      const taken = s.already_linked_to != null
+        ? `<div style="font-size: 0.8rem; color: var(--warning-text, var(--text-muted));"><a href="/filaments/${Number(s.already_linked_to)}">${escapeHtml(t('filamentdb.unlinkedAlreadyLinked', { id: s.already_linked_to }))}</a></div>`
+        : ''
+      return `<div style="padding: 6px 0; border-top: 1px solid var(--border);">
+        <label style="display: flex; align-items: flex-start; gap: 8px; font-size: 0.85rem;">
+          <input type="checkbox" class="unl-cb" data-local-id="${it.local_id}" data-fdb-id="${s.fdb_id}" ${checked} style="margin-top: 3px;" />
+          <span>${local}<br />
+            <span style="color: var(--text-muted);">&rarr;</span> ${escapeHtml(s.designation)}
+            <span style="font-size: 0.75rem; color: var(--text-muted);">${escapeHtml(s.material_type)}</span> ${safeHexDots(s.colors)}
+            <span style="font-size: 0.75rem; color: var(--text-muted);">${Math.round(s.score * 100)}% ${escapeHtml(t('filamentdb.unlinkedMatch'))}</span>
+            ${taken}</span>
+        </label></div>`
+    }
+
+    async function loadUnlinked(note = '') {
+      const area = document.getElementById('unlinked-area')!
+      area.style.display = 'block'
+      area.innerHTML = linkedMsg(t('filamentdb.unlinkedLoading'))
+      try {
+        const response = await fetch('/api/v1/admin/system/filamentdb-import/unlinked-suggestions', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': getCsrfToken() },
+          credentials: 'include',
+          body: JSON.stringify({ snapshot_id: linkedSnapshotId }),
+          signal: getAbortSignal(),
+        })
+        if (!response.ok) {
+          const data = await response.json().catch(() => ({}))
+          throw new Error(data.detail?.message || t('filamentdb.unlinkedFailed'))
+        }
+        const data: { snapshot_id: string | null; items: UnlinkedItem[] } = await response.json()
+        linkedSnapshotId = data.snapshot_id ?? linkedSnapshotId
+        let html = note
+        if (data.items.length === 0) {
+          area.innerHTML = html + linkedMsg(t('filamentdb.unlinkedNone'))
+          return
+        }
+        const byMfr = new Map<string, UnlinkedItem[]>()
+        for (const it of data.items) {
+          byMfr.set(it.manufacturer_name, [...(byMfr.get(it.manufacturer_name) ?? []), it])
+        }
+        html += `<div style="display: flex; gap: 6px; margin: 8px 0;">
+          <button class="fm-btn fm-btn-outline" id="unl-sel-all" style="font-size: 0.7rem; padding: 2px 8px;">${escapeHtml(t('filamentdb.selectAll'))}</button>
+          <button class="fm-btn fm-btn-outline" id="unl-sel-none" style="font-size: 0.7rem; padding: 2px 8px;">${escapeHtml(t('filamentdb.deselectAll'))}</button>
+        </div><div id="unlinked-tree">`
+        for (const [name, items] of byMfr) {
+          html += `<details style="border: 1px solid var(--border); border-radius: var(--radius-sm); margin-bottom: 8px;">
+            <summary style="padding: 8px 14px; cursor: pointer; background: var(--bg-soft);"><strong style="font-size: 0.9rem;">${escapeHtml(name)}</strong>
+              <span style="font-size: 0.75rem; color: var(--text-muted);">(${items.length})</span></summary>
+            <div style="padding: 4px 14px;">${items.map(renderUnlinkedItem).join('')}</div></details>`
+        }
+        html += `</div><button id="btn-unlinked-apply" class="fm-btn fm-btn-primary" style="margin-top: 8px;">${escapeHtml(t('filamentdb.unlinkedLinkSelected'))}</button>
+          <div id="unlinked-done" style="margin-top: 12px;"></div>`
+        area.innerHTML = html
+        const boxes = () => [...area.querySelectorAll<HTMLInputElement>('.unl-cb')]
+        document.getElementById('unl-sel-all')?.addEventListener('click', () => boxes().forEach(b => { b.checked = true }))
+        document.getElementById('unl-sel-none')?.addEventListener('click', () => boxes().forEach(b => { b.checked = false }))
+        document.getElementById('btn-unlinked-apply')?.addEventListener('click', async () => {
+          const selected = boxes().filter(b => b.checked).map(b => ({
+            local_id: Number(b.dataset.localId), fdb_id: Number(b.dataset.fdbId),
+          }))
+          const done = document.getElementById('unlinked-done')!
+          if (selected.length === 0) { done.innerHTML = linkedMsg(t('filamentdb.unlinkedNothingSelected')); return }
+          const applyBtn = document.getElementById('btn-unlinked-apply') as HTMLButtonElement
+          applyBtn.disabled = true
+          try {
+            const res = await fetch('/api/v1/admin/system/filamentdb-import/link', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': getCsrfToken() },
+              credentials: 'include',
+              body: JSON.stringify({ snapshot_id: linkedSnapshotId, items: selected }),
+              signal: getAbortSignal(),
+            })
+            if (!res.ok) {
+              const d = await res.json().catch(() => ({}))
+              throw new Error(d.detail?.message || t('filamentdb.unlinkedLinkFailed'))
+            }
+            const r: { linked: number; warnings: string[] } = await res.json()
+            let msg = `<div style="padding: 8px 0; font-size: 0.9rem;">${escapeHtml(t('filamentdb.unlinkedLinked', { count: r.linked }))}</div>`
+            if (r.warnings?.length) {
+              msg += `<ul style="padding-left: 20px; font-size: 0.85rem; color: var(--text-muted);">${r.warnings.map(w => `<li>${escapeHtml(w)}</li>`).join('')}</ul>`
+            }
+            area.innerHTML = msg
+            document.getElementById('btn-sync-linked')?.click()
+          } catch (err) {
+            if (isAbortError(err)) return
+            done.innerHTML = linkedMsg(err instanceof Error ? err.message : String(err), true)
+            applyBtn.disabled = false
+          }
+        })
+      } catch (err) {
+        if (isAbortError(err)) return
+        area.innerHTML = linkedMsg(err instanceof Error ? err.message : String(err), true)
+      }
+    }
 
     async function applyLinkedUpdates(tree: HTMLElement) {
       const btn = document.getElementById('btn-sync-linked-apply') as HTMLButtonElement
