@@ -16,7 +16,7 @@ import FormSection from '../../../components/FormSection.astro'
   <div id="step-sync-linked">
     <FormSection titleKey="filamentdb.syncLinkedTitle" title="Sync local filaments">
     <p class="fm-field-hint" data-i18n="filamentdb.syncLinkedDesc">Checks all local filaments linked to the FilamentDB for updates. No new filaments or manufacturers are created.</p>
-    <button style="justify-self: start;" id="btn-sync-linked" class="fm-btn fm-btn-outline" data-i18n="filamentdb.syncLinkedCheck">Check for updates</button>
+    <button style="justify-self: start;" id="btn-sync-linked" class="fm-btn fm-btn-primary" data-i18n="filamentdb.syncLinkedCheck">Check for updates</button>
     <div id="sync-linked-result" style="display: none;"></div>
     <div id="unlinked-area" style="display: none;"></div>
     </FormSection>
@@ -1142,14 +1142,14 @@ import FormSection from '../../../components/FormSection.astro'
         }
         if (data.unlinked_count > 0) {
           html += `<div style="padding-bottom: 8px; font-size: 0.85rem; color: var(--text-muted);">${escapeHtml(t('filamentdb.syncLinkedUnlinkedHint'))}
-            <button id="btn-unlinked-check" class="fm-btn fm-btn-outline" style="font-size: 0.75rem; padding: 2px 8px; margin-left: 6px;">${escapeHtml(t('filamentdb.unlinkedCheck'))}</button></div>`
+            <button id="btn-unlinked-check" class="fdb-mini-btn" style="margin-left: 6px;">${escapeHtml(t('filamentdb.unlinkedCheck'))}</button></div>`
         }
         if (data.manufacturers.length === 0) {
           html += linkedMsg(t('filamentdb.syncLinkedUpToDate'))
         } else {
           html += `<div style="display: flex; gap: 6px; margin-bottom: 8px;">
-            <button class="fm-btn fm-btn-outline" id="linked-sel-all" style="font-size: 0.7rem; padding: 2px 8px;">${escapeHtml(t('filamentdb.selectAll'))}</button>
-            <button class="fm-btn fm-btn-outline" id="linked-sel-none" style="font-size: 0.7rem; padding: 2px 8px;">${escapeHtml(t('filamentdb.deselectAll'))}</button>
+            <button class="fdb-mini-btn" id="linked-sel-all">${escapeHtml(t('filamentdb.selectAll'))}</button>
+            <button class="fdb-mini-btn" id="linked-sel-none">${escapeHtml(t('filamentdb.deselectAll'))}</button>
           </div><div id="sync-linked-tree">${renderLinkedGroups(data.manufacturers)}</div>
           <button id="btn-sync-linked-apply" class="fm-btn fm-btn-primary" style="margin-top: 12px;">${escapeHtml(t('filamentdb.syncLinkedUpdateSelected'))}</button>
           <div id="sync-linked-done" style="margin-top: 12px;"></div>`
@@ -1199,8 +1199,8 @@ import FormSection from '../../../components/FormSection.astro'
       if (!s) {
         return `<div style="padding: 6px 0; border-top: 1px solid var(--border); font-size: 0.85rem; margin-left: 24px;">${local}
           <div style="font-size: 0.8rem; color: var(--text-muted);">${escapeHtml(t('filamentdb.unlinkedNoMatch'))}
-            · <a href="/filaments/${it.local_id}/edit">${escapeHtml(t('filamentdb.unlinkedEdit'))}</a>
-            · <a href="${FILAMENTDB_SITE_URL}" target="_blank" rel="noopener noreferrer">${escapeHtml(t('filamentdb.unlinkedSubmit'))}</a></div></div>`
+            <a class="fdb-mini-btn" href="/filaments/${it.local_id}/edit">${escapeHtml(t('filamentdb.unlinkedEdit'))}</a>
+            <a class="fdb-mini-btn" href="${FILAMENTDB_SITE_URL}" target="_blank" rel="noopener noreferrer">${escapeHtml(t('filamentdb.unlinkedSubmit'))}</a></div></div>`
       }
       const checked = s.exact && s.already_linked_to == null ? 'checked' : ''
       const taken = s.already_linked_to != null
@@ -1245,8 +1245,8 @@ import FormSection from '../../../components/FormSection.astro'
           byMfr.set(it.manufacturer_name, [...(byMfr.get(it.manufacturer_name) ?? []), it])
         }
         html += `<div style="display: flex; gap: 6px; margin: 8px 0;">
-          <button class="fm-btn fm-btn-outline" id="unl-sel-all" style="font-size: 0.7rem; padding: 2px 8px;">${escapeHtml(t('filamentdb.selectAll'))}</button>
-          <button class="fm-btn fm-btn-outline" id="unl-sel-none" style="font-size: 0.7rem; padding: 2px 8px;">${escapeHtml(t('filamentdb.deselectAll'))}</button>
+          <button class="fdb-mini-btn" id="unl-sel-all">${escapeHtml(t('filamentdb.selectAll'))}</button>
+          <button class="fdb-mini-btn" id="unl-sel-none">${escapeHtml(t('filamentdb.deselectAll'))}</button>
         </div><div id="unlinked-tree">`
         for (const [name, items] of byMfr) {
           html += `<details style="border: 1px solid var(--border); border-radius: var(--radius-sm); margin-bottom: 8px;">
@@ -1489,6 +1489,19 @@ import FormSection from '../../../components/FormSection.astro'
     }
     })
   </script>
+  <style is:global>
+    .fdb-mini-btn {
+      display: inline-flex; align-items: center; gap: 4px;
+      padding: 4px 12px; margin: 2px 4px 2px 0;
+      border-radius: 999px; border: 1px solid var(--accent);
+      background: color-mix(in srgb, var(--accent) 10%, transparent);
+      color: var(--accent); font: 600 0.75rem/1.3 var(--font-sans);
+      text-decoration: none; cursor: pointer; white-space: nowrap;
+      transition: background var(--transition);
+    }
+    .fdb-mini-btn:hover { background: color-mix(in srgb, var(--accent) 22%, transparent); }
+    .fdb-mini-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  </style>
   <style>
     @keyframes spin {
       to { transform: rotate(360deg); }
