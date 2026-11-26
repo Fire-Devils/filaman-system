@@ -26,6 +26,7 @@ from app.api.v1.oidc_admin import router as oidc_admin_router
 from app.api.v1.print_jobs import router as print_jobs_router
 from app.api.v1.print_jobs import router_projects as print_projects_router
 from app.api.v1.print_jobs import router_spool_jobs as spool_print_jobs_router
+from app.api.v1.filament_printer_profiles import router_filament_profiles
 from app.api.v1.printer_params import router_filament_params, router_spool_params
 from app.api.v1.printers import router as printers_router
 from app.api.v1.slicer_link import router as slicer_link_router
@@ -89,6 +90,9 @@ api_router.include_router(
 )
 api_router.include_router(
     router_filament_params, prefix="/filaments", tags=["Filament Printer Params"]
+)
+api_router.include_router(
+    router_filament_profiles, prefix="/filaments", tags=["Filament Print Profiles"]
 )
 api_router.include_router(
     router_spool_params, prefix="/spools", tags=["Spool Printer Params"]

@@ -1,0 +1,40 @@
+---
+import FormDialog from './FormDialog.astro'
+---
+<section id="print-profiles" class="print-profiles fm-detail-content hidden">
+  <div class="pp-heading">
+    <h2 style="font-weight: 600; margin: 0;" data-i18n="printProfiles.title">Print profiles</h2>
+    <button type="button" class="fm-btn fm-btn-primary fm-btn-sm hidden" data-pp-add data-i18n="printProfiles.add">Add print profile</button>
+  </div>
+  <div class="pp-cards" data-pp-list></div>
+</section>
+
+<FormDialog id="print-profile-dialog" titleId="print-profile-dialog-title" titleKey="printProfiles.addTitle" title="Add print profile" wide>
+  <form id="print-profile-form" novalidate={false}>
+    <div data-pp-body></div>
+    <div class="pp-actions">
+      <button type="button" class="fm-btn fm-btn-outline" data-pp-cancel data-i18n="common.cancel">Cancel</button>
+      <button type="submit" class="fm-btn fm-btn-primary" data-i18n="common.save">Save</button>
+    </div>
+  </form>
+</FormDialog>
+
+<style is:global>
+  .print-profiles { margin-top: 24px; display: grid; gap: 12px; }
+  .print-profiles.hidden { display: none; }
+  .pp-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+  .pp-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 20rem), 1fr)); gap: 12px; }
+  .pp-card { padding: 12px 16px; display: grid; gap: 8px; }
+  .pp-card h3 { margin: 0; font-size: .95rem; font-weight: 600; overflow-wrap: anywhere; }
+  .pp-card dl { margin: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(7rem, 1fr)); gap: 6px 12px; }
+  .pp-card dt { font-size: .7rem; color: var(--text-muted); }
+  .pp-card dd { margin: 0; font-size: .85rem; font-variant-numeric: tabular-nums; }
+  .pp-card-actions { display: flex; gap: 8px; }
+  .pp-muted { color: var(--text-muted); font-size: .8rem; }
+  .pp-group { border: 1px solid var(--border); border-radius: var(--radius-sm); margin: 12px 0 0; padding: 8px 12px 12px; min-width: 0; }
+  .pp-group legend { font-size: .8rem; font-weight: 600; padding: 0 6px; }
+  .pp-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr)); gap: 10px 12px; }
+  .pp-unit { color: var(--text-muted); font-weight: 400; }
+  .pp-check { display: flex; align-items: center; gap: 8px; margin-top: 10px; }
+  .pp-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
+</style>

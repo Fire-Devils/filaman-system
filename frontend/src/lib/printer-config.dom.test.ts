@@ -9,6 +9,7 @@ import * as abort from './abort'
 import { escapeHtml } from './extra-fields'
 import { tableAction } from './table-actions'
 import { copyText } from './clipboard'
+import * as printerModels from './printer-model-picker'
 
 const config = { url: 'http://printer.local', enabled: false, count: 0, mode: 'manual', targets: [{ slot: 1 }] }
 const schema = {
@@ -47,7 +48,7 @@ afterEach(() => {
 })
 
 it.each(['index', '[id]'])('preserves schema controls, stored false/zero and defaults in printers/%s', async page => {
-  await bootAstroPage(`printers/${page}`, { ...driver, ...state, ...dialog, ...i18n, ...abort, escapeHtml, tableAction, copyText, initI18n: async () => {} })
+  await bootAstroPage(`printers/${page}`, { ...printerModels, ...driver, ...state, ...dialog, ...i18n, ...abort, escapeHtml, tableAction, copyText, initI18n: async () => {} })
   const editSelector = page === 'index' ? '.btn-edit' : '#btn-edit-config'
   await vi.waitFor(() => expect(document.querySelector(editSelector)).not.toBeNull())
   document.querySelector<HTMLButtonElement>(editSelector)!.click()

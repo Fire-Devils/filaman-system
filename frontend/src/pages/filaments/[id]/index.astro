@@ -4,6 +4,7 @@ import FilamentForm from '../../../components/FilamentForm.astro'
 import FilamentFormActions from '../../../components/FilamentFormActions.astro'
 import DetailScrollIdentity from '../../../components/DetailScrollIdentity.astro'
 import PrinterSetup from '../../../components/PrinterSetup.astro'
+import PrintProfiles from '../../../components/PrintProfiles.astro'
 
 export function getStaticPaths() {
   return [
@@ -31,6 +32,8 @@ export function getStaticPaths() {
   </div>
 
   <PrinterSetup />
+
+  <PrintProfiles />
 
   <section class="spool-filament-panel filament-spool-panel fm-detail-content">
   <div id="spools-section" class="hidden">
@@ -85,6 +88,7 @@ export function getStaticPaths() {
     import { formatPrice, getCurrency, initCurrency } from '../../../lib/format'
     import { getAbortSignal, isAbortError } from '../../../lib/abort'
     import { initPrinterSetup } from '../../../lib/printer-setup'
+    import { initPrintProfiles } from '../../../lib/print-profiles'
     import { buildFilamentExtraFieldsForPrint, buildFilamentPrintSearchParams } from '../../../lib/filament-label-data'
     import { writeScopedLabelFields } from '../../../lib/label-print-session'
     await initI18n()
@@ -126,6 +130,7 @@ export function getStaticPaths() {
     let editGeneration = 0
     let filamentNeedsRefresh = false
     let printerSetup: ReturnType<typeof initPrinterSetup> | null = null
+    let printProfilesStarted = false
     let filamentFormController: ReturnType<typeof createFilamentFormController> | null = null
     let filamentPluginHooks: ReturnType<typeof mountFilamentPluginHooks> | undefined
     let editorRecordToken: string | undefined
@@ -182,6 +187,13 @@ export function getStaticPaths() {
           onDirtyChange: () => filamentFormController?.updateDirtyState(),
           getCsrfToken: getCsrfTokenGlobal, getAbortSignal, isAbortError,
         })
+        const profilesMount = document.getElementById('print-profiles')
+        const profilesDialog = document.getElementById('print-profile-dialog') as HTMLDialogElement | null
+        if (profilesMount && profilesDialog && !printProfilesStarted) {
+          printProfilesStarted = true
+          profilesMount.classList.remove('hidden')
+          void initPrintProfiles({ mount: profilesMount, dialog: profilesDialog, filamentId: parseInt(id) })
+        }
         if (editMode) void filamentPluginHooks?.enterEdit()
       } catch (error) {
         if (isAbortError(error)) return

@@ -5,10 +5,12 @@
       "date": "",
       "changes": {
         "de": [
+          { "type": "feature", "text": "Druckprofile: Pro Filament lassen sich Druckprofile je Drucker mit Temperaturen, Geschwindigkeit, Fluss/Pressure Advance, Retraction und Lüfter anlegen, bearbeiten und löschen. Die Werte werden auf Plausibilität geprüft. Drucker haben jetzt ein Druckermodell (Hersteller und Modell), wahlweise aus der FilaMan-DB-Liste oder als Freitext mit Vorschlägen." },
           { "type": "feature", "text": "FilamentDB-Import: Mit \"Auf Aktualisierungen prüfen\" werden alle mit der FilamentDB verknüpften Filamente auf einmal mit den aktuellen Daten verglichen. Du siehst die Abweichungen (alt → neu) und kannst die ausgewählten Filamente gesammelt aktualisieren. Es werden keine neuen Filamente oder Hersteller angelegt. Inklusive Hersteller-Logos. Nicht verknüpfte Filamente lassen sich ebenfalls prüfen und mit der FilaMan-DB verknüpfen." },
           { "type": "improvement", "text": "FilamentDB-Import: Der Hinweis auf db.filaman.app hat jetzt Abstand zum Abgleich, und eine Trennlinie mit der Überschrift \"Neue Daten importieren\" zeigt klar, wo der eigentliche Import beginnt." }
         ],
         "en": [
+          { "type": "feature", "text": "Print profiles: Each filament can have print profiles per printer with temperatures, speed, flow/pressure advance, retraction and fan, which can be created, edited and deleted. Values are checked for plausibility. Printers now have a printer model (manufacturer and model), chosen from the FilaMan DB list or entered as free text with suggestions." },
           { "type": "feature", "text": "FilamentDB import: \"Check for updates\" compares all filaments linked to the FilamentDB with the current data at once. You see the differences (old → new) and can update the selected filaments in one go. No new filaments or manufacturers are created. Including manufacturer logos. Unlinked filaments can also be checked and linked to the FilaMan DB." },
           { "type": "improvement", "text": "FilamentDB import: The db.filaman.app hint now has spacing to the sync section, and a divider headed \"Import new data\" clearly shows where the actual import begins." }
         ]
