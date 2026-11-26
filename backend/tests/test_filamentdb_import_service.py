@@ -1070,3 +1070,158 @@ async def test_catalog_does_not_claim_source_alias_for_another_native_property(d
     await FilamentDBImportService(db_session)._update_existing_filament(filament, {'dry_temp': 65}, 'PLA', {}, 'filament', {})
     assert filament.label_field_aliases == aliases
     assert filament.drying_temp_c == 65
+
+
+
+async def _linked_fixture(db_session, *, local_color=None):
+    manufacturer = Manufacturer(name="Linked Fixture Mfr")
+    db_session.add(manufacturer)
+    await db_session.flush()
+    linked = Filament(
+        manufacturer_id=manufacturer.id, designation="Linked PLA", material_type="PLA",
+        diameter_mm=1.75, price=10, default_spool_weight_g=100, color_mode="single",
+        custom_fields={"filamentdb_id": 71},
+    )
+    gone = Filament(
+        manufacturer_id=manufacturer.id, designation="Gone PLA", material_type="PLA",
+        diameter_mm=1.75, color_mode="single", custom_fields={"filamentdb_id": 99},
+    )
+    free = Filament(
+        manufacturer_id=manufacturer.id, designation="Free PETG", material_type="PETG",
+        diameter_mm=1.75, color_mode="single",
+    )
+    db_session.add_all([linked, gone, free])
+    await db_session.flush()
+    if local_color:
+        color = Color(name="Local", hex_code=local_color)
+        db_session.add(color)
+        await db_session.flush()
+        db_session.add(FilamentColor(filament_id=linked.id, color_id=color.id, position=1))
+    await db_session.commit()
+    payload = _make_sync_payload()
+    payload.update(
+        manufacturers=[
+            {"id": 5, "name": manufacturer.name, "website": "https://mfr.example"},
+            {"id": 8, "name": "Other Mfr"},
+        ],
+        materials=[{"id": 6, "key": "PLA"}],
+        spool_profiles=[{"id": 9, "empty_weight_g": 220, "width_mm": 70}],
+        filaments=[
+            {"id": 71, "manufacturer_id": 5, "material_id": 6, "designation": "Linked PLA",
+             "diameter_mm": 1.75, "price": 25, "color_mode": "single", "spool_profile_id": 9,
+             "colors": [{"hex_code": "#FF0000", "color_name": "Red", "position": 1}]},
+            {"id": 72, "manufacturer_id": 8, "material_id": 6, "designation": "Unlinked New",
+             "diameter_mm": 1.75, "color_mode": "single"},
+        ],
+    )
+    response_cache.set(SYNC_CACHE_KEY, {"snapshot_id": "linked", "data": payload})
+    return FilamentDBImportService(db_session), linked, manufacturer
+
+
+async def _counts(db_session):
+    out = []
+    for model in (Filament, Manufacturer):
+        out.append(len((await db_session.execute(select(model))).scalars().all()))
+    return tuple(out)
+
+
+@pytest.mark.asyncio
+async def test_diff_linked_groups_changes_by_manufacturer(db_session):
+    service, linked, mfr = await _linked_fixture(db_session)
+    out = await service.diff_linked_filaments(snapshot_id="linked")
+    assert out["linked_count"] == 2
+    assert out["unlinked_count"] == 1
+    assert out["identical_count"] == 0
+    assert [m["fdb_id"] for m in out["missing_in_db"]] == [99]
+    [group] = out["manufacturers"]
+    assert group["fdb_manufacturer_id"] == 5
+    assert {c["field"] for c in group["changes"]} == {
+        "url", "empty_spool_weight_g", "spool_width_mm",
+    }
+    [fil] = group["filaments"]
+    assert (fil["fdb_id"], fil["local_id"]) == (71, linked.id)
+    assert {"price", "default_spool_weight_g", "spool_width_mm", "colors"} <= {
+        c["field"] for c in fil["changes"]
+    }
+    colors = next(c for c in fil["changes"] if c["field"] == "colors")
+    assert (colors["old"], colors["new"]) == ([], ["#ff0000"])
+
+
+@pytest.mark.asyncio
+async def test_update_linked_writes_only_selected_fields(db_session):
+    service, linked, mfr = await _linked_fixture(db_session)
+    before = await _counts(db_session)
+    result = await service.update_linked_filaments(
+        [{"fdb_id": 71, "fields": ["price"]}], [], snapshot_id="linked"
+    )
+    assert result.filaments_updated == 1
+    assert result.filaments_created == 0 and result.manufacturers_created == 0
+    await db_session.refresh(linked)
+    assert linked.price == 25
+    assert linked.default_spool_weight_g == 100  # abgewaehlt -> bleibt alt
+    assert linked.spool_width_mm is None
+    colors = (await db_session.execute(select(FilamentColor))).scalars().all()
+    assert colors == []
+    await db_session.refresh(mfr)
+    assert mfr.url is None
+    assert await _counts(db_session) == before
+
+
+@pytest.mark.asyncio
+async def test_update_linked_spool_weight_manufacturer_and_colors(db_session):
+    service, linked, mfr = await _linked_fixture(db_session, local_color="#00ff00")
+    before = await _counts(db_session)
+    result = await service.update_linked_filaments(
+        [{"fdb_id": 71, "fields": ["default_spool_weight_g", "colors"]}],
+        [{"fdb_manufacturer_id": 5, "fields": ["url", "empty_spool_weight_g"]}],
+        snapshot_id="linked",
+    )
+    assert result.filaments_updated == 1
+    assert result.manufacturers_updated == 1
+    await db_session.refresh(linked)
+    await db_session.refresh(mfr)
+    assert linked.default_spool_weight_g == 220
+    assert linked.price == 10  # nicht gewaehlt
+    assert (mfr.url, mfr.empty_spool_weight_g) == ("https://mfr.example", 220)
+    assert mfr.spool_width_mm is None  # nicht gewaehlt
+    assert mfr.name == "Linked Fixture Mfr"
+    rows = (
+        await db_session.execute(
+            select(Color.hex_code)
+            .join(FilamentColor, FilamentColor.color_id == Color.id)
+            .where(FilamentColor.filament_id == linked.id)
+        )
+    ).scalars().all()
+    assert [h.lower() for h in rows] == ["#ff0000"]
+    assert await _counts(db_session) == before
+
+
+@pytest.mark.asyncio
+async def test_update_linked_ignores_unlinked_unknown_ids_and_fields(db_session):
+    service, linked, mfr = await _linked_fixture(db_session)
+    before = await _counts(db_session)
+    result = await service.update_linked_filaments(
+        [
+            {"fdb_id": 72, "fields": ["price"]},
+            {"fdb_id": 12345, "fields": ["price"]},
+            {"fdb_id": 71, "fields": ["bogus_field", "custom_fields", "id"]},
+        ],
+        [{"fdb_manufacturer_id": 8, "fields": ["url"]}, {"fdb_manufacturer_id": 5, "fields": ["name"]}],
+        snapshot_id="linked",
+    )
+    assert result.filaments_updated == 0 and result.manufacturers_updated == 0
+    assert len(result.warnings) >= 5
+    await db_session.refresh(linked)
+    await db_session.refresh(mfr)
+    assert linked.price == 10 and linked.custom_fields == {"filamentdb_id": 71}
+    assert mfr.name == "Linked Fixture Mfr"
+    assert await _counts(db_session) == before
+
+
+@pytest.mark.asyncio
+async def test_update_linked_empty_selection_is_noop(db_session):
+    service, _, _ = await _linked_fixture(db_session)
+    service._linked_detail = AsyncMock()
+    result = await service.update_linked_filaments([], [])
+    service._linked_detail.assert_not_called()
+    assert result.filaments_updated == 0

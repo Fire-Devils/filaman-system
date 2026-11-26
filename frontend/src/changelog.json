@@ -1,6 +1,18 @@
 {
   "versions": [
     {
+      "version": "UNRELEASED",
+      "date": "",
+      "changes": {
+        "de": [
+          { "type": "feature", "text": "FilamentDB-Import: Mit \"Auf Aktualisierungen prüfen\" werden alle mit der FilamentDB verknüpften Filamente auf einmal mit den aktuellen Daten verglichen. Du siehst die Abweichungen (alt → neu) und kannst die ausgewählten Filamente gesammelt aktualisieren. Es werden keine neuen Filamente oder Hersteller angelegt." }
+        ],
+        "en": [
+          { "type": "feature", "text": "FilamentDB import: \"Check for updates\" compares all filaments linked to the FilamentDB with the current data at once. You see the differences (old → new) and can update the selected filaments in one go. No new filaments or manufacturers are created." }
+        ]
+      }
+    },
+    {
       "version": "2.11.0",
       "date": "",
       "changes": {
