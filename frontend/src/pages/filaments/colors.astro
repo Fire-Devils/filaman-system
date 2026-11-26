@@ -24,6 +24,7 @@ import Layout from '../../layouts/Layout.astro'
   <div class="fm-inventory-toolbar" id="color-bulk-controls">
     <span id="color-selection-count" role="status"></span>
     <button type="button" id="color-select-matching" class="fm-btn fm-btn-outline" data-i18n="colors.cleanup.selectAll">Select all</button>
+    <button type="button" id="color-merge-selected" class="fm-btn fm-btn-outline" hidden disabled><svg width="18" height="18" aria-hidden="true"><use href="/icons.svg?v=4#icon-merge" /></svg><span data-i18n="colors.cleanup.mergeAction">Merge</span></button>
     <button type="button" id="color-clear-selection" class="fm-btn fm-btn-outline" hidden><svg width="18" height="18" aria-hidden="true"><use href="/icons.svg?v=4#icon-close" /></svg><span data-i18n="colors.cleanup.clearSelection">Clear selection</span></button>
     <button type="button" id="color-delete-selected" class="fm-btn fm-btn-danger" hidden disabled><svg width="18" height="18" aria-hidden="true"><use href="/icons.svg?v=4#icon-trash" /></svg><span data-i18n="colors.cleanup.deleteSelected">Delete selected</span></button>
     <PluginUiLaunchers surface="colors.selection" />
@@ -53,6 +54,16 @@ import Layout from '../../layouts/Layout.astro'
   <FormDialog id="color-cleanup-dialog" titleId="color-cleanup-title" titleKey="colors.cleanup.title" title="Color cleanup" wide>
     <button slot="actions" type="button" data-dialog-close class="fm-btn fm-btn-outline" data-i18n="common.close">Close</button>
     <div id="color-cleanup-content"></div>
+    <form data-cleanup-merge-form class="fm-compact-form" hidden>
+      <label class="fm-label" for="cleanup-survivor" data-i18n="colors.cleanup.survivor">Keep this color</label>
+      <select class="fm-input" id="cleanup-survivor"></select>
+      <ColorEditorFields idPrefix="cleanup" wheel />
+      <p class="fm-alert-error" data-cleanup-warning role="note"></p>
+      <div class="fm-admin-actions">
+        <button type="button" data-dialog-close class="fm-btn fm-btn-outline" data-i18n="common.cancel">Cancel</button>
+        <button type="submit" data-cleanup-merge class="fm-btn fm-btn-primary"><svg width="18" height="18" aria-hidden="true"><use href="/icons.svg?v=4#icon-merge" /></svg><span data-i18n="colors.cleanup.merge">Merge selected colors</span></button>
+      </div>
+    </form>
   </FormDialog>
 
   <FormDialog id="modal-container" titleId="modal-title" titleKey="colors.addColor" title="Add Color" wide>
@@ -451,7 +462,7 @@ import Layout from '../../layouts/Layout.astro'
         },
       }, panelSignal,
     )
-    const pickerWheel = bindColorPickerPopup(document.querySelector<HTMLElement>('[data-color-picker-popup]')!, hexInput, panelSignal, formState.update)
+    const pickerWheel = bindColorPickerPopup(document.getElementById('color-picker-popup')!, hexInput, panelSignal, formState.update)
     // Revert hidden alpha values too, so an opaque color can return to a clean state.
     alphaEnabled.addEventListener('change', () => {
       if (!alphaEnabled.checked) colorControls.syncFromHex()

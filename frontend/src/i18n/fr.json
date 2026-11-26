@@ -759,6 +759,9 @@
   "colors": {
     "confirmOpenExisting": "Ouvrir {name} ? Les modifications non enregistrées seront perdues.",
     "cleanup": {
+      "mergeAction": "Fusionner",
+      "selectionChanged": "Des couleurs sélectionnées ont été supprimées. Copiez votre résultat depuis les champs s’ils sont encore visibles, puis fermez et sélectionnez à nouveau les couleurs.",
+      "confirmMerge": "Toutes les affectations aux filaments des couleurs incluses utiliseront le résultat choisi. Les autres couleurs incluses de la bibliothèque seront supprimées. Cette action est irréversible.",
       "review": "Doublons",
       "title": "Nettoyage des couleurs",
       "selected": "{count} sélectionnées",
@@ -769,10 +772,10 @@
       "survivor": "Conserver cette couleur",
       "next": "Suivant",
       "merge": "Fusionner les couleurs sélectionnées",
+      "confirmDeleteOne": "Supprimer cette couleur ? Seules les couleurs inutilisées peuvent être supprimées. Cette action est irréversible.",
       "confirmDelete": "Supprimer ces {count} couleurs ? Seules les couleurs inutilisées peuvent être supprimées. Cette action est irréversible.",
       "refresh": "Actualiser et vérifier à nouveau",
       "failed": "Échec du nettoyage des couleurs",
-      "selectTwo": "Sélectionnez au moins deux couleurs à fusionner.",
       "selectAll": "Tout sélectionner",
       "selectMatching": "Sélectionner tous les résultats",
       "clearSelection": "Effacer la sélection",

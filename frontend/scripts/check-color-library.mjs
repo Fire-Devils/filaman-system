@@ -12,6 +12,7 @@ try {
     const page = await browser.newPage({ viewport: { width, height: width === 390 ? 700 : 1000 }, hasTouch: width === 390, isMobile: width === 390 })
     page.setDefaultTimeout(10000)
     const errors = [], writes = []
+    let rejectCombine = false
     page.on('pageerror', error => errors.push(error.message))
     await page.addInitScript(() => localStorage.setItem('lang', 'en'))
     let colors = Array.from({ length: 75 }, (_, i) => ({
@@ -24,9 +25,10 @@ try {
       if (request.method() !== 'GET') {
         if (path.endsWith('/me/label-presets/migrate') || path.includes('/me/preferences/')) return route.fulfill({ json: {} })
         const body = request.postDataJSON(); writes.push({ path, body })
-        if (path.endsWith('/colors/merge')) {
+        if (path.endsWith('/colors/combine')) {
+          if (rejectCombine) return route.fulfill({ status: 409, json: { detail: { code: 'color_review_changed', message: 'Colors changed. Refresh and review again.' } } })
           const sourceIds = body.records.map(record => record.id).filter(id => id !== body.survivor_id)
-          colors = colors.filter(color => !sourceIds.includes(color.id)).map(color => color.id === body.survivor_id ? { ...color, name: body.name, usage_count: 2 } : color)
+          colors = colors.filter(color => !sourceIds.includes(color.id)).map(color => color.id === body.survivor_id ? { ...color, name: body.name, hex_code: body.hex_code, usage_count: 2 } : color)
           return route.fulfill({ json: { changed: sourceIds.length } })
         }
         if (path.endsWith('/colors/bulk-delete')) {
@@ -154,7 +156,7 @@ try {
     await wheelButton.click()
     const pickerPopup = page.getByRole('dialog', { name: 'Color wheel', exact: true })
     await pickerPopup.waitFor()
-    await page.waitForFunction(mobile => document.activeElement === document.querySelector(mobile ? '[data-wheel-close]' : '[data-wheel-hex]'), width === 390)
+    await page.waitForFunction(mobile => document.activeElement === document.querySelector(mobile ? '#color-picker-popup [data-wheel-close]' : '#color-picker-popup [data-wheel-hex]'), width === 390)
     const adjustments = pickerPopup.locator('.fm-picker-adjustments')
     assert.equal(await adjustments.evaluate(panel => panel.open), width > 480, 'Mobile opens with sliders collapsed')
     const layout = await pickerPopup.evaluate(popup => ({ wheel: popup.querySelector('.fm-header-color-wheel-wrap').getBoundingClientRect().bottom, complement: popup.querySelector('.fm-picker-complement-row').getBoundingClientRect().top, adjustments: popup.querySelector('.fm-picker-adjustments').getBoundingClientRect().top }))
@@ -425,7 +427,7 @@ try {
     await page.getByRole('button', { name: 'Delete selected', exact: true }).click()
     await cleanup.getByText('Delete these 72 colors?', { exact: false }).waitFor()
     assert.equal(writes.length, 1, 'Opening the confirmation must not delete anything')
-    await cleanup.getByText('This cannot be undone.', { exact: false }).waitFor()
+    await cleanup.locator('#color-cleanup-content').getByText('This cannot be undone.', { exact: false }).waitFor()
     if (width === 1440) await page.screenshot({ path: '../_pr_artifacts/color-library/delete-confirmation.png' })
     await cleanup.getByRole('button', { name: 'Delete', exact: true }).click()
     await page.waitForFunction(() => document.querySelector('[data-inventory-count]').textContent === '0 of 1 colors')
@@ -433,6 +435,90 @@ try {
     assert.equal(await page.locator('#color-select-loaded').isChecked(), false)
     assert.equal(writes[1].body.records.length, 72)
     assert.equal(colors[0].usage_count, 2)
+    colors = [colors[0],
+      { id: 101, name: 'Red', hex_code: '#FF0000', usage_count: 1, token: 'a'.repeat(64) },
+      { id: 102, name: 'Blue', hex_code: '#0000FF', usage_count: 2, token: 'b'.repeat(64) },
+      { id: 103, name: 'Translucent gold', hex_code: '#E3B34180', usage_count: 1, token: 'c'.repeat(64) },
+    ]
+    await page.reload({ waitUntil: 'domcontentloaded' })
+    await page.waitForFunction(() => document.querySelector('[data-inventory-count]')?.textContent === '4 colors')
+    const mergeSelection = page.getByRole('button', { name: 'Merge', exact: true })
+    assert.equal(await mergeSelection.count(), 0)
+    await page.locator('[data-color-select="101"]').check()
+    assert.equal(await mergeSelection.count(), 0)
+    await page.locator('[data-color-select="102"]').check()
+    await page.locator('[data-color-select="103"]').check()
+    await mergeSelection.click()
+    const selectedMerge = page.getByRole('dialog', { name: 'Merge selected colors', exact: true })
+    await selectedMerge.locator('[data-merge-entry]').first().waitFor()
+    assert.equal(await selectedMerge.locator('[data-merge-entry]').count(), 3)
+    assert.match(await selectedMerge.locator('[data-cleanup-merge]').evaluate(button => getComputedStyle(button).display), /^(inline-)?flex$/, 'Merge icon and label stay on the same row')
+    const writesBefore = writes.length
+    await selectedMerge.evaluate(dialog => {
+      dialog.dataset.resultSubmits = '0'
+      dialog.querySelector('[data-cleanup-merge-form]').addEventListener('submit', () => { dialog.dataset.resultSubmits = String(Number(dialog.dataset.resultSubmits) + 1) })
+    })
+    await selectedMerge.locator('#cleanup-name').press('Enter')
+    await selectedMerge.locator('#cleanup-hex').press('Enter')
+    assert.equal(await selectedMerge.getAttribute('data-result-submits'), '0', 'Enter in result fields must not confirm a merge')
+    assert.equal(writes.length, writesBefore)
+    await selectedMerge.getByRole('button', { name: 'Cancel', exact: true }).click()
+    assert.equal(writes.length, writesBefore)
+    await mergeSelection.click()
+    await selectedMerge.locator('[data-merge-entry]').first().waitFor()
+    await selectedMerge.locator('#cleanup-survivor').selectOption('102')
+    assert.equal(await selectedMerge.locator('#cleanup-hex').inputValue(), '#0000FF')
+    const mergeWheel = selectedMerge.locator('#cleanup-picker-popup')
+    for (const makeChange of [false, true]) {
+      await selectedMerge.getByRole('button', { name: 'Color wheel', exact: true }).click()
+      await mergeWheel.waitFor({ state: 'visible' })
+      if (makeChange) await mergeWheel.locator('[data-wheel-hex]').fill('#11223380')
+      await mergeWheel.getByRole('button', { name: 'Cancel', exact: true }).click()
+      await selectedMerge.locator('#cleanup-survivor').selectOption('103')
+      assert.equal(await selectedMerge.locator('#cleanup-hex').inputValue(), '#E3B34180', 'Cancel leaves the result HEX eligible for prefill')
+      await selectedMerge.locator('#cleanup-survivor').selectOption('102')
+    }
+    await selectedMerge.locator('#cleanup-name').fill('Combined violet')
+    await selectedMerge.locator('#cleanup-hex').fill('#7654AB80')
+    await selectedMerge.locator('#cleanup-survivor').selectOption('103')
+    assert.equal(await selectedMerge.locator('#cleanup-name').inputValue(), 'Combined violet')
+    assert.equal(await selectedMerge.locator('#cleanup-hex').inputValue(), '#7654AB80')
+    await selectedMerge.locator('#cleanup-survivor').selectOption('102')
+    await selectedMerge.getByRole('button', { name: 'Color wheel', exact: true }).click()
+    await mergeWheel.waitFor({ state: 'visible' })
+    assert.equal(await mergeWheel.locator('[data-wheel-hex]').inputValue(), '#7654AB80')
+    await mergeWheel.locator('[data-wheel-hex]').fill('#11223380')
+    await mergeWheel.getByRole('button', { name: 'Cancel', exact: true }).click()
+    assert.equal(await selectedMerge.locator('#cleanup-hex').inputValue(), '#7654AB80')
+    await selectedMerge.locator('[data-cleanup-warning]').scrollIntoViewIfNeeded()
+    assert.match(await selectedMerge.locator('[data-cleanup-warning]').textContent(), /cannot be undone/)
+    if (width === 1440 || width === 390) await selectedMerge.screenshot({ path: `../_pr_artifacts/merge-selected-colors/review-${width}.png` })
+    rejectCombine = true
+    await selectedMerge.getByRole('button', { name: 'Merge selected colors', exact: true }).click()
+    const error = selectedMerge.getByRole('alert').filter({ hasText: 'Colors changed' })
+    const refresh = selectedMerge.getByRole('button', { name: 'Refresh and review again', exact: true })
+    await error.waitFor()
+    for (const control of [error, refresh]) {
+      assert.ok(await control.evaluate(el => {
+        const rect = el.getBoundingClientRect()
+        const dialog = el.closest('dialog')
+        const header = dialog.querySelector('header').getBoundingClientRect()
+        return rect.top >= header.bottom && rect.bottom <= Math.min(innerHeight, dialog.getBoundingClientRect().bottom) + 1
+      }), 'Merge failure and refresh must be visible without scrolling')
+    }
+    await refresh.click()
+    await selectedMerge.locator('[data-merge-entry]').first().waitFor()
+    assert.equal(await selectedMerge.locator('#cleanup-name').inputValue(), 'Combined violet')
+    assert.equal(await selectedMerge.locator('#cleanup-hex').inputValue(), '#7654AB80')
+    rejectCombine = false
+    await selectedMerge.getByRole('button', { name: 'Merge selected colors', exact: true }).click()
+    await selectedMerge.waitFor({ state: 'hidden' })
+    assert.deepEqual(writes.at(-1).body.records.map(record => record.id), [101, 102, 103])
+    assert.equal(writes.at(-1).body.hex_code, '#7654AB80')
+    assert.equal(writes.at(-1).body.survivor_id, 102)
+    await page.waitForFunction(() => document.querySelector('[data-inventory-count]').textContent === '2 colors')
+    assert.equal(await page.locator('#color-selection-count').textContent(), '0 selected')
+    assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'Selected merge does not cause page overflow')
     assert.deepEqual(errors, [])
     await page.close()
     console.log(`Color library ${width}px: counts, usage filters, three-way merge, wheel alpha and bulk deletion passed`)

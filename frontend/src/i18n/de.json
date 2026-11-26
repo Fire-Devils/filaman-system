@@ -760,6 +760,9 @@
   "colors": {
     "confirmOpenExisting": "{name} öffnen? Ungespeicherte Farbänderungen werden verworfen.",
     "cleanup": {
+      "mergeAction": "Zusammenführen",
+      "selectionChanged": "Ausgewählte Farben wurden entfernt. Kopiere dein Ergebnis aus den Feldern, falls sie noch sichtbar sind, schließe das Fenster und wähle die Farben erneut aus.",
+      "confirmMerge": "Alle Filamentzuordnungen der enthaltenen Farben verwenden das gewählte Ergebnis. Die anderen enthaltenen Bibliotheksfarben werden gelöscht. Dies kann nicht rückgängig gemacht werden.",
       "review": "Duplikate",
       "title": "Farben bereinigen",
       "selected": "{count} ausgewählt",
@@ -770,10 +773,10 @@
       "survivor": "Diese Farbe behalten",
       "next": "Weiter",
       "merge": "Ausgewählte Farben zusammenführen",
+      "confirmDeleteOne": "Diese Farbe löschen? Nur unbenutzte Farben können gelöscht werden. Dies kann nicht rückgängig gemacht werden.",
       "confirmDelete": "Diese {count} Farben löschen? Nur unbenutzte Farben können gelöscht werden. Dies kann nicht rückgängig gemacht werden.",
       "refresh": "Aktualisieren und erneut prüfen",
       "failed": "Farbbereinigung fehlgeschlagen",
-      "selectTwo": "Mindestens zwei Farben zum Zusammenführen auswählen.",
       "selectAll": "Alle auswählen",
       "selectMatching": "Alle Treffer auswählen",
       "clearSelection": "Auswahl aufheben",
