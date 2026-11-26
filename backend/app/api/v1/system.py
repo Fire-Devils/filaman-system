@@ -1023,6 +1023,36 @@ class FilamentDBDiffRequest(BaseModel):
     snapshot_id: str | None = None
 
 
+class FilamentDBDiffLinkedRequest(BaseModel):
+    snapshot_id: str | None = None
+
+
+class FilamentDBLinkItem(BaseModel):
+    local_id: int
+    fdb_id: int
+
+
+class FilamentDBLinkRequest(BaseModel):
+    snapshot_id: str | None = None
+    items: list[FilamentDBLinkItem] = []
+
+
+class FilamentDBLinkedFilamentSelection(BaseModel):
+    fdb_id: int
+    fields: list[str]
+
+
+class FilamentDBLinkedManufacturerSelection(BaseModel):
+    fdb_manufacturer_id: int
+    fields: list[str]
+
+
+class FilamentDBUpdateLinkedRequest(BaseModel):
+    snapshot_id: str | None = None
+    filaments: list[FilamentDBLinkedFilamentSelection] = []
+    manufacturers: list[FilamentDBLinkedManufacturerSelection] = []
+
+
 class FilamentDBImportResultResponse(BaseModel):
     manufacturers_created: int
     manufacturers_skipped: int
@@ -1031,6 +1061,7 @@ class FilamentDBImportResultResponse(BaseModel):
     filaments_created: int
     filaments_skipped: int
     filaments_updated: int
+    manufacturers_updated: int = 0
     logos_downloaded: int
     logos_failed: int
     errors: list[str]
@@ -1195,6 +1226,157 @@ async def filamentdb_diff(
                 "detail": {
                     "code": "internal_error",
                     "message": f"Unerwarteter Fehler: {e!s}\n\nTraceback:\n{tb}",
+                    "type": type(e).__name__,
+                }
+            },
+        )
+
+
+@router.post("/filamentdb-import/diff-linked")
+async def filamentdb_diff_linked(
+    body: FilamentDBDiffLinkedRequest,
+    db: DBSession,
+    principal: PluginManagementPrincipal,
+):
+    """Alle mit der FilamentDB verknuepften lokalen Filamente vergleichen."""
+    await _require_filamentdb_active(db)
+    service = FilamentDBImportService(db)
+    try:
+        return JSONResponse(
+            await service.diff_linked_filaments(snapshot_id=body.snapshot_id)
+        )
+    except FilamentDBImportError as e:
+        logger.warning("FilamentDB Diff-Linked Error: %s", e, exc_info=True)
+        return JSONResponse(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            content={"detail": {"code": e.code, "message": str(e)}},
+        )
+    except Exception as e:
+        import traceback
+
+        tb = traceback.format_exc()
+        logger.exception("Unexpected error in FilamentDB diff-linked: %s", tb)
+        return JSONResponse(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            content={
+                "detail": {
+                    "code": "internal_error",
+                    "message": f"Unerwarteter Fehler: {e!s}\n\nTraceback:\n{tb}",
+                    "type": type(e).__name__,
+                }
+            },
+        )
+
+
+@router.post("/filamentdb-import/unlinked-suggestions")
+async def filamentdb_unlinked_suggestions(
+    body: FilamentDBDiffLinkedRequest,
+    db: DBSession,
+    principal: PluginManagementPrincipal,
+):
+    """Vorschlaege fuer unverknuepfte lokale Filamente."""
+    await _require_filamentdb_active(db)
+    service = FilamentDBImportService(db)
+    try:
+        return JSONResponse(
+            await service.unlinked_suggestions(snapshot_id=body.snapshot_id)
+        )
+    except FilamentDBImportError as e:
+        logger.warning("FilamentDB unlinked-suggestions Error: %s", e, exc_info=True)
+        return JSONResponse(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            content={"detail": {"code": e.code, "message": str(e)}},
+        )
+    except Exception as e:
+        import traceback
+
+        tb = traceback.format_exc()
+        logger.exception("Unexpected error in FilamentDB unlinked-suggestions: %s", tb)
+        return JSONResponse(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            content={
+                "detail": {
+                    "code": "internal_error",
+                    "message": f"Unerwarteter Fehler: {e!s}\n\nTraceback:\n{tb}",
+                    "type": type(e).__name__,
+                }
+            },
+        )
+
+
+@router.post("/filamentdb-import/link")
+async def filamentdb_link_filaments(
+    body: FilamentDBLinkRequest,
+    db: DBSession,
+    principal: PluginManagementPrincipal,
+):
+    """Lokale Filamente mit FilamentDB-Filamenten verknuepfen."""
+    await _require_filamentdb_active(db)
+    service = FilamentDBImportService(db)
+    try:
+        return JSONResponse(
+            await service.link_filaments(
+                [i.model_dump() for i in body.items], snapshot_id=body.snapshot_id
+            )
+        )
+    except FilamentDBImportError as e:
+        logger.warning("FilamentDB link Error: %s", e, exc_info=True)
+        return JSONResponse(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            content={"detail": {"code": e.code, "message": str(e)}},
+        )
+    except Exception as e:
+        import traceback
+
+        tb = traceback.format_exc()
+        logger.exception("Unexpected error in FilamentDB link: %s", tb)
+        return JSONResponse(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            content={
+                "detail": {
+                    "code": "internal_error",
+                    "message": f"Unerwarteter Fehler: {e!s}\n\nTraceback:\n{tb}",
+                    "type": type(e).__name__,
+                }
+            },
+        )
+
+
+@router.post(
+    "/filamentdb-import/update-linked",
+    response_model=FilamentDBImportResultResponse,
+)
+async def filamentdb_update_linked(
+    body: FilamentDBUpdateLinkedRequest,
+    db: DBSession,
+    principal: PluginManagementPrincipal,
+):
+    """Ausgewaehlte verknuepfte Filamente aktualisieren (legt nichts neu an)."""
+    await _require_filamentdb_active(db)
+    service = FilamentDBImportService(db)
+    try:
+        return await service.update_linked_filaments(
+            [f.model_dump() for f in body.filaments],
+            [m.model_dump() for m in body.manufacturers],
+            snapshot_id=body.snapshot_id,
+        )
+    except FilamentDBImportError as e:
+        logger.warning("FilamentDB Update-Linked Error: %s", e, exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={"code": e.code, "message": str(e)},
+        )
+    except Exception as e:
+        import traceback
+
+        tb = traceback.format_exc()
+        logger.exception("Unexpected error in FilamentDB update-linked: %s", tb)
+        return JSONResponse(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            content={
+                "detail": {
+                    "code": "internal_error",
+                    "message": f"Unerwarteter Fehler beim Update: {e!s}\n\nTraceback:\n{tb}",
                     "type": type(e).__name__,
                 }
             },

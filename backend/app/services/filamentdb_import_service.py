@@ -1,7 +1,11 @@
 """FilamentDB-Import-Service: Daten aus der FilamentDB importieren."""
 
+import asyncio
 import copy
+import hashlib
 import logging
+import os
+import tempfile
 from collections import Counter, defaultdict
 from dataclasses import dataclass, field
 from typing import Any, ClassVar, Literal
@@ -37,6 +41,10 @@ SYNC_CACHE_TTL_SECONDS = 300
 # Uploads-Verzeichnis fuer Hersteller-Logos (persistenter Pfad)
 from app.core.config import MANUFACTURER_LOGO_DIR as LOGO_DIR
 
+LOGO_MAX_BYTES = 2 * 1024 * 1024
+LOGO_PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
+LOGO_CONCURRENCY = 5
+
 # Schwellwert fuer Fuzzy-Matching (75%)
 FUZZY_THRESHOLD = FUZZY_MATCH_THRESHOLD
 
@@ -70,6 +78,42 @@ def _resolve_spool_profile(data: dict[str, Any], profiles: dict[int, dict[str, A
     profile_id = nested.get('id') if isinstance(nested, dict) else data.get('spool_profile_id')
     profile = profiles.get(profile_id) if isinstance(profile_id, int) else None
     return profile if profile is not None else nested if isinstance(nested, dict) else None
+
+
+def _fdb_match_keys(
+    fdb_f: dict[str, Any],
+    fdb_mfr_map: dict[int, str],
+    mat_map: dict[int, str],
+    mat_legacy_map: dict[int, str],
+) -> tuple[str, str, tuple[str, ...]]:
+    """Abgleich-Schluessel eines FDB-Filaments: (Hersteller lower, Bezeichnung lower, Materialien)."""
+    mfr_id_fdb = _resolve_mfr_id(fdb_f)
+    mfr_name = fdb_mfr_map.get(mfr_id_fdb, "").lower() if mfr_id_fdb else ""
+    designation = (fdb_f.get("designation") or "").lower()
+    mat_id = fdb_f.get("material_id")
+    mat_nested = fdb_f.get("material")
+    if not mat_id and isinstance(mat_nested, dict):
+        mat_id = mat_nested.get("id")
+    material = mat_map.get(mat_id, "PLA").lower()
+    if material == "pla" and isinstance(mat_nested, dict):
+        material = _material_type_from_fdb(mat_nested).lower()
+    # Aeltere Importe speicherten den Key (z.B. PLA-PLUS) statt des Namens
+    legacy = mat_legacy_map.get(mat_id)
+    if legacy is None and isinstance(mat_nested, dict):
+        legacy = mat_nested.get("key")
+    return mfr_name, designation, _material_type_aliases(material, legacy)
+
+
+def _best_fuzzy(designation: str, candidates: list[tuple[str, Any]]) -> tuple[Any, float]:
+    """Bester Fuzzy-Treffer (Bezeichnung, Objekt) -> (Objekt, Score); erster Maximalwert gewinnt."""
+    best_score = 0.0
+    best: Any = None
+    for cand_desig, obj in candidates:
+        score = fuzzy_token_score(cand_desig, designation)
+        if score > best_score:
+            best_score = score
+            best = obj
+    return best, best_score
 
 
 class FilamentDBImportError(Exception):
@@ -157,6 +201,7 @@ class ImportResult:
     filaments_created: int = 0
     filaments_skipped: int = 0
     filaments_updated: int = 0
+    manufacturers_updated: int = 0
     logos_downloaded: int = 0
     logos_failed: int = 0
     errors: list[str] = field(default_factory=list)
@@ -684,21 +729,9 @@ class FilamentDBImportService:
                 fdb_f = fdb_fils.get(fdb_id)
                 if not fdb_f:
                     continue
-                mfr_id_fdb = _resolve_mfr_id(fdb_f)
-                mfr_name = fdb_mfr_map.get(mfr_id_fdb, "").lower() if mfr_id_fdb else ""
-                designation = (fdb_f.get("designation") or "").lower()
-                mat_id = fdb_f.get("material_id")
-                mat_nested = fdb_f.get("material")
-                if not mat_id and isinstance(mat_nested, dict):
-                    mat_id = mat_nested.get("id")
-                material = mat_map.get(mat_id, "PLA").lower()
-                if material == "pla" and isinstance(mat_nested, dict):
-                    material = _material_type_from_fdb(mat_nested).lower()
-                # Aeltere Importe speicherten den Key (z.B. PLA-PLUS) statt des Namens
-                legacy = mat_legacy_map.get(mat_id)
-                if legacy is None and isinstance(mat_nested, dict):
-                    legacy = mat_nested.get("key")
-                materials = _material_type_aliases(material, legacy)
+                mfr_name, designation, materials = _fdb_match_keys(
+                    fdb_f, fdb_mfr_map, mat_map, mat_legacy_map
+                )
 
                 # Exakter Match
                 matched = next(
@@ -718,13 +751,10 @@ class FilamentDBImportService:
                 candidates = [
                     c for m in materials for c in local_by_mfr_mat.get((mfr_name, m), [])
                 ]
-                best_score = 0.0
-                best_fil: Filament | None = None
-                for local_desig, local_fil in candidates:
-                    score = fuzzy_token_score(local_desig, fdb_desig_raw)
-                    if score > best_score:
-                        best_score = score
-                        best_fil = local_fil
+                best_fil, best_score = _best_fuzzy(
+                    fdb_desig_raw,
+                    [(d, f) for d, f in candidates],
+                )
                 if best_score >= FUZZY_THRESHOLD and best_fil is not None:
                     local_by_fdb_id[fdb_id] = best_fil
 
@@ -863,6 +893,7 @@ class FilamentDBImportService:
             results.append(
                 {
                     "fdb_id": fdb_id,
+                    "local_id": local.id,
                     "designation": designation,
                     "manufacturer_name": mfr_name,
                     "changes": changes,
@@ -1000,6 +1031,646 @@ class FilamentDBImportService:
             spool_profiles=spool_profiles,
             colors=colors,
         )
+
+    # ------------------------------------------------------------------ #
+    #  Abgleich aller verknuepften Filamente
+    # ------------------------------------------------------------------ #
+
+    # Herstellerfelder, die die FilamentDB liefert (Name wird nie geaendert).
+    _MFR_SPOOL_FIELDS: ClassVar[list[tuple[str, str]]] = [
+        ("empty_weight_g", "empty_spool_weight_g"),
+        ("outer_diameter_mm", "spool_outer_diameter_mm"),
+        ("width_mm", "spool_width_mm"),
+        ("spool_material", "spool_material"),
+    ]
+    _MFR_WRITABLE: ClassVar[frozenset[str]] = frozenset(
+        {
+            "url",
+            "empty_spool_weight_g",
+            "spool_outer_diameter_mm",
+            "spool_width_mm",
+            "spool_material",
+            "logo",
+            "label_logo",
+        }
+    )
+    # Logo-Feld -> (FDB-Flag, URL-Unterordner, lokales Attribut, Dateisuffix)
+    _LOGO_KINDS: ClassVar[dict[str, tuple[str, str, str, str]]] = {
+        "logo": ("has_web_logo", "web", "logo_file", ".png"),
+        "label_logo": ("has_label_logo", "label", "label_logo_file", "_label.png"),
+    }
+    # Logo-Feld -> (FDB-Zeitstempelfeld, lokaler custom_fields-Key)
+    _LOGO_TS: ClassVar[dict[str, tuple[str, str]]] = {
+        "logo": ("web_logo_updated_at", "filamentdb_logo_updated_at"),
+        "label_logo": ("label_logo_updated_at", "filamentdb_label_logo_updated_at"),
+    }
+
+    @classmethod
+    def _local_logo_ts(cls, mfr: Manufacturer, kind: str) -> str | None:
+        cf = mfr.custom_fields
+        val = cf.get(cls._LOGO_TS[kind][1]) if isinstance(cf, dict) else None
+        return val if isinstance(val, str) and val else None
+
+    @classmethod
+    def _set_logo_ts(cls, mfr: Manufacturer, kind: str, ts: str | None) -> None:
+        if not ts:
+            return
+        cf = dict(mfr.custom_fields) if isinstance(mfr.custom_fields, dict) else {}
+        cf[cls._LOGO_TS[kind][1]] = ts
+        mfr.custom_fields = cf
+
+    @staticmethod
+    def _check_logo_bytes(content: bytes) -> str | None:
+        """Fehlertext, wenn die Datei kein gueltiges (PNG, <= 2 MB) Logo ist."""
+        if len(content) > LOGO_MAX_BYTES:
+            return "Datei groesser als 2 MB"
+        if not content.startswith(LOGO_PNG_SIGNATURE):
+            return "keine PNG-Datei"
+        return None
+
+    @staticmethod
+    def _local_logo_sha(mfr: Manufacturer, attr: str) -> str | None:
+        name = getattr(mfr, attr, None)
+        if not name:
+            return None
+        path = LOGO_DIR / os.path.basename(name)
+        try:
+            return hashlib.sha256(path.read_bytes()).hexdigest()
+        except OSError:
+            return None
+
+    async def _fetch_logo_changes(
+        self,
+        targets: list[tuple[Manufacturer, dict[str, Any]]],
+        warnings: list[str],
+        cache: dict[tuple[int, str], bytes],
+        ts_cache: dict[tuple[int, str], str],
+    ) -> dict[int, list[dict[str, Any]]]:
+        """Logos der FDB laden und per SHA-256 mit den lokalen vergleichen."""
+        jobs: list[tuple[Manufacturer, str, str, str | None]] = []
+        for mfr, fdb_mfr in targets:
+            slug = fdb_mfr.get("slug")
+            if not slug:
+                continue
+            for kind, (flag, folder, attr, _suffix) in self._LOGO_KINDS.items():
+                if not fdb_mfr.get(flag):
+                    continue
+                ts = fdb_mfr.get(self._LOGO_TS[kind][0])
+                ts = ts if isinstance(ts, str) and ts else None
+                if (
+                    ts
+                    and ts == self._local_logo_ts(mfr, kind)
+                    and getattr(mfr, attr) is not None
+                    and self._local_logo_sha(mfr, attr) is not None
+                ):
+                    continue  # unveraendert laut Zeitstempel, kein Download
+                jobs.append((mfr, kind, f"{FILAMENTDB_URL}/uploads/logos/{folder}/{slug}.png", ts))
+        out: dict[int, list[dict[str, Any]]] = defaultdict(list)
+        if not jobs:
+            return out
+        sem = asyncio.Semaphore(LOGO_CONCURRENCY)
+
+        async with httpx.AsyncClient(timeout=HTTP_TIMEOUT) as client:
+
+            async def fetch(url: str) -> tuple[bytes | None, str | None]:
+                async with sem:
+                    try:
+                        resp = await client.get(url)
+                    except httpx.HTTPError as e:
+                        return None, f"fehlgeschlagen: {e}"
+                if resp.status_code != 200:
+                    return None, f"nicht verfuegbar (HTTP {resp.status_code})"
+                err = self._check_logo_bytes(resp.content)
+                if err:
+                    return None, f"verworfen ({err})"
+                return resp.content, None
+
+            fetched = await asyncio.gather(*(fetch(url) for _, _, url, _ in jobs))
+        for (mfr, kind, _url, ts), (content, err) in zip(jobs, fetched, strict=True):
+            label = "Logo" if kind == "logo" else "Etikett-Logo"
+            if content is None:
+                warnings.append(f"{label} fuer '{mfr.name}': {err}")
+                continue
+            new_sha = hashlib.sha256(content).hexdigest()
+            old_sha = self._local_logo_sha(mfr, self._LOGO_KINDS[kind][2])
+            if old_sha == new_sha:
+                if ts and ts != self._local_logo_ts(mfr, kind):
+                    self._set_logo_ts(mfr, kind, ts)  # reine Metadaten nachtragen
+                continue
+            cache[(mfr.id, kind)] = content
+            if ts:
+                ts_cache[(mfr.id, kind)] = ts
+            out[mfr.id].append(
+                {
+                    "field": kind,
+                    "old": "vorhanden" if old_sha else None,
+                    "new": new_sha[:12],
+                }
+            )
+        return out
+
+    def _write_logo(self, mfr: Manufacturer, kind: str, content: bytes) -> None:
+        """Logo atomar unter festem Namen schreiben und am Hersteller setzen."""
+        _flag, _folder, attr, suffix = self._LOGO_KINDS[kind]
+        filename = f"{mfr.id}{suffix}"
+        LOGO_DIR.mkdir(parents=True, exist_ok=True)
+        fd, tmp = tempfile.mkstemp(dir=LOGO_DIR, suffix=".tmp")
+        try:
+            with os.fdopen(fd, "wb") as fh:
+                fh.write(content)
+            os.replace(tmp, LOGO_DIR / filename)
+        except BaseException:
+            try:
+                os.unlink(tmp)
+            except OSError:
+                pass
+            raise
+        setattr(mfr, attr, filename)
+    _FILAMENT_PROTECTED: ClassVar[frozenset[str]] = frozenset(
+        {"id", "manufacturer_id", "custom_fields", "label_field_aliases", "record_token"}
+    )
+
+    async def _linked_local_filaments(self) -> tuple[dict[int, Filament], int]:
+        """Lokale Filamente mit gueltiger filamentdb_id: (FDB-ID -> Filament, unverknuepft)."""
+        rows = await self.db.execute(
+            select(Filament).order_by(Filament.id).options(selectinload(Filament.manufacturer))
+        )
+        linked: dict[int, Filament] = {}
+        unlinked = 0
+        for fil in rows.scalars().all():
+            cf = fil.custom_fields
+            raw = cf.get("filamentdb_id") if isinstance(cf, dict) else None
+            try:
+                fdb_id = int(raw) if raw not in (None, "") else None
+            except (TypeError, ValueError):
+                fdb_id = None
+            if fdb_id is None:
+                unlinked += 1
+            else:
+                linked.setdefault(fdb_id, fil)
+        return linked, unlinked
+
+    @staticmethod
+    def _fdb_color_hexes(fil_data: dict[str, Any]) -> list[str]:
+        """Farb-Hexwerte (lowercase) eines FDB-Filaments in Positionsreihenfolge."""
+        colors = fil_data.get("colors") or []
+        if not colors:
+            hex_code = fil_data.get("hex_color")
+            return [hex_code.lower()] if hex_code else []
+        ordered: list[tuple[int, int, str]] = []
+        for index, c in enumerate(colors):
+            hex_code = c.get("hex_code") if isinstance(c, dict) else None
+            if not hex_code:
+                continue
+            try:
+                position = int(c.get("position") or 0)
+            except (TypeError, ValueError):
+                position = 0
+            ordered.append((position if position >= 1 else 10**6, index, hex_code.lower()))
+        return [hex_code for _, _, hex_code in sorted(ordered)]
+
+    async def _linked_detail(self, snapshot_id: str | None = None) -> dict[str, Any]:
+        """Abweichungen aller verknuepften Filamente, nach Hersteller gruppiert."""
+        linked, unlinked_count = await self._linked_local_filaments()
+        empty = {
+            "snapshot_id": snapshot_id,
+            "linked_count": len(linked),
+            "unlinked_count": unlinked_count,
+            "identical_count": 0,
+            "missing_in_db": [],
+            "manufacturers": [],
+            "warnings": [],
+            "_logo_cache": {},
+            "_logo_ts": {},
+        }
+        if not linked:
+            return empty
+
+        diff = await self.diff_filaments(list(linked), snapshot_id=snapshot_id)
+        snapshot = await self._fetch_sync_data(snapshot_id=diff.snapshot_id)
+        data = snapshot.data
+        fdb_fils = {f["id"]: f for f in data.get("filaments", []) if f.get("id")}
+        fdb_mfr_names = {
+            m["id"]: (m.get("name") or "").strip() for m in data.get("manufacturers", []) if m.get("id")
+        }
+        sp_map = {sp["id"]: sp for sp in data.get("spool_profiles", []) if sp.get("id")}
+
+        found = [r for r in diff.results if not r.get("not_found") and r.get("local_id")]
+        found_ids = {r["fdb_id"] for r in found}
+        missing = [
+            {
+                "fdb_id": fdb_id,
+                "designation": fil.designation,
+                "manufacturer_name": fil.manufacturer.name if fil.manufacturer else "",
+            }
+            for fdb_id, fil in linked.items()
+            if fdb_id not in found_ids
+        ]
+
+        # Lokale Farben je Filament (Hex in Positionsreihenfolge)
+        local_colors: dict[int, list[str]] = defaultdict(list)
+        if found:
+            color_rows = await self.db.execute(
+                select(FilamentColor.filament_id, Color.hex_code)
+                .join(Color, Color.id == FilamentColor.color_id)
+                .where(FilamentColor.filament_id.in_([r["local_id"] for r in found]))
+                .order_by(FilamentColor.filament_id, FilamentColor.position)
+            )
+            for filament_id, hex_code in color_rows.all():
+                local_colors[filament_id].append((hex_code or "").lower())
+
+        groups: dict[int, dict[str, Any]] = {}
+        identical_count = 0
+        for r in found:
+            fil_data = fdb_fils.get(r["fdb_id"])
+            if not fil_data:
+                continue
+            fdb_mfr_id = _resolve_mfr_id(fil_data)
+            if not fdb_mfr_id:
+                continue
+            group = groups.setdefault(fdb_mfr_id, {"filaments": []})
+            changes = list(r["changes"])
+            fdb_hex = self._fdb_color_hexes(fil_data)
+            if fdb_hex and fdb_hex != local_colors.get(r["local_id"], []):
+                changes.append(
+                    {"field": "colors", "old": local_colors.get(r["local_id"], []), "new": fdb_hex}
+                )
+            if not changes:
+                identical_count += 1
+                continue
+            group["filaments"].append(
+                {
+                    "fdb_id": r["fdb_id"],
+                    "local_id": r["local_id"],
+                    "designation": r["designation"],
+                    "changes": changes,
+                }
+            )
+
+        manufacturers: list[dict[str, Any]] = []
+        pending: list[tuple[int, dict[str, Any], Manufacturer | None, str, list[dict[str, Any]], dict]] = []
+        warnings: list[str] = []
+        logo_cache: dict[tuple[int, str], bytes] = {}
+        logo_ts: dict[tuple[int, str], str] = {}
+        for fdb_mfr_id, group in groups.items():
+            name = fdb_mfr_names.get(fdb_mfr_id, "")
+            mfr_changes: list[dict[str, Any]] = []
+            fdb_mfr: dict[str, Any] = {}
+            mfr = (
+                await self.db.execute(
+                    select(Manufacturer).where(func.lower(Manufacturer.name) == name.lower())
+                )
+            ).scalars().first() if name else None
+            if mfr is not None:
+                fdb_mfr = next((m for m in data.get("manufacturers", []) if m.get("id") == fdb_mfr_id), {})
+                website = (fdb_mfr.get("website") or "").strip() or None
+                if website and website != mfr.url:
+                    mfr_changes.append({"field": "url", "old": mfr.url, "new": website})
+                # Haeufigstes Spulenprofil des Herstellers (wie beim Import)
+                profile_ids = [
+                    sp["id"]
+                    for f in data.get("filaments", [])
+                    if _resolve_mfr_id(f) == fdb_mfr_id
+                    for sp in [_resolve_spool_profile(f, sp_map)]
+                    if sp and sp.get("id")
+                ]
+                if profile_ids:
+                    sp_data = sp_map.get(Counter(profile_ids).most_common(1)[0][0]) or {}
+                    for sp_key, attr in self._MFR_SPOOL_FIELDS:
+                        new = sp_data.get(sp_key)
+                        old = getattr(mfr, attr)
+                        if new is None:
+                            continue
+                        if isinstance(new, (int, float)) and isinstance(old, (int, float)):
+                            if abs(float(new) - float(old)) < 0.001:
+                                continue
+                        elif new == old:
+                            continue
+                        mfr_changes.append({"field": attr, "old": old, "new": new})
+            pending.append((fdb_mfr_id, group, mfr, name, mfr_changes, fdb_mfr))
+
+        logo_changes = await self._fetch_logo_changes(
+            [(m, f) for _, _, m, _, _, f in pending if m is not None], warnings, logo_cache, logo_ts
+        )
+        if self.db.dirty:
+            await self.db.commit()
+        for fdb_mfr_id, group, mfr, name, mfr_changes, _fdb_mfr in pending:
+            if mfr is not None:
+                mfr_changes.extend(logo_changes.get(mfr.id, []))
+            if not mfr_changes and not group["filaments"]:
+                continue
+            manufacturers.append(
+                {
+                    "fdb_manufacturer_id": fdb_mfr_id,
+                    "local_id": mfr.id if mfr is not None else None,
+                    "name": mfr.name if mfr is not None else name,
+                    "changes": mfr_changes,
+                    "filaments": group["filaments"],
+                }
+            )
+        manufacturers.sort(key=lambda g: g["name"].lower())
+        return {
+            "snapshot_id": snapshot.snapshot_id,
+            "linked_count": len(linked),
+            "unlinked_count": unlinked_count,
+            "identical_count": identical_count,
+            "missing_in_db": missing,
+            "manufacturers": manufacturers,
+            "warnings": warnings,
+            "_logo_cache": logo_cache,
+            "_logo_ts": logo_ts,
+        }
+
+    @staticmethod
+    def _snapshot_maps(data: dict[str, Any]) -> tuple[dict[int, str], dict[int, str], dict[int, str]]:
+        """(Hersteller-Namen, Material-Typ, Material-Legacy-Key) je ID aus einem Snapshot."""
+        mfr_map = {
+            m["id"]: (m.get("name") or "").strip() for m in data.get("manufacturers", []) if m.get("id")
+        }
+        mat_map: dict[int, str] = {}
+        legacy_map: dict[int, str] = {}
+        for mat in data.get("materials", []):
+            if mat.get("id"):
+                mat_map[mat["id"]] = _material_type_from_fdb(mat)
+                legacy_map[mat["id"]] = (mat.get("key") or "").lower()
+        return mfr_map, mat_map, legacy_map
+
+    @staticmethod
+    def _fdb_material_label(fil_data: dict[str, Any], mat_map: dict[int, str]) -> str:
+        mat_id = fil_data.get("material_id")
+        nested = fil_data.get("material")
+        if not mat_id and isinstance(nested, dict):
+            mat_id = nested.get("id")
+        if mat_id in mat_map:
+            return mat_map[mat_id]
+        return _material_type_from_fdb(nested) if isinstance(nested, dict) else ""
+
+    async def unlinked_suggestions(self, snapshot_id: str | None = None) -> dict[str, Any]:
+        """Je unverknuepftem lokalem Filament den besten FDB-Kandidaten vorschlagen."""
+        snapshot = await self._fetch_sync_data(snapshot_id=snapshot_id)
+        data = snapshot.data
+        mfr_map, mat_map, legacy_map = self._snapshot_maps(data)
+        linked, _ = await self._linked_local_filaments()
+
+        # FDB-Index: (Hersteller lower, Material lower) -> [(Bezeichnung, FDB-Filament)]
+        fdb_index: dict[tuple[str, str], list[tuple[str, dict[str, Any]]]] = defaultdict(list)
+        for f in data.get("filaments", []):
+            if not f.get("id"):
+                continue
+            mfr_name, _desig, materials = _fdb_match_keys(f, mfr_map, mat_map, legacy_map)
+            for m in materials:
+                fdb_index[(mfr_name, m)].append((f.get("designation") or "", f))
+
+        rows = await self.db.execute(
+            select(Filament).order_by(Filament.id).options(selectinload(Filament.manufacturer))
+        )
+        def _has_catalog_id(fil: Filament) -> bool:
+            cf = fil.custom_fields
+            raw = cf.get("filamentdb_id") if isinstance(cf, dict) else None
+            if raw in (None, ""):
+                return False
+            try:
+                int(raw)
+            except (TypeError, ValueError):
+                return False
+            return True
+
+        # Mehrere lokale Filamente koennen dieselbe FDB-ID tragen; alle gelten als verknuepft.
+        unlinked = [fil for fil in rows.scalars().all() if not _has_catalog_id(fil)]
+        local_colors: dict[int, list[str]] = defaultdict(list)
+        if unlinked:
+            color_rows = await self.db.execute(
+                select(FilamentColor.filament_id, Color.hex_code)
+                .join(Color, Color.id == FilamentColor.color_id)
+                .where(FilamentColor.filament_id.in_([fil.id for fil in unlinked]))
+                .order_by(FilamentColor.filament_id, FilamentColor.position)
+            )
+            for filament_id, hex_code in color_rows.all():
+                local_colors[filament_id].append((hex_code or "").lower())
+
+        items: list[dict[str, Any]] = []
+        for fil in unlinked:
+            mfr_name = (fil.manufacturer.name if fil.manufacturer else "").lower()
+            desig = (fil.designation or "").strip()
+            candidates = fdb_index.get((mfr_name, (fil.material_type or "").lower()), [])
+            suggestion: dict[str, Any] | None = None
+            match = next((f for d, f in candidates if d.strip().lower() == desig.lower()), None)
+            score = 1.0
+            exact = match is not None
+            if match is None:
+                match, score = _best_fuzzy(desig, candidates)
+                if score < FUZZY_THRESHOLD:
+                    match = None
+            if match is not None:
+                fdb_mfr_id = _resolve_mfr_id(match)
+                suggestion = {
+                    "fdb_id": match["id"],
+                    "designation": match.get("designation") or "",
+                    "manufacturer_name": mfr_map.get(fdb_mfr_id, "") if fdb_mfr_id else "",
+                    "material_type": self._fdb_material_label(match, mat_map),
+                    "colors": self._fdb_color_hexes(match),
+                    "score": round(score, 4),
+                    "exact": exact,
+                    "already_linked_to": linked[match["id"]].id if match["id"] in linked else None,
+                }
+            items.append(
+                {
+                    "local_id": fil.id,
+                    "designation": fil.designation or "",
+                    "manufacturer_name": fil.manufacturer.name if fil.manufacturer else "",
+                    "material_type": fil.material_type or "",
+                    "colors": local_colors.get(fil.id, []),
+                    "suggestion": suggestion,
+                }
+            )
+        items.sort(key=lambda i: (i["manufacturer_name"].lower(), i["designation"].lower()))
+        return {"snapshot_id": snapshot.snapshot_id, "items": items}
+
+    async def link_filaments(
+        self, items: list[dict[str, Any]], snapshot_id: str | None = None
+    ) -> dict[str, Any]:
+        """Lokale Filamente mit FDB-Filamenten verknuepfen (setzt nur custom_fields.filamentdb_id)."""
+        snapshot = await self._fetch_sync_data(snapshot_id=snapshot_id)
+        data = snapshot.data
+        mfr_map, _, _ = self._snapshot_maps(data)
+        fdb_fils = {f["id"]: f for f in data.get("filaments", []) if f.get("id")}
+        linked, _ = await self._linked_local_filaments()
+        warnings: list[str] = []
+        done = 0
+        claimed: dict[int, int] = {}  # fdb_id -> local_id in diesem Aufruf
+        for item in items:
+            try:
+                local_id = int(item["local_id"])
+                fdb_id = int(item["fdb_id"])
+            except (KeyError, TypeError, ValueError):
+                warnings.append(f"Ungueltiger Eintrag uebersprungen: {item!r}")
+                continue
+            fil = (
+                await self.db.execute(
+                    select(Filament)
+                    .where(Filament.id == local_id)
+                    .options(selectinload(Filament.manufacturer))
+                )
+            ).scalar_one_or_none()
+            if fil is None:
+                warnings.append(f"Filament #{local_id} existiert nicht.")
+                continue
+            cf = fil.custom_fields
+            if isinstance(cf, dict) and cf.get("filamentdb_id") not in (None, ""):
+                warnings.append(f"Filament #{local_id} ist bereits verknuepft.")
+                continue
+            fdb_f = fdb_fils.get(fdb_id)
+            if fdb_f is None:
+                warnings.append(f"FilamentDB-ID {fdb_id} nicht im Snapshot (Filament #{local_id}).")
+                continue
+            fdb_mfr_id = _resolve_mfr_id(fdb_f)
+            fdb_mfr = mfr_map.get(fdb_mfr_id, "").lower() if fdb_mfr_id else ""
+            local_mfr = (fil.manufacturer.name if fil.manufacturer else "").lower()
+            if not fdb_mfr or fdb_mfr != local_mfr:
+                warnings.append(f"Hersteller passt nicht fuer Filament #{local_id} (FilamentDB {fdb_id}).")
+                continue
+            other = linked.get(fdb_id)
+            other_id = other.id if other is not None else claimed.get(fdb_id)
+            if other_id is not None and other_id != local_id:
+                warnings.append(
+                    f"FilamentDB-ID {fdb_id} ist bereits mit Filament #{other_id} verknuepft."
+                )
+            new_cf = dict(cf) if isinstance(cf, dict) else {}
+            new_cf["filamentdb_id"] = fdb_id
+            fil.custom_fields = new_cf
+            claimed.setdefault(fdb_id, local_id)
+            done += 1
+        await self.db.commit()
+        return {"linked": done, "warnings": warnings}
+
+    async def diff_linked_filaments(self, snapshot_id: str | None = None) -> dict[str, Any]:
+        """Alle mit der FilamentDB verknuepften lokalen Filamente abgleichen."""
+        detail = await self._linked_detail(snapshot_id)
+        detail.pop("_logo_cache", None)
+        detail.pop("_logo_ts", None)
+        return detail
+
+    async def update_linked_filaments(
+        self,
+        filaments: list[dict[str, Any]],
+        manufacturers: list[dict[str, Any]] | None = None,
+        snapshot_id: str | None = None,
+    ) -> ImportResult:
+        """Ausgewaehlte Felder verknuepfter Filamente/Hersteller aktualisieren.
+
+        ``filaments``: ``[{"fdb_id": int, "fields": [str]}]``,
+        ``manufacturers``: ``[{"fdb_manufacturer_id": int, "fields": [str]}]``.
+        Der Diff wird serverseitig neu berechnet; geschrieben werden nur dort
+        vorhandene Felder mit dem dort berechneten Wert. Es werden weder
+        Filamente noch Hersteller angelegt.
+        """
+        result = ImportResult()
+        if not filaments and not manufacturers:
+            return result
+        detail = await self._linked_detail(snapshot_id)
+        snapshot = await self._fetch_sync_data(snapshot_id=detail["snapshot_id"])
+        fdb_fils = {f["id"]: f for f in snapshot.data.get("filaments", []) if f.get("id")}
+        fil_index = {f["fdb_id"]: f for g in detail["manufacturers"] for f in g["filaments"]}
+        mfr_index = {g["fdb_manufacturer_id"]: g for g in detail["manufacturers"]}
+
+        for req in filaments or []:
+            fdb_id = req.get("fdb_id")
+            entry = fil_index.get(fdb_id)
+            if entry is None:
+                result.warnings.append(
+                    f"FilamentDB #{fdb_id}: nicht verknuepft oder ohne Abweichung, ignoriert"
+                )
+                continue
+            known = {c["field"]: c["new"] for c in entry["changes"]}
+            wanted = list(dict.fromkeys(req.get("fields") or []))
+            unknown = [f for f in wanted if f not in known]
+            if unknown:
+                result.warnings.append(f"FilamentDB #{fdb_id}: unbekannte Felder ignoriert: {unknown}")
+            chosen = {f: copy.deepcopy(known[f]) for f in wanted if f in known}
+            if not chosen:
+                continue
+            await self._apply_linked_filament_changes(
+                entry["local_id"], fdb_fils[fdb_id], chosen, result
+            )
+            result.filaments_updated += 1
+
+        for req in manufacturers or []:
+            fdb_mfr_id = req.get("fdb_manufacturer_id")
+            group = mfr_index.get(fdb_mfr_id)
+            if group is None or not group.get("local_id") or not group["changes"]:
+                result.warnings.append(
+                    f"FilamentDB-Hersteller #{fdb_mfr_id}: nicht verknuepft oder ohne Abweichung, ignoriert"
+                )
+                continue
+            known = {c["field"]: c["new"] for c in group["changes"]}
+            wanted = list(dict.fromkeys(req.get("fields") or []))
+            unknown = [f for f in wanted if f not in known or f not in self._MFR_WRITABLE]
+            if unknown:
+                result.warnings.append(
+                    f"FilamentDB-Hersteller #{fdb_mfr_id}: unbekannte Felder ignoriert: {unknown}"
+                )
+            chosen = {f: known[f] for f in wanted if f in known and f in self._MFR_WRITABLE}
+            if not chosen:
+                continue
+            mfr = await self.db.get(Manufacturer, group["local_id"])
+            if mfr is None:
+                continue
+            for field_name, value in chosen.items():
+                if field_name in self._LOGO_KINDS:
+                    content = detail["_logo_cache"].get((mfr.id, field_name))
+                    err = self._check_logo_bytes(content) if content is not None else "nicht geladen"
+                    if err is None and hashlib.sha256(content).hexdigest()[:12] != value:
+                        err = "Inhalt weicht vom Abgleich ab"
+                    if err is not None:
+                        result.warnings.append(f"Logo fuer '{mfr.name}' nicht geschrieben: {err}")
+                        continue
+                    self._write_logo(mfr, field_name, content)
+                    self._set_logo_ts(mfr, field_name, detail["_logo_ts"].get((mfr.id, field_name)))
+                    result.logos_downloaded += 1
+                    continue
+                setattr(mfr, field_name, value)
+            result.manufacturers_updated += 1
+
+        await self.db.commit()
+        return result
+
+    async def _apply_linked_filament_changes(
+        self,
+        local_id: int,
+        fil_data: dict[str, Any],
+        chosen: dict[str, Any],
+        result: ImportResult,
+    ) -> None:
+        """Nur die gewaehlten, im Diff berechneten Felder in ein Filament schreiben."""
+        local = await self.db.get(Filament, local_id)
+        if local is None:
+            result.errors.append(f"Lokales Filament {local_id} nicht gefunden")
+            return
+        promoted: dict[str, Any] = {}
+        for field_name, value in chosen.items():
+            if field_name == "colors":
+                continue
+            if field_name == "material_type":
+                if (local.material_type or "").casefold() != (value or "").casefold():
+                    await clear_bambu_idx_for_filament(self.db, local.id)
+                local.material_type = value
+                continue
+            if field_name in self._FILAMENT_PROTECTED or not hasattr(Filament, field_name):
+                result.warnings.append(f"Feld '{field_name}' wird nicht geschrieben")
+                continue
+            setattr(local, field_name, value)
+            promoted[field_name] = value
+        if promoted:
+            aliases = catalog_promotion_aliases(
+                fil_data, promoted, local.custom_fields, local.label_field_aliases
+            )
+            if aliases:
+                local.label_field_aliases = {**(local.label_field_aliases or {}), **aliases}
+        if "colors" in chosen:
+            # Fehlende Farb-Datensaetze ueber die bestehende Import-Logik anlegen.
+            color_map = await self._import_colors(self._extract_colors([fil_data]), ImportResult())
+            await self._create_filament_colors(local.id, fil_data, color_map)
+        await self.db.flush()
 
     # ------------------------------------------------------------------ #
     #  Import ausfuehren
@@ -1745,6 +2416,7 @@ class FilamentDBImportService:
                                 mfr = mfr_result.scalar_one_or_none()
                                 if mfr:
                                     mfr.logo_file = logo_filename
+                                    self._set_logo_ts(mfr, "logo", mfr_data.get("web_logo_updated_at"))
                                 result.logos_downloaded += 1
                             else:
                                 result.logos_failed += 1
@@ -1780,6 +2452,7 @@ class FilamentDBImportService:
                                 mfr = mfr_result.scalar_one_or_none()
                                 if mfr:
                                     mfr.label_logo_file = label_filename
+                                    self._set_logo_ts(mfr, "label_logo", mfr_data.get("label_logo_updated_at"))
                                 result.logos_downloaded += 1
                             else:
                                 result.warnings.append(

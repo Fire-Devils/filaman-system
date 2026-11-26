@@ -3506,3 +3506,8 @@ html.sidebar-collapsed #sidebar-color-mode { display: none; }
 }
 .fm-db-hint a { position: relative; z-index: 1; color: var(--warning-text); font-weight: 700; text-decoration: underline; text-underline-offset: 2px; cursor: pointer; white-space: nowrap; }
 .fm-db-hint a:hover { text-decoration-thickness: 2px; }
+
+/* FilamentDB-Import: sichtbare Trennung zwischen Abgleich und Import */
+.fm-import-divider { margin-top: 12px; padding-top: 20px; border-top: 2px solid var(--border); }
+.fm-import-divider-title { margin: 0 0 4px; font-size: 1.25rem; font-weight: 700; color: var(--text); }
+.fm-import-divider-desc { margin: 0; color: var(--text-muted); font-size: .9rem; }
