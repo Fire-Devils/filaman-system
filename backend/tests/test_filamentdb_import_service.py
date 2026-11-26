@@ -1389,3 +1389,89 @@ async def test_same_hash_new_timestamp_backfills_timestamp(db_session, tmp_path,
     assert _logo_changes(out) == {} and _CountingClient.calls == 1
     await db_session.refresh(mfr)
     assert mfr.custom_fields["filamentdb_logo_updated_at"] == "2026-03-01T00:00:00Z"
+
+
+# ------------------------------------------------------------------ #
+#  Unverknuepfte Filamente: Vorschlaege + Verknuepfen
+# ------------------------------------------------------------------ #
+
+
+async def _unlinked_fixture(db_session):
+    mfr = Manufacturer(name="Link Mfr")
+    other = Manufacturer(name="Else Mfr")
+    db_session.add_all([mfr, other])
+    await db_session.flush()
+
+    def mk(m, desig, cf=None):
+        return Filament(
+            manufacturer_id=m.id, designation=desig, material_type="PLA",
+            diameter_mm=1.75, color_mode="single", custom_fields=cf,
+        )
+
+    exact = mk(mfr, "Exact Red")
+    fuzzy = mk(mfr, "Silk Gold Shiny")
+    foreign = mk(other, "Exact Red")
+    taken = mk(mfr, "Taken One")
+    holder = mk(mfr, "Holder", {"filamentdb_id": 83, "note": "keep"})
+    db_session.add_all([exact, fuzzy, foreign, taken, holder])
+    await db_session.commit()
+    payload = _make_sync_payload()
+    payload.update(
+        manufacturers=[{"id": 5, "name": "link mfr"}],
+        materials=[{"id": 6, "key": "PLA"}],
+        filaments=[
+            {"id": 81, "manufacturer_id": 5, "material_id": 6, "designation": "exact red",
+             "colors": [{"hex_code": "#FF0000", "position": 1}]},
+            {"id": 82, "manufacturer_id": 5, "material_id": 6, "designation": "Silk Gold Shiny PLA"},
+            {"id": 83, "manufacturer_id": 5, "material_id": 6, "designation": "Taken One"},
+        ],
+    )
+    response_cache.set(SYNC_CACHE_KEY, {"snapshot_id": "unl", "data": payload})
+    return FilamentDBImportService(db_session), dict(
+        exact=exact, fuzzy=fuzzy, foreign=foreign, taken=taken, holder=holder
+    )
+
+
+@pytest.mark.asyncio
+async def test_unlinked_suggestions_exact_fuzzy_foreign_and_taken(db_session):
+    service, f = await _unlinked_fixture(db_session)
+    out = await service.unlinked_suggestions(snapshot_id="unl")
+    by = {i["local_id"]: i for i in out["items"]}
+    assert f["holder"].id not in by
+    assert by[f["exact"].id]["suggestion"]["fdb_id"] == 81
+    assert by[f["exact"].id]["suggestion"]["score"] == 1.0
+    assert by[f["exact"].id]["suggestion"]["exact"] is True
+    assert by[f["exact"].id]["suggestion"]["colors"] == ["#ff0000"]
+    sug = by[f["fuzzy"].id]["suggestion"]
+    assert sug["fdb_id"] == 82 and sug["score"] >= 0.7
+    assert sug["exact"] is False  # Teilmengen-Treffer nie vorauswaehlen
+    assert by[f["foreign"].id]["suggestion"] is None
+    taken = by[f["taken"].id]["suggestion"]
+    assert taken["fdb_id"] == 83 and taken["already_linked_to"] == f["holder"].id
+    assert by[f["exact"].id]["suggestion"]["already_linked_to"] is None
+
+
+@pytest.mark.asyncio
+async def test_link_filaments_sets_only_filamentdb_id_and_validates(db_session):
+    service, f = await _unlinked_fixture(db_session)
+    before = (f["exact"].designation, f["exact"].material_type)
+    out = await service.link_filaments(
+        [
+            {"local_id": f["exact"].id, "fdb_id": 81},
+            {"local_id": f["foreign"].id, "fdb_id": 81},
+            {"local_id": f["fuzzy"].id, "fdb_id": 9999},
+            {"local_id": f["holder"].id, "fdb_id": 82},
+            {"local_id": f["taken"].id, "fdb_id": 83},
+        ],
+        snapshot_id="unl",
+    )
+    assert out["linked"] == 2
+    assert len(out["warnings"]) == 4
+    assert any("bereits mit Filament" in w for w in out["warnings"])
+    await db_session.refresh(f["exact"])
+    await db_session.refresh(f["foreign"])
+    await db_session.refresh(f["holder"])
+    assert f["exact"].custom_fields == {"filamentdb_id": 81}
+    assert (f["exact"].designation, f["exact"].material_type) == before
+    assert not f["foreign"].custom_fields
+    assert f["holder"].custom_fields == {"filamentdb_id": 83, "note": "keep"}
