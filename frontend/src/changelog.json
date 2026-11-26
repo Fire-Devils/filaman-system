@@ -5,10 +5,12 @@
       "date": "",
       "changes": {
         "de": [
-          { "type": "improvement", "text": "Dashboard: Die Kachel mit Kauf- und Restwert verschiebt das Layout nicht mehr. Die Beträge sind kleiner, und der Hinweis auf Spulen ohne berechenbaren Restwert erscheint jetzt beim Darüberfahren mit der Maus (markiert mit *)." }
+          { "type": "improvement", "text": "Dashboard: Die Kachel mit Kauf- und Restwert verschiebt das Layout nicht mehr. Die Beträge sind kleiner, und der Hinweis auf Spulen ohne berechenbaren Restwert erscheint jetzt beim Darüberfahren mit der Maus (markiert mit *)." },
+          { "type": "feature", "text": "Farbbibliothek: Ausgewählte Farben lassen sich jetzt auch mit unterschiedlichen HEX-Werten zusammenführen. Du wählst die Farbe, die bleibt, und kannst Name, HEX-Wert und Deckkraft des Ergebnisses anpassen. Die Filamente werden auf diese Farbe umgehängt, die übrigen ausgewählten Farben werden gelöscht (#302). (Beigetragen von akira69)" }
         ],
         "en": [
-          { "type": "improvement", "text": "Dashboard: The purchase and remaining value card no longer shifts the layout. The amounts are smaller, and the note about spools without a calculable remaining value now appears on hover (marked with *)." }
+          { "type": "improvement", "text": "Dashboard: The purchase and remaining value card no longer shifts the layout. The amounts are smaller, and the note about spools without a calculable remaining value now appears on hover (marked with *)." },
+          { "type": "feature", "text": "Color library: Selected colors can now be merged even when their HEX values differ. Choose the color to keep and adjust the resulting name, HEX value and opacity. Filaments are moved to that color and the other selected colors are deleted (#302). (Contributed by akira69)" }
         ]
       }
     },
