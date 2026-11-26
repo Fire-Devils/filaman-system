@@ -12,6 +12,15 @@ import FormSection from '../../../components/FormSection.astro'
   <p class="fm-field-hint fm-db-hint"><span data-i18n="filamentdb.contributeHint">The data comes from the community database. Anyone can submit and correct filaments there:</span> <a href="https://db.filaman.app" target="_blank" rel="noopener noreferrer">db.filaman.app</a></p>
 
   <div class="fm-admin-stack">
+  <!-- Abgleich aller verknuepften Filamente -->
+  <div id="step-sync-linked">
+    <FormSection titleKey="filamentdb.syncLinkedTitle" title="Sync local filaments">
+    <p class="fm-field-hint" data-i18n="filamentdb.syncLinkedDesc">Checks all local filaments linked to the FilamentDB for updates. No new filaments or manufacturers are created.</p>
+    <button style="justify-self: start;" id="btn-sync-linked" class="fm-btn fm-btn-outline" data-i18n="filamentdb.syncLinkedCheck">Check for updates</button>
+    <div id="sync-linked-result" style="display: none;"></div>
+    </FormSection>
+  </div>
+
   <!-- Step 1: Preview & Manufacturer Selection -->
   <div id="step-manufacturers">
     <FormSection titleKey="filamentdb.stepManufacturers" title="Manufacturers">
@@ -154,6 +163,23 @@ import FormSection from '../../../components/FormSection.astro'
       changes: { field: string; old: unknown; new: unknown }[]
     }
 
+    interface LinkedChange { field: string; old: unknown; new: unknown }
+    interface LinkedFilament { fdb_id: number; local_id: number; designation: string; changes: LinkedChange[] }
+    interface LinkedManufacturer {
+      fdb_manufacturer_id: number
+      name: string
+      changes: LinkedChange[]
+      filaments: LinkedFilament[]
+    }
+    interface LinkedDiff {
+      snapshot_id?: string | null
+      linked_count: number
+      unlinked_count: number
+      identical_count: number
+      missing_in_db: { fdb_id: number; designation: string; manufacturer_name: string }[]
+      manufacturers: LinkedManufacturer[]
+    }
+
     interface ImportResult {
       manufacturers_created: number
       manufacturers_skipped: number
@@ -162,6 +188,7 @@ import FormSection from '../../../components/FormSection.astro'
       filaments_created: number
       filaments_skipped: number
       filaments_updated: number
+      manufacturers_updated?: number
       logos_downloaded: number
       logos_failed: number
       errors?: string[] | null
@@ -203,6 +230,13 @@ import FormSection from '../../../components/FormSection.astro'
       const div = document.createElement('div')
       div.textContent = str
       return div.innerHTML
+    }
+
+    // Lesbarer Feldname; fehlt der Key, gibt t() den Key selbst zurueck -> roher Name
+    function fieldLabel(field: string): string {
+      const key = 'filamentdb.fieldLabels.' + field
+      const label = t(key)
+      return label === key ? field : label
     }
 
     function enableStep(id: string) {
@@ -921,7 +955,7 @@ import FormSection from '../../../components/FormSection.astro'
               <tbody>
                 ${r.changes.map(c => `
                   <tr style="border-top: 1px solid var(--border);">
-                    <td style="padding: 3px 8px; color: var(--text-muted);">${escapeHtml(c.field)}</td>
+                    <td style="padding: 3px 8px; color: var(--text-muted);">${escapeHtml(fieldLabel(c.field))}</td>
                     <td style="padding: 3px 8px; color: var(--error-text);">${c.old != null ? escapeHtml(String(c.old)) : '<em style="opacity: 0.5;">-</em>'}</td>
                     <td style="padding: 3px 8px; color: var(--accent-2, green);">${c.new != null ? escapeHtml(String(c.new)) : '<em style="opacity: 0.5;">-</em>'}</td>
                   </tr>
@@ -934,6 +968,210 @@ import FormSection from '../../../components/FormSection.astro'
 
       html += '</div>'
       return html
+    }
+
+
+    // ---- Abgleich aller verknuepften Filamente ----
+    let linkedSnapshotId: string | null = null
+
+    function linkedMsg(text: string, error = false): string {
+      return `<div style="padding: 12px; font-size: 0.9rem; color: ${error ? 'var(--error-text)' : 'var(--text-muted)'};">${escapeHtml(text)}</div>`
+    }
+
+    function formatLinkedValue(v: unknown): string {
+      if (v === null || v === undefined || v === '') return '<em style="opacity: 0.5;">-</em>'
+      return escapeHtml(typeof v === 'object' ? (Array.isArray(v) ? v.join(', ') : JSON.stringify(v)) : String(v))
+    }
+
+    function renderLinkedChange(c: LinkedChange, attrs: string): string {
+      return `<label style="display: flex; align-items: baseline; gap: 8px; padding: 2px 0; font-size: 0.8rem;">
+        <input type="checkbox" class="chg-cb" ${attrs} data-field="${escapeHtml(c.field)}" checked />
+        <span style="min-width: 160px; color: var(--text-muted);">${escapeHtml(fieldLabel(c.field))}</span>
+        <span style="color: var(--error-text);">${formatLinkedValue(c.old)}</span>
+        <span aria-hidden="true">&rarr;</span>
+        <span style="color: var(--accent-2, green);">${formatLinkedValue(c.new)}</span>
+      </label>`
+    }
+
+    function renderLinkedGroups(groups: LinkedManufacturer[]): string {
+      return groups.map(g => {
+        const mid = g.fdb_manufacturer_id
+        const total = g.changes.length + g.filaments.reduce((n, f) => n + f.changes.length, 0)
+        let html = `<details class="linked-group" data-mfr-id="${mid}" style="border: 1px solid var(--border); border-radius: var(--radius-sm); margin-bottom: 8px;">
+          <summary style="padding: 8px 14px; cursor: pointer; background: var(--bg-soft); display: flex; align-items: center; gap: 8px;">
+            <input type="checkbox" class="mfr-cb" data-mfr-id="${mid}" checked />
+            <strong style="font-size: 0.9rem;">${escapeHtml(g.name)}</strong>
+            <span style="font-size: 0.75rem; color: var(--text-muted);">(${total} ${escapeHtml(t('filamentdb.differences'))})</span>
+          </summary><div style="padding: 8px 14px;">`
+        if (g.changes.length) {
+          html += `<div style="margin-bottom: 8px;"><div style="font-size: 0.85rem; font-weight: 500;">${escapeHtml(t('filamentdb.syncLinkedMfrData'))}</div>`
+          html += g.changes.map(c => renderLinkedChange(c, `data-scope="mfr" data-mfr-id="${mid}"`)).join('')
+          html += '</div>'
+        }
+        for (const f of g.filaments) {
+          html += `<div class="linked-fil" style="margin-bottom: 8px; border-top: 1px solid var(--border); padding-top: 6px;">
+            <label style="display: flex; align-items: center; gap: 8px; font-size: 0.85rem; font-weight: 500;">
+              <input type="checkbox" class="fil-cb" data-mfr-id="${mid}" data-fdb-id="${f.fdb_id}" checked />
+              ${escapeHtml(f.designation)}
+            </label><div style="margin-left: 24px;">`
+          html += f.changes.map(c => renderLinkedChange(c, `data-scope="fil" data-mfr-id="${mid}" data-fdb-id="${f.fdb_id}"`)).join('')
+          html += '</div></div>'
+        }
+        return html + '</div></details>'
+      }).join('')
+    }
+
+    function setTri(cb: HTMLInputElement, boxes: HTMLInputElement[]) {
+      const on = boxes.filter(b => b.checked).length
+      cb.checked = on === boxes.length && boxes.length > 0
+      cb.indeterminate = on > 0 && on < boxes.length
+    }
+
+    function wireLinkedTree(root: HTMLElement) {
+      const changeBoxes = (sel: string) => [...root.querySelectorAll<HTMLInputElement>(sel)]
+      const refresh = () => {
+        root.querySelectorAll<HTMLInputElement>('.fil-cb').forEach(cb => {
+          setTri(cb, changeBoxes(`.chg-cb[data-scope="fil"][data-fdb-id="${cb.dataset.fdbId}"]`))
+        })
+        root.querySelectorAll<HTMLInputElement>('.mfr-cb').forEach(cb => {
+          setTri(cb, changeBoxes(`.chg-cb[data-mfr-id="${cb.dataset.mfrId}"]`))
+        })
+      }
+      root.querySelectorAll<HTMLInputElement>('.chg-cb').forEach(cb => cb.addEventListener('change', refresh))
+      root.querySelectorAll<HTMLInputElement>('.fil-cb').forEach(cb => cb.addEventListener('change', () => {
+        changeBoxes(`.chg-cb[data-scope="fil"][data-fdb-id="${cb.dataset.fdbId}"]`).forEach(b => { b.checked = cb.checked })
+        refresh()
+      }))
+      root.querySelectorAll<HTMLInputElement>('.mfr-cb').forEach(cb => cb.addEventListener('change', () => {
+        changeBoxes(`.chg-cb[data-mfr-id="${cb.dataset.mfrId}"]`).forEach(b => { b.checked = cb.checked })
+        refresh()
+      }))
+      const setAll = (v: boolean) => {
+        root.querySelectorAll<HTMLInputElement>('.chg-cb').forEach(b => { b.checked = v })
+        refresh()
+      }
+      document.getElementById('linked-sel-all')?.addEventListener('click', () => setAll(true))
+      document.getElementById('linked-sel-none')?.addEventListener('click', () => setAll(false))
+      refresh()
+    }
+
+    /** Gewaehlte Aenderungen aus dem DOM sammeln (nur Feldnamen, Werte bestimmt der Server). */
+    function collectLinkedSelection(root: HTMLElement) {
+      const filaments = new Map<number, string[]>()
+      const manufacturers = new Map<number, string[]>()
+      root.querySelectorAll<HTMLInputElement>('.chg-cb:checked').forEach(cb => {
+        const field = cb.dataset.field!
+        if (cb.dataset.scope === 'mfr') {
+          const id = Number(cb.dataset.mfrId)
+          manufacturers.set(id, [...(manufacturers.get(id) ?? []), field])
+        } else {
+          const id = Number(cb.dataset.fdbId)
+          filaments.set(id, [...(filaments.get(id) ?? []), field])
+        }
+      })
+      return {
+        filaments: [...filaments].map(([fdb_id, fields]) => ({ fdb_id, fields })),
+        manufacturers: [...manufacturers].map(([fdb_manufacturer_id, fields]) => ({ fdb_manufacturer_id, fields })),
+      }
+    }
+
+    document.getElementById('btn-sync-linked')?.addEventListener('click', async () => {
+      const btn = document.getElementById('btn-sync-linked') as HTMLButtonElement
+      const out = document.getElementById('sync-linked-result')!
+      btn.disabled = true
+      out.style.display = 'block'
+      out.innerHTML = linkedMsg(t('filamentdb.syncLinkedLoading'))
+      try {
+        const response = await fetch('/api/v1/admin/system/filamentdb-import/diff-linked', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': getCsrfToken() },
+          credentials: 'include',
+          body: JSON.stringify({ snapshot_id: null }),
+          signal: getAbortSignal(),
+        })
+        if (!response.ok) {
+          const data = await response.json().catch(() => ({}))
+          throw new Error(data.detail?.message || t('filamentdb.syncLinkedFailed'))
+        }
+        const data: LinkedDiff = await response.json()
+        linkedSnapshotId = data.snapshot_id ?? null
+        const changed = data.manufacturers.reduce((n, g) => n + g.filaments.length, 0)
+
+        let html = `<div style="padding: 8px 0; font-size: 0.9rem;">${escapeHtml(
+          t('filamentdb.syncLinkedSummary', {
+            linked: data.linked_count, changed, identical: data.identical_count, unlinked: data.unlinked_count,
+          }),
+        )}</div>`
+        if (data.unlinked_count > 0) {
+          html += `<div style="padding-bottom: 8px; font-size: 0.85rem; color: var(--text-muted);">${escapeHtml(t('filamentdb.syncLinkedUnlinkedHint'))}</div>`
+        }
+        if (data.manufacturers.length === 0) {
+          html += linkedMsg(t('filamentdb.syncLinkedUpToDate'))
+        } else {
+          html += `<div style="display: flex; gap: 6px; margin-bottom: 8px;">
+            <button class="fm-btn fm-btn-outline" id="linked-sel-all" style="font-size: 0.7rem; padding: 2px 8px;">${escapeHtml(t('filamentdb.selectAll'))}</button>
+            <button class="fm-btn fm-btn-outline" id="linked-sel-none" style="font-size: 0.7rem; padding: 2px 8px;">${escapeHtml(t('filamentdb.deselectAll'))}</button>
+          </div><div id="sync-linked-tree">${renderLinkedGroups(data.manufacturers)}</div>
+          <button id="btn-sync-linked-apply" class="fm-btn fm-btn-primary" style="margin-top: 12px;">${escapeHtml(t('filamentdb.syncLinkedUpdateSelected'))}</button>
+          <div id="sync-linked-done" style="margin-top: 12px;"></div>`
+        }
+        if (data.missing_in_db.length > 0) {
+          html += `<details style="margin-top: 12px;"><summary style="cursor: pointer; font-size: 0.85rem; color: var(--text-muted);">${escapeHtml(t('filamentdb.syncLinkedMissing'))} (${data.missing_in_db.length})</summary>
+            <ul style="padding-left: 20px; font-size: 0.85rem; color: var(--text-muted);">
+              ${data.missing_in_db.map(m => `<li>${escapeHtml(m.designation)} <span style="opacity: 0.7;">${escapeHtml(m.manufacturer_name)} (#${m.fdb_id})</span></li>`).join('')}
+            </ul></details>`
+        }
+        out.innerHTML = html
+        const tree = document.getElementById('sync-linked-tree')
+        if (tree) {
+          wireLinkedTree(tree)
+          document.getElementById('btn-sync-linked-apply')?.addEventListener('click', () => applyLinkedUpdates(tree))
+        }
+      } catch (err) {
+        if (isAbortError(err)) return
+        out.innerHTML = linkedMsg(err instanceof Error ? err.message : String(err), true)
+      } finally {
+        btn.disabled = false
+      }
+    })
+
+    async function applyLinkedUpdates(tree: HTMLElement) {
+      const btn = document.getElementById('btn-sync-linked-apply') as HTMLButtonElement
+      const done = document.getElementById('sync-linked-done')!
+      const selection = collectLinkedSelection(tree)
+      if (selection.filaments.length === 0 && selection.manufacturers.length === 0) return
+      btn.disabled = true
+      btn.textContent = t('filamentdb.syncLinkedUpdating')
+      try {
+        const response = await fetch('/api/v1/admin/system/filamentdb-import/update-linked', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': getCsrfToken() },
+          credentials: 'include',
+          body: JSON.stringify({ snapshot_id: linkedSnapshotId, ...selection }),
+          signal: getAbortSignal(),
+        })
+        if (!response.ok) {
+          const data = await response.json().catch(() => ({}))
+          throw new Error(data.detail?.message || t('filamentdb.syncLinkedFailed'))
+        }
+        const result: ImportResult = await response.json()
+        const errors = result.errors ?? []
+        const warnings = result.warnings ?? []
+        let html = `<div style="font-size: 0.9rem; color: ${errors.length ? 'var(--error-text)' : 'var(--accent-2)'};">${escapeHtml(t('filamentdb.syncLinkedDone', { count: result.filaments_updated }))}</div>`
+        if (warnings.length) {
+          html += `<ul style="padding-left: 20px; font-size: 0.85rem; color: var(--text-muted);">${warnings.map(w => `<li>${escapeHtml(w)}</li>`).join('')}</ul>`
+        }
+        if (errors.length) {
+          html += `<ul style="padding-left: 20px; font-size: 0.85rem; color: var(--error-text);">${errors.map(e => `<li>${escapeHtml(e)}</li>`).join('')}</ul>`
+        }
+        done.innerHTML = html
+      } catch (err) {
+        if (isAbortError(err)) return
+        done.innerHTML = linkedMsg(err instanceof Error ? err.message : String(err), true)
+      } finally {
+        btn.disabled = false
+        btn.textContent = t('filamentdb.syncLinkedUpdateSelected')
+      }
     }
 
     document.getElementById('btn-import')?.addEventListener('click', async () => {

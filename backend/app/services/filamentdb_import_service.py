@@ -157,6 +157,7 @@ class ImportResult:
     filaments_created: int = 0
     filaments_skipped: int = 0
     filaments_updated: int = 0
+    manufacturers_updated: int = 0
     logos_downloaded: int = 0
     logos_failed: int = 0
     errors: list[str] = field(default_factory=list)
@@ -863,6 +864,7 @@ class FilamentDBImportService:
             results.append(
                 {
                     "fdb_id": fdb_id,
+                    "local_id": local.id,
                     "designation": designation,
                     "manufacturer_name": mfr_name,
                     "changes": changes,
@@ -1000,6 +1002,313 @@ class FilamentDBImportService:
             spool_profiles=spool_profiles,
             colors=colors,
         )
+
+    # ------------------------------------------------------------------ #
+    #  Abgleich aller verknuepften Filamente
+    # ------------------------------------------------------------------ #
+
+    # Herstellerfelder, die die FilamentDB liefert (Name wird nie geaendert).
+    _MFR_SPOOL_FIELDS: ClassVar[list[tuple[str, str]]] = [
+        ("empty_weight_g", "empty_spool_weight_g"),
+        ("outer_diameter_mm", "spool_outer_diameter_mm"),
+        ("width_mm", "spool_width_mm"),
+        ("spool_material", "spool_material"),
+    ]
+    _MFR_WRITABLE: ClassVar[frozenset[str]] = frozenset(
+        {"url", "empty_spool_weight_g", "spool_outer_diameter_mm", "spool_width_mm", "spool_material"}
+    )
+    _FILAMENT_PROTECTED: ClassVar[frozenset[str]] = frozenset(
+        {"id", "manufacturer_id", "custom_fields", "label_field_aliases", "record_token"}
+    )
+
+    async def _linked_local_filaments(self) -> tuple[dict[int, Filament], int]:
+        """Lokale Filamente mit gueltiger filamentdb_id: (FDB-ID -> Filament, unverknuepft)."""
+        rows = await self.db.execute(
+            select(Filament).order_by(Filament.id).options(selectinload(Filament.manufacturer))
+        )
+        linked: dict[int, Filament] = {}
+        unlinked = 0
+        for fil in rows.scalars().all():
+            cf = fil.custom_fields
+            raw = cf.get("filamentdb_id") if isinstance(cf, dict) else None
+            try:
+                fdb_id = int(raw) if raw not in (None, "") else None
+            except (TypeError, ValueError):
+                fdb_id = None
+            if fdb_id is None:
+                unlinked += 1
+            else:
+                linked.setdefault(fdb_id, fil)
+        return linked, unlinked
+
+    @staticmethod
+    def _fdb_color_hexes(fil_data: dict[str, Any]) -> list[str]:
+        """Farb-Hexwerte (lowercase) eines FDB-Filaments in Positionsreihenfolge."""
+        colors = fil_data.get("colors") or []
+        if not colors:
+            hex_code = fil_data.get("hex_color")
+            return [hex_code.lower()] if hex_code else []
+        ordered: list[tuple[int, int, str]] = []
+        for index, c in enumerate(colors):
+            hex_code = c.get("hex_code") if isinstance(c, dict) else None
+            if not hex_code:
+                continue
+            try:
+                position = int(c.get("position") or 0)
+            except (TypeError, ValueError):
+                position = 0
+            ordered.append((position if position >= 1 else 10**6, index, hex_code.lower()))
+        return [hex_code for _, _, hex_code in sorted(ordered)]
+
+    async def _linked_detail(self, snapshot_id: str | None = None) -> dict[str, Any]:
+        """Abweichungen aller verknuepften Filamente, nach Hersteller gruppiert."""
+        linked, unlinked_count = await self._linked_local_filaments()
+        empty = {
+            "snapshot_id": snapshot_id,
+            "linked_count": len(linked),
+            "unlinked_count": unlinked_count,
+            "identical_count": 0,
+            "missing_in_db": [],
+            "manufacturers": [],
+        }
+        if not linked:
+            return empty
+
+        diff = await self.diff_filaments(list(linked), snapshot_id=snapshot_id)
+        snapshot = await self._fetch_sync_data(snapshot_id=diff.snapshot_id)
+        data = snapshot.data
+        fdb_fils = {f["id"]: f for f in data.get("filaments", []) if f.get("id")}
+        fdb_mfr_names = {
+            m["id"]: (m.get("name") or "").strip() for m in data.get("manufacturers", []) if m.get("id")
+        }
+        sp_map = {sp["id"]: sp for sp in data.get("spool_profiles", []) if sp.get("id")}
+
+        found = [r for r in diff.results if not r.get("not_found") and r.get("local_id")]
+        found_ids = {r["fdb_id"] for r in found}
+        missing = [
+            {
+                "fdb_id": fdb_id,
+                "designation": fil.designation,
+                "manufacturer_name": fil.manufacturer.name if fil.manufacturer else "",
+            }
+            for fdb_id, fil in linked.items()
+            if fdb_id not in found_ids
+        ]
+
+        # Lokale Farben je Filament (Hex in Positionsreihenfolge)
+        local_colors: dict[int, list[str]] = defaultdict(list)
+        if found:
+            color_rows = await self.db.execute(
+                select(FilamentColor.filament_id, Color.hex_code)
+                .join(Color, Color.id == FilamentColor.color_id)
+                .where(FilamentColor.filament_id.in_([r["local_id"] for r in found]))
+                .order_by(FilamentColor.filament_id, FilamentColor.position)
+            )
+            for filament_id, hex_code in color_rows.all():
+                local_colors[filament_id].append((hex_code or "").lower())
+
+        groups: dict[int, dict[str, Any]] = {}
+        identical_count = 0
+        for r in found:
+            fil_data = fdb_fils.get(r["fdb_id"])
+            if not fil_data:
+                continue
+            fdb_mfr_id = _resolve_mfr_id(fil_data)
+            if not fdb_mfr_id:
+                continue
+            group = groups.setdefault(fdb_mfr_id, {"filaments": []})
+            changes = list(r["changes"])
+            fdb_hex = self._fdb_color_hexes(fil_data)
+            if fdb_hex and fdb_hex != local_colors.get(r["local_id"], []):
+                changes.append(
+                    {"field": "colors", "old": local_colors.get(r["local_id"], []), "new": fdb_hex}
+                )
+            if not changes:
+                identical_count += 1
+                continue
+            group["filaments"].append(
+                {
+                    "fdb_id": r["fdb_id"],
+                    "local_id": r["local_id"],
+                    "designation": r["designation"],
+                    "changes": changes,
+                }
+            )
+
+        manufacturers: list[dict[str, Any]] = []
+        for fdb_mfr_id, group in groups.items():
+            name = fdb_mfr_names.get(fdb_mfr_id, "")
+            mfr_changes: list[dict[str, Any]] = []
+            local_mfr_id: int | None = None
+            mfr = (
+                await self.db.execute(
+                    select(Manufacturer).where(func.lower(Manufacturer.name) == name.lower())
+                )
+            ).scalars().first() if name else None
+            if mfr is not None:
+                local_mfr_id = mfr.id
+                fdb_mfr = next((m for m in data.get("manufacturers", []) if m.get("id") == fdb_mfr_id), {})
+                website = (fdb_mfr.get("website") or "").strip() or None
+                if website and website != mfr.url:
+                    mfr_changes.append({"field": "url", "old": mfr.url, "new": website})
+                # Haeufigstes Spulenprofil des Herstellers (wie beim Import)
+                profile_ids = [
+                    sp["id"]
+                    for f in data.get("filaments", [])
+                    if _resolve_mfr_id(f) == fdb_mfr_id
+                    for sp in [_resolve_spool_profile(f, sp_map)]
+                    if sp and sp.get("id")
+                ]
+                if profile_ids:
+                    sp_data = sp_map.get(Counter(profile_ids).most_common(1)[0][0]) or {}
+                    for sp_key, attr in self._MFR_SPOOL_FIELDS:
+                        new = sp_data.get(sp_key)
+                        old = getattr(mfr, attr)
+                        if new is None:
+                            continue
+                        if isinstance(new, (int, float)) and isinstance(old, (int, float)):
+                            if abs(float(new) - float(old)) < 0.001:
+                                continue
+                        elif new == old:
+                            continue
+                        mfr_changes.append({"field": attr, "old": old, "new": new})
+            if not mfr_changes and not group["filaments"]:
+                continue
+            manufacturers.append(
+                {
+                    "fdb_manufacturer_id": fdb_mfr_id,
+                    "local_id": local_mfr_id,
+                    "name": mfr.name if mfr is not None else name,
+                    "changes": mfr_changes,
+                    "filaments": group["filaments"],
+                }
+            )
+        manufacturers.sort(key=lambda g: g["name"].lower())
+        return {
+            "snapshot_id": snapshot.snapshot_id,
+            "linked_count": len(linked),
+            "unlinked_count": unlinked_count,
+            "identical_count": identical_count,
+            "missing_in_db": missing,
+            "manufacturers": manufacturers,
+        }
+
+    async def diff_linked_filaments(self, snapshot_id: str | None = None) -> dict[str, Any]:
+        """Alle mit der FilamentDB verknuepften lokalen Filamente abgleichen."""
+        detail = await self._linked_detail(snapshot_id)
+        for group in detail["manufacturers"]:
+            group.pop("local_id", None)
+        return detail
+
+    async def update_linked_filaments(
+        self,
+        filaments: list[dict[str, Any]],
+        manufacturers: list[dict[str, Any]] | None = None,
+        snapshot_id: str | None = None,
+    ) -> ImportResult:
+        """Ausgewaehlte Felder verknuepfter Filamente/Hersteller aktualisieren.
+
+        ``filaments``: ``[{"fdb_id": int, "fields": [str]}]``,
+        ``manufacturers``: ``[{"fdb_manufacturer_id": int, "fields": [str]}]``.
+        Der Diff wird serverseitig neu berechnet; geschrieben werden nur dort
+        vorhandene Felder mit dem dort berechneten Wert. Es werden weder
+        Filamente noch Hersteller angelegt.
+        """
+        result = ImportResult()
+        if not filaments and not manufacturers:
+            return result
+        detail = await self._linked_detail(snapshot_id)
+        snapshot = await self._fetch_sync_data(snapshot_id=detail["snapshot_id"])
+        fdb_fils = {f["id"]: f for f in snapshot.data.get("filaments", []) if f.get("id")}
+        fil_index = {f["fdb_id"]: f for g in detail["manufacturers"] for f in g["filaments"]}
+        mfr_index = {g["fdb_manufacturer_id"]: g for g in detail["manufacturers"]}
+
+        for req in filaments or []:
+            fdb_id = req.get("fdb_id")
+            entry = fil_index.get(fdb_id)
+            if entry is None:
+                result.warnings.append(
+                    f"FilamentDB #{fdb_id}: nicht verknuepft oder ohne Abweichung, ignoriert"
+                )
+                continue
+            known = {c["field"]: c["new"] for c in entry["changes"]}
+            wanted = list(dict.fromkeys(req.get("fields") or []))
+            unknown = [f for f in wanted if f not in known]
+            if unknown:
+                result.warnings.append(f"FilamentDB #{fdb_id}: unbekannte Felder ignoriert: {unknown}")
+            chosen = {f: copy.deepcopy(known[f]) for f in wanted if f in known}
+            if not chosen:
+                continue
+            await self._apply_linked_filament_changes(
+                entry["local_id"], fdb_fils[fdb_id], chosen, result
+            )
+            result.filaments_updated += 1
+
+        for req in manufacturers or []:
+            fdb_mfr_id = req.get("fdb_manufacturer_id")
+            group = mfr_index.get(fdb_mfr_id)
+            if group is None or not group.get("local_id") or not group["changes"]:
+                result.warnings.append(
+                    f"FilamentDB-Hersteller #{fdb_mfr_id}: nicht verknuepft oder ohne Abweichung, ignoriert"
+                )
+                continue
+            known = {c["field"]: c["new"] for c in group["changes"]}
+            wanted = list(dict.fromkeys(req.get("fields") or []))
+            unknown = [f for f in wanted if f not in known or f not in self._MFR_WRITABLE]
+            if unknown:
+                result.warnings.append(
+                    f"FilamentDB-Hersteller #{fdb_mfr_id}: unbekannte Felder ignoriert: {unknown}"
+                )
+            chosen = {f: known[f] for f in wanted if f in known and f in self._MFR_WRITABLE}
+            if not chosen:
+                continue
+            mfr = await self.db.get(Manufacturer, group["local_id"])
+            if mfr is None:
+                continue
+            for field_name, value in chosen.items():
+                setattr(mfr, field_name, value)
+            result.manufacturers_updated += 1
+
+        await self.db.commit()
+        return result
+
+    async def _apply_linked_filament_changes(
+        self,
+        local_id: int,
+        fil_data: dict[str, Any],
+        chosen: dict[str, Any],
+        result: ImportResult,
+    ) -> None:
+        """Nur die gewaehlten, im Diff berechneten Felder in ein Filament schreiben."""
+        local = await self.db.get(Filament, local_id)
+        if local is None:
+            result.errors.append(f"Lokales Filament {local_id} nicht gefunden")
+            return
+        promoted: dict[str, Any] = {}
+        for field_name, value in chosen.items():
+            if field_name == "colors":
+                continue
+            if field_name == "material_type":
+                if (local.material_type or "").casefold() != (value or "").casefold():
+                    await clear_bambu_idx_for_filament(self.db, local.id)
+                local.material_type = value
+                continue
+            if field_name in self._FILAMENT_PROTECTED or not hasattr(Filament, field_name):
+                result.warnings.append(f"Feld '{field_name}' wird nicht geschrieben")
+                continue
+            setattr(local, field_name, value)
+            promoted[field_name] = value
+        if promoted:
+            aliases = catalog_promotion_aliases(
+                fil_data, promoted, local.custom_fields, local.label_field_aliases
+            )
+            if aliases:
+                local.label_field_aliases = {**(local.label_field_aliases or {}), **aliases}
+        if "colors" in chosen:
+            # Fehlende Farb-Datensaetze ueber die bestehende Import-Logik anlegen.
+            color_map = await self._import_colors(self._extract_colors([fil_data]), ImportResult())
+            await self._create_filament_colors(local.id, fil_data, color_map)
+        await self.db.flush()
 
     # ------------------------------------------------------------------ #
     #  Import ausfuehren
