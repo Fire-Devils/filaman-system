@@ -164,7 +164,7 @@ export function renderPreviewBody(preview: ContribPreview): string {
 
   if (preview.matches.length) {
     const items = preview.matches.map(m => `<li class="fdb-match"><span>${e(m.label ?? `#${m.id}`)}${m.score != null ? ` <small>${e(t('fdbContrib.matchScore', { score: Math.round(m.score * 100) }))}</small>` : ''}</span>
-      <button type="button" class="fm-btn fm-btn-outline fm-btn-sm" data-fdb-link="${m.id}">${e(t('fdbContrib.thisIsIt'))}</button></li>`).join('')
+      <button type="button" class="fm-btn fm-btn-outline fm-btn-sm" data-fdb-link="${Number(m.id)}">${e(t('fdbContrib.thisIsIt'))}</button></li>`).join('')
     parts.push(`<div class="fdb-matches"><strong>${e(t('fdbContrib.matchesTitle'))}</strong><p class="fm-field-hint">${e(t('fdbContrib.matchesHint'))}</p><ul>${items}</ul></div>`)
   }
 

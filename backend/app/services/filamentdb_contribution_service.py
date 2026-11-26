@@ -404,7 +404,16 @@ async def check_matches(db: AsyncSession, b: Build) -> list[dict[str, Any]]:
         "POST", "/contribute/check", token=token, json={"type": b.entity_type, "data": b.payload}
     )
     matches = data.get("matches", []) if isinstance(data, dict) else []
-    return [m for m in matches if isinstance(m, dict)]
+    # Nur Treffer mit echter, positiver Integer-ID übernehmen (Daten aus der DB
+    # landen später in HTML-Attributen und in lokalen Verknüpfungen).
+    return [
+        m
+        for m in matches
+        if isinstance(m, dict)
+        and isinstance(m.get("id"), int)
+        and not isinstance(m.get("id"), bool)
+        and m["id"] > 0
+    ]
 
 
 async def preview(db: AsyncSession, entity_type: str, local_id: int) -> dict[str, Any]:

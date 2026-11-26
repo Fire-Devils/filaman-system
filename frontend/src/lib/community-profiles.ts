@@ -45,13 +45,13 @@ export function renderCommunityCard(profile: CommunityProfile, options: { canRat
     .map(row => `<div><dt>${e(row.label)}</dt><dd>${e(row.value)}</dd></div>`).join('')
   const own = profile.is_own ? `<span class="fdb-status fdb-status-success">${e(t('fdbContrib.community.own'))}</span>` : ''
   let actions = ''
-  if (options.canAdopt) actions += `<button type="button" class="fm-btn fm-btn-primary fm-btn-sm" data-cp-adopt="${profile.id}">${e(t('fdbContrib.community.adopt'))}</button> `
+  if (options.canAdopt) actions += `<button type="button" class="fm-btn fm-btn-primary fm-btn-sm" data-cp-adopt="${Number(profile.id)}">${e(t('fdbContrib.community.adopt'))}</button> `
   if (options.canRate && !profile.is_own) {
-    const stars = [1, 2, 3, 4, 5].map(n => `<button type="button" class="fdb-star${profile.my_rating && n <= profile.my_rating ? ' fdb-star-on' : ''}" data-cp-rate="${profile.id}" data-stars="${n}" aria-label="${e(t('fdbContrib.community.stars', { n }))}">★</button>`).join('')
+    const stars = [1, 2, 3, 4, 5].map(n => `<button type="button" class="fdb-star${profile.my_rating && n <= profile.my_rating ? ' fdb-star-on' : ''}" data-cp-rate="${Number(profile.id)}" data-stars="${n}" aria-label="${e(t('fdbContrib.community.stars', { n }))}">★</button>`).join('')
     actions += `<span class="fdb-rate" role="group" aria-label="${e(t('fdbContrib.community.rate'))}">${stars}</span> `
-    actions += `<button type="button" class="fm-btn fm-btn-outline fm-btn-sm" data-cp-report="${profile.id}">${e(t('fdbContrib.community.report'))}</button>`
+    actions += `<button type="button" class="fm-btn fm-btn-outline fm-btn-sm" data-cp-report="${Number(profile.id)}">${e(t('fdbContrib.community.report'))}</button>`
   }
-  return `<article class="fm-card pp-card" data-cp-card="${profile.id}">
+  return `<article class="fm-card pp-card" data-cp-card="${Number(profile.id)}">
     <header><h3>${rating} ${own}</h3><span class="pp-muted">${e(author)}</span></header>
     <dl>${rows || `<p class="pp-muted">${e(t('printProfiles.noCore'))}</p>`}</dl>
     <div class="pp-card-actions">${actions}</div>
