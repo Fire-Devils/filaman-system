@@ -1,6 +1,18 @@
 {
   "versions": [
     {
+      "version": "UNRELEASED",
+      "date": "",
+      "changes": {
+        "de": [
+          { "type": "feature", "text": "Spule voll: Eine volle Spule auf der Waage wiegen und \"Spule voll\" wählen, schon wird das Leergewicht der Spule automatisch berechnet und das Restgewicht auf das Nenngewicht gesetzt. Im Ereignisverlauf der Spule lässt sich das mit \"Rückgängig\" wieder zurücknehmen. Der erlaubte Bereich und das Standard-Nenngewicht stehen in den App-Einstellungen." }
+        ],
+        "en": [
+          { "type": "feature", "text": "Spool full: Weigh a full spool on the scale and choose \"Spool full\" to have the empty spool weight calculated automatically and the remaining weight set to the nominal weight. You can undo this with \"Undo\" in the spool's event history. The allowed range and the default nominal weight are in the app settings." }
+        ]
+      }
+    },
+    {
       "version": "2.10.0",
       "date": "",
       "changes": {

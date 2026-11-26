@@ -108,6 +108,24 @@ import FormSection from '../../components/FormSection.astro'
           <br><span data-i18n="admin.defaultCoreWeightDisableHint">Leave blank or set to 0 to disable.</span>
         </p>
     </FormSection>
+    <FormSection titleKey="admin.spoolFullTitle" title="Spool full (scale)" class="fm-settings-wide">
+      <p class="fm-field-hint" data-i18n="admin.spoolFullDesc">When a full spool is weighed on the device, its empty spool weight is calculated: scale reading − nominal weight − core/adapter weight.</p>
+      <div class="fm-settings-row"><label for="spool-full-nominal" data-i18n="admin.spoolFullNominalLabel">Default nominal weight (g)</label>
+        <div class="fm-settings-number"><input type="number" id="spool-full-nominal" step="1" min="1" placeholder="1000" class="fm-input" aria-describedby="spool-full-nominal-hint" /><span>g</span></div>
+      </div>
+      <p class="fm-field-hint" id="spool-full-nominal-hint" data-i18n="admin.spoolFullNominalHint">Used when the filament has no material weight.</p>
+      <div class="fm-settings-row"><label for="spool-full-tara-min" data-i18n="admin.spoolFullTaraMinLabel">Empty spool weight minimum (g)</label>
+        <div class="fm-settings-number"><input type="number" id="spool-full-tara-min" step="1" min="0" placeholder="100" class="fm-input" aria-describedby="spool-full-tara-hint" /><span>g</span></div>
+      </div>
+      <div class="fm-settings-row"><label for="spool-full-tara-max" data-i18n="admin.spoolFullTaraMaxLabel">Empty spool weight maximum (g)</label>
+        <div class="fm-settings-number"><input type="number" id="spool-full-tara-max" step="1" min="0" placeholder="350" class="fm-input" aria-describedby="spool-full-tara-hint" /><span>g</span></div>
+      </div>
+      <p class="fm-field-hint" id="spool-full-tara-hint" data-i18n="admin.spoolFullTaraRangeHint">A calculated empty spool weight outside this range is rejected.</p>
+      <div class="fm-settings-row"><label for="spool-full-threshold" data-i18n="admin.spoolFullThresholdLabel">Deviation without confirmation (g)</label>
+        <div class="fm-settings-number"><input type="number" id="spool-full-threshold" step="1" min="0" placeholder="5" class="fm-input" aria-describedby="spool-full-threshold-hint" /><span>g</span></div>
+      </div>
+      <p class="fm-field-hint" id="spool-full-threshold-hint" data-i18n="admin.spoolFullThresholdHint">If the new empty spool weight differs from the stored one by more than this, overwriting must be confirmed.</p>
+    </FormSection>
   </form>
   <div class="fm-settings-grid">
     <FormSection titleKey="admin.materialPresetsTitle" title="Material presets" class="fm-settings-wide" id="presets-title">
@@ -235,6 +253,10 @@ import FormSection from '../../components/FormSection.astro'
       const rfidDisplayColonsInput = document.getElementById('rfid-display-colons') as HTMLInputElement
       const defaultSpoolCoreWeightInput = document.getElementById('default-spool-core-weight') as HTMLInputElement
       const defaultEmptySpoolWeightInput = document.getElementById('default-empty-spool-weight') as HTMLInputElement
+      const spoolFullNominalInput = document.getElementById('spool-full-nominal') as HTMLInputElement
+      const spoolFullTaraMinInput = document.getElementById('spool-full-tara-min') as HTMLInputElement
+      const spoolFullTaraMaxInput = document.getElementById('spool-full-tara-max') as HTMLInputElement
+      const spoolFullThresholdInput = document.getElementById('spool-full-threshold') as HTMLInputElement
       const bambuUnmatchedFallbackSelect = document.getElementById('bambu-unmatched-fallback') as HTMLSelectElement
       const mcpEnabledInput = document.getElementById('mcp-enabled') as HTMLInputElement
       const mcpWriteInput = document.getElementById('mcp-write-enabled') as HTMLInputElement
@@ -291,6 +313,10 @@ import FormSection from '../../components/FormSection.astro'
           updateRfidProtocolVisibility()
           defaultSpoolCoreWeightInput.value = data.default_spool_core_weight_g != null ? String(data.default_spool_core_weight_g) : ''
           defaultEmptySpoolWeightInput.value = data.default_empty_spool_weight_g != null ? String(data.default_empty_spool_weight_g) : ''
+          spoolFullNominalInput.value = String(data.spool_full_nominal_weight_g ?? 1000)
+          spoolFullTaraMinInput.value = String(data.spool_full_tara_min_g ?? 100)
+          spoolFullTaraMaxInput.value = String(data.spool_full_tara_max_g ?? 350)
+          spoolFullThresholdInput.value = String(data.spool_full_overwrite_threshold_g ?? 5)
           bambuUnmatchedFallbackSelect.value = data.bambu_unmatched_profile_fallback || 'generic'
           mcpEnabledInput.checked = data.mcp_enabled === true
           mcpWriteInput.checked = data.mcp_write_enabled === true
@@ -324,6 +350,10 @@ import FormSection from '../../components/FormSection.astro'
           rfid_display_colons: rfidDisplayColonsInput.checked,
           default_spool_core_weight_g: rawCoreWeight !== '' ? parseFloat(rawCoreWeight) : null,
           default_empty_spool_weight_g: rawEmptyWeight !== '' ? parseFloat(rawEmptyWeight) : null,
+          spool_full_nominal_weight_g: parseFloat(spoolFullNominalInput.value) || 1000,
+          spool_full_tara_min_g: parseFloat(spoolFullTaraMinInput.value) || 0,
+          spool_full_tara_max_g: parseFloat(spoolFullTaraMaxInput.value) || 350,
+          spool_full_overwrite_threshold_g: parseFloat(spoolFullThresholdInput.value) || 0,
           bambu_unmatched_profile_fallback: bambuUnmatchedFallbackSelect.value,
           mcp_enabled: mcpEnabledInput.checked,
           mcp_write_enabled: mcpEnabledInput.checked && mcpWriteInput.checked,

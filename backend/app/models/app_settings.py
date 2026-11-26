@@ -23,6 +23,20 @@ class AppSettings(Base, TimestampMixin):
     rfid_display_colons: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     default_spool_core_weight_g: Mapped[float | None] = mapped_column(Float, nullable=True)
     default_empty_spool_weight_g: Mapped[float | None] = mapped_column(Float, nullable=True)
+    # "Spool full" (scale): nominal filament weight fallback and plausibility
+    # window for the derived empty-spool weight.
+    spool_full_nominal_weight_g: Mapped[float] = mapped_column(
+        Float, default=1000.0, server_default="1000", nullable=False
+    )
+    spool_full_tara_min_g: Mapped[float] = mapped_column(
+        Float, default=100.0, server_default="100", nullable=False
+    )
+    spool_full_tara_max_g: Mapped[float] = mapped_column(
+        Float, default=350.0, server_default="350", nullable=False
+    )
+    spool_full_overwrite_threshold_g: Mapped[float] = mapped_column(
+        Float, default=5.0, server_default="5", nullable=False
+    )
     # Fallback when no slicer profile resolves for a filament/model: "generic"
     # (Generic <material>) or "bambu" (Bambu-brand basic profile for the material).
     bambu_unmatched_profile_fallback: Mapped[str] = mapped_column(
