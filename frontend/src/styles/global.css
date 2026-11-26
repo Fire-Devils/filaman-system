@@ -3495,3 +3495,8 @@ html.sidebar-collapsed #sidebar-color-mode { display: none; }
   .fm-picker-selected-color .fm-input { font-size: 16px; }
 
 }
+
+/* Hinweis auf die FilaMan-Community-Datenbank: gut lesbar, Link klar als Link erkennbar. */
+.fm-field-hint.fm-db-hint { margin: 8px 0 0; color: var(--text); font-size: .9rem; line-height: 1.5; }
+.fm-db-hint a, .fdb-lookup-empty a { position: relative; z-index: 1; color: var(--accent); font-weight: 600; text-decoration: underline; text-underline-offset: 2px; cursor: pointer; }
+.fm-db-hint a:hover, .fdb-lookup-empty a:hover { text-decoration-thickness: 2px; }
