@@ -15,6 +15,8 @@
 import { request } from './api'
 import { t } from './i18n'
 
+export const FILAMENTDB_SITE_URL = 'https://db.filaman.app'
+
 // ── Plugin status check (cached) ────────────────────────────────────
 
 export async function checkFilamentDbActive(): Promise<boolean> {
@@ -219,7 +221,8 @@ export function createFilamentDbLookup<T = unknown>(opts: LookupOptions<T>): Loo
         currentItems = items
 
         if (items.length === 0) {
-          resultsEl.innerHTML = `<div class="fdb-lookup-empty">${t('filamentdbLookup.noResults')}</div>`
+          const contribute = `${t('filamentdbLookup.noResultsContribute')} <a href="${FILAMENTDB_SITE_URL}" target="_blank" rel="noopener noreferrer">${t('filamentdbLookup.contributeLink')}</a>`
+          resultsEl.innerHTML = `<div class="fdb-lookup-empty">${t('filamentdbLookup.noResults')}<br>${contribute}</div>`
         } else {
           resultsEl.innerHTML = items
             .map((item: T, idx: number) => `<button type="button" class="fdb-lookup-item" data-index="${idx}">${renderItem(item)}</button>`)

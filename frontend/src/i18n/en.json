@@ -1880,6 +1880,7 @@
   "filamentdb": {
     "title": "FilamentDB Import",
     "subtitle": "Import manufacturers, filaments and spool details from the FilamentDB community database.",
+    "contributeHint": "The data comes from the community database. Anyone can submit and correct filaments there:",
     "stepManufacturers": "Manufacturers",
     "stepFilaments": "Filaments",
     "stepImport": "Settings & Import",
@@ -1965,6 +1966,9 @@
     "searchAllManufacturers": "search all manufacturers",
     "searchSpoolProfile": "Search spool profile...",
     "noResults": "No results found",
+    "contributeHint": "Filament missing or data wrong? You can submit and edit filaments yourself:",
+    "noResultsContribute": "Missing? Submit it yourself:",
+    "contributeLink": "db.filaman.app",
     "loading": "Searching...",
     "loadFromDb": "Load from FilaManDB",
     "matchedSpoolType": "Matched to entered values",

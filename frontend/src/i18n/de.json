@@ -1881,6 +1881,7 @@
   "filamentdb": {
     "title": "FilamentDB Import",
     "subtitle": "Hersteller, Filamente und Spulendetails aus der FilamentDB Community-Datenbank importieren.",
+    "contributeHint": "Die Daten stammen aus der Community-Datenbank. Dort kann jeder Filamente einreichen und korrigieren:",
     "stepManufacturers": "Hersteller",
     "stepFilaments": "Filamente",
     "stepImport": "Einstellungen & Import",
@@ -1966,6 +1967,9 @@
     "searchAllManufacturers": "alle Hersteller durchsuchen",
     "searchSpoolProfile": "Spulenprofil suchen...",
     "noResults": "Keine Ergebnisse gefunden",
+    "contributeHint": "Filament fehlt oder Daten falsch? Sie können Filamente selbst einreichen und bearbeiten:",
+    "noResultsContribute": "Fehlt es? Reichen Sie es selbst ein:",
+    "contributeLink": "db.filaman.app",
     "loading": "Suche...",
     "loadFromDb": "Aus FilaManDB laden",
     "matchedSpoolType": "Passend zu den Eingabewerten",

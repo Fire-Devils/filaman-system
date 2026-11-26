@@ -1880,6 +1880,7 @@
   "filamentdb": {
     "title": "Import FilamentDB",
     "subtitle": "Importer des fabricants, filaments et détails de bobines depuis la base communautaire FilamentDB.",
+    "contributeHint": "Les données proviennent de la base communautaire. Chacun peut y soumettre et corriger des filaments :",
     "stepManufacturers": "Fabricants",
     "stepFilaments": "Filaments",
     "stepImport": "Réglages et import",
@@ -1965,6 +1966,9 @@
     "searchAllManufacturers": "rechercher tous les fabricants",
     "searchSpoolProfile": "Rechercher un profil de bobine…",
     "noResults": "Aucun résultat trouvé",
+    "contributeHint": "Filament manquant ou données erronées ? Vous pouvez soumettre et modifier des filaments vous-même :",
+    "noResultsContribute": "Il manque ? Soumettez-le vous-même :",
+    "contributeLink": "db.filaman.app",
     "loading": "Recherche…",
     "loadFromDb": "Charger depuis FilaManDB",
     "matchedSpoolType": "Correspond aux valeurs saisies",
