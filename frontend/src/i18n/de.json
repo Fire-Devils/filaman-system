@@ -1962,6 +1962,8 @@
     "selectManufacturersDesc": "Wählen Sie die Hersteller, die importiert werden sollen. Deren Filamente, Farben und Logos werden mit importiert.",
     "selectAll": "Alle auswählen",
     "selectAllNew": "Alle neuen auswählen",
+    "importSectionTitle": "Neue Daten importieren",
+    "importSectionDesc": "Hier importierst du in drei Schritten neue Hersteller und Filamente aus der FilamentDB.",
     "syncLinkedTitle": "Lokale Filamente abgleichen",
     "syncLinkedDesc": "Prüft alle lokalen Filamente, die mit der FilamentDB verknüpft sind, auf Aktualisierungen. Es werden keine neuen Filamente oder Hersteller angelegt.",
     "syncLinkedCheck": "Auf Aktualisierungen prüfen",

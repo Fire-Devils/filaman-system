@@ -1961,6 +1961,8 @@
     "selectManufacturersDesc": "Choisissez les fabricants à importer. Leurs filaments, couleurs et logos seront inclus.",
     "selectAll": "Tout sélectionner",
     "selectAllNew": "Sélectionner tous les nouveaux",
+    "importSectionTitle": "Importer de nouvelles données",
+    "importSectionDesc": "Importez ici de nouveaux fabricants et filaments depuis FilamentDB en trois étapes.",
     "syncLinkedTitle": "Synchroniser les filaments locaux",
     "syncLinkedDesc": "Vérifie les mises à jour de tous les filaments locaux liés à la FilamentDB. Aucun nouveau filament ni fabricant n'est créé.",
     "syncLinkedCheck": "Rechercher des mises à jour",
