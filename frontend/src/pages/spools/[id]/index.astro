@@ -1022,10 +1022,15 @@ const { id } = Astro.params
         return
       }
       
+      // Only the newest spool_full event that is not yet undone can be undone.
+      const undoableSpoolFullId = events.find(
+        (e: any) => e.event_type === 'spool_full' && !e.meta?.undone,
+      )?.id
+
       tbody.innerHTML = events.map((e: any) => `
         <tr>
           <td style="padding: 12px;">
-            <span class="fm-pill" style="${getEventTypeStyle(e.event_type)}">${e.event_type}</span>
+            <span class="fm-pill" style="${getEventTypeStyle(e.event_type)}">${getEventTypeLabel(e)}</span>
           </td>
           <td style="padding: 12px; font-size: 0.85rem; color: var(--text-muted);">
             ${new Date(e.event_at).toLocaleString()}
@@ -1034,9 +1039,53 @@ const { id } = Astro.params
             ${e.measured_weight_g !== null ? e.measured_weight_g.toFixed(0) + 'g' : ''}
             ${e.delta_weight_g !== null ? (e.delta_weight_g > 0 ? '+' : '') + e.delta_weight_g.toFixed(0) + 'g' : ''}
           </td>
-          <td style="padding: 12px; font-size: 0.85rem; color: var(--text-muted);">${e.note || '-'}</td>
+          <td style="padding: 12px; font-size: 0.85rem; color: var(--text-muted);">
+            ${e.note || '-'}${getEventDetail(e)}
+            ${e.id === undoableSpoolFullId ? `<button type="button" class="fm-btn fm-btn-outline btn-undo-spool-full" data-event-id="${e.id}" style="margin-left: 8px;">${t('spools.undoSpoolFull')}</button>` : ''}
+          </td>
         </tr>
       `).join('')
+
+      tbody.querySelectorAll<HTMLButtonElement>('.btn-undo-spool-full').forEach((btn) => {
+        btn.addEventListener('click', () => undoSpoolFull(btn))
+      })
+    }
+
+    function getEventTypeLabel(e: any) {
+      if (e.event_type === 'spool_full') return t('spools.eventSpoolFull')
+      if (e.event_type === 'spool_full_undone') return t('spools.eventSpoolFullUndone')
+      return e.event_type
+    }
+
+    function formatTara(value: number | null | undefined) {
+      return value == null ? t('spools.spoolFullTaraNone') : `${Number(value).toFixed(0)} g`
+    }
+
+    function getEventDetail(e: any) {
+      if (e.event_type !== 'spool_full' || !e.meta) return ''
+      const text = t('spools.spoolFullTaraChange')
+        .replace('{old}', formatTara(e.meta.old_tara_g))
+        .replace('{new}', formatTara(e.meta.new_tara_g))
+      const undone = e.meta.undone ? ` (${t('spools.spoolFullUndone')})` : ''
+      return `<br><span style="font-family: monospace;">${text}${undone}</span>`
+    }
+
+    async function undoSpoolFull(btn: HTMLButtonElement) {
+      if (!confirm(t('spools.undoSpoolFullConfirm'))) return
+      btn.disabled = true
+      try {
+        const response = await fetch(`/api/v1/spools/${id}/events/${btn.dataset.eventId}/undo-spool-full`, {
+          method: 'POST',
+          headers: { 'X-CSRF-Token': getCsrfToken() },
+          credentials: 'include',
+        })
+        if (!response.ok) throw new Error('undo failed')
+        await loadData()
+      } catch (error) {
+        console.error('Failed to undo spool full:', error)
+        btn.disabled = false
+        alert(t('spools.undoSpoolFullFailed'))
+      }
     }
     
     function getEventTypeStyle(type: any) {
@@ -1046,6 +1095,8 @@ const { id } = Astro.params
         consumption: 'border-color: var(--accent-3); color: var(--accent-3);',
         status_change: 'border-color: var(--accent-3); color: var(--accent-3);',
         move_location: 'border-color: var(--accent); color: var(--accent);',
+        spool_full: 'border-color: var(--accent-2); color: var(--accent-2);',
+        spool_full_undone: 'border-color: var(--accent-3); color: var(--accent-3);',
       }
       return styles[type as keyof typeof styles] || ''
     }

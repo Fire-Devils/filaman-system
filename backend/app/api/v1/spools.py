@@ -63,7 +63,7 @@ from app.services.custom_field_search import (
     any_custom_field_matches,
     searchable_custom_field_keys,
 )
-from app.services.spool_service import OPENING_STATUS_KEYS, SpoolService
+from app.services.spool_service import OPENING_STATUS_KEYS, SpoolFullRuleError, SpoolService
 from app.services.spool_metrics import spool_metric_expressions
 from app.utils.query_params import parse_multi_int, parse_multi_str
 
@@ -1642,6 +1642,36 @@ async def list_spool_events(
     total = count_result.scalar() or 0
 
     return PaginatedResponse(items=items, page=page, page_size=page_size, total=total)
+
+
+@router_spools.post(
+    "/{spool_id}/events/{event_id}/undo-spool-full",
+    response_model=SpoolEventResponse,
+)
+async def undo_spool_full(
+    spool_id: int,
+    event_id: int,
+    db: DBSession,
+    principal=RequirePermission("spools:update"),
+):
+    service = SpoolService(db)
+    spool = await service.get_spool(spool_id)
+    if not spool:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"code": "not_found", "message": "Spool not found"},
+        )
+    try:
+        event = await service.undo_spool_full(spool, event_id, principal=principal)
+    except SpoolFullRuleError as exc:
+        code = (
+            status.HTTP_404_NOT_FOUND
+            if exc.code == "event_not_found"
+            else status.HTTP_409_CONFLICT
+        )
+        raise HTTPException(status_code=code, detail=exc.detail)
+    await event_bus.publish({"event": "spools_changed"})
+    return event
 
 
 router_spool_measurements = APIRouter(tags=["spool-measurements"])

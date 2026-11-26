@@ -15,6 +15,21 @@ class WeighResponse(BaseModel):
     filament_name: str | None
 
 
+class SpoolFullRequest(BaseModel):
+    spool_id: int | None = None
+    tag_uuid: str | None = None
+    measured_weight_g: float = Field(..., gt=0)
+    confirm_overwrite: bool = False
+
+
+class SpoolFullResponse(BaseModel):
+    spool_id: int
+    old_tara_g: float | None
+    new_tara_g: float
+    remaining_weight_g: float
+    filament_name: str | None
+
+
 class LocateRequest(BaseModel):
     spool_id: int | None = None
     spool_tag_uuid: str | None = None

@@ -127,7 +127,9 @@ it('saves visible app settings without resetting the hidden lookup preference', 
   expect(JSON.parse(String(writes()[0].init!.body))).toEqual({
     login_disabled: false, currency: 'EUR', rfid_protocol: 'openspool',
     rfid_extended_data_enabled: false, rfid_display_colons: true,
-    default_spool_core_weight_g: 60, default_empty_spool_weight_g: null, bambu_unmatched_profile_fallback: 'generic',
+    default_spool_core_weight_g: 60, default_empty_spool_weight_g: null,
+    spool_full_nominal_weight_g: 1000, spool_full_tara_min_g: 100, spool_full_tara_max_g: 350, spool_full_overwrite_threshold_g: 5,
+    bambu_unmatched_profile_fallback: 'generic',
     mcp_enabled: false, mcp_write_enabled: false,
   })
   await vi.waitFor(() => expect(save.disabled).toBe(true))

@@ -1,6 +1,6 @@
 from typing import Literal
 
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 
@@ -25,6 +25,10 @@ class AppSettingsResponse(BaseModel):
     mcp_write_enabled: bool = False
     firmware_auto_import: bool = False
     firmware_keep_latest_only: bool = True
+    spool_full_nominal_weight_g: float = 1000.0
+    spool_full_tara_min_g: float = 100.0
+    spool_full_tara_max_g: float = 350.0
+    spool_full_overwrite_threshold_g: float = 5.0
 
 
 class AppSettingsUpdate(BaseModel):
@@ -58,6 +62,10 @@ class AppSettingsUpdate(BaseModel):
     mcp_write_enabled: bool | None = None
     firmware_auto_import: bool | None = None
     firmware_keep_latest_only: bool | None = None
+    spool_full_nominal_weight_g: float | None = Field(None, gt=0)
+    spool_full_tara_min_g: float | None = Field(None, ge=0)
+    spool_full_tara_max_g: float | None = Field(None, ge=0)
+    spool_full_overwrite_threshold_g: float | None = Field(None, ge=0)
 
 
 def _available_lookup_source(value: str) -> str:
@@ -79,6 +87,10 @@ def _to_response(settings_row: AppSettings) -> AppSettingsResponse:
         mcp_write_enabled=settings_row.mcp_write_enabled,
         firmware_auto_import=settings_row.firmware_auto_import,
         firmware_keep_latest_only=settings_row.firmware_keep_latest_only,
+        spool_full_nominal_weight_g=settings_row.spool_full_nominal_weight_g,
+        spool_full_tara_min_g=settings_row.spool_full_tara_min_g,
+        spool_full_tara_max_g=settings_row.spool_full_tara_max_g,
+        spool_full_overwrite_threshold_g=settings_row.spool_full_overwrite_threshold_g,
     )
 
 
@@ -118,6 +130,13 @@ async def update_app_settings(
     NULLABLE_SETTINGS = {"default_spool_core_weight_g", "default_empty_spool_weight_g"}
     update_data = data.model_dump(exclude_unset=True)
     update_data = {k: v for k, v in update_data.items() if v is not None or k in NULLABLE_SETTINGS}
+    new_min = update_data.get("spool_full_tara_min_g", settings_row.spool_full_tara_min_g)
+    new_max = update_data.get("spool_full_tara_max_g", settings_row.spool_full_tara_max_g)
+    if new_min is not None and new_max is not None and new_min > new_max:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={"code": "invalid_tara_range", "message": "spool_full_tara_min_g must be <= spool_full_tara_max_g"},
+        )
     was_pruning = bool(settings_row.firmware_keep_latest_only)
     for key, value in update_data.items():
         setattr(settings_row, key, value)

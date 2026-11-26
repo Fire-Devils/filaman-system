@@ -54,13 +54,13 @@ def _is_primary_worker() -> bool:
         return False
 
 
-from app.api.v1.schemas_device import HeartbeatRequest, OtaReportRequest, LocateRequest, LocateResponse, WeighRequest, WeighResponse, WriteTagRequest, WriteTagResponse, RfidResultRequest, RfidResultResponse, WriteStatusResponse, TagDataRequest, TagScanStatusResponse
+from app.api.v1.schemas_device import HeartbeatRequest, OtaReportRequest, LocateRequest, LocateResponse, WeighRequest, WeighResponse, SpoolFullRequest, SpoolFullResponse, WriteTagRequest, WriteTagResponse, RfidResultRequest, RfidResultResponse, WriteStatusResponse, TagDataRequest, TagScanStatusResponse
 from app.core.event_bus import event_bus
 from app.core.security import Principal, generate_token_secret, hash_token
 from app.models import AppSettings, Device, DeviceFirmware, Location, Spool
 from app.models.filament import Color, FilamentColor, Manufacturer
 from app.services import firmware_service
-from app.services.spool_service import SpoolService
+from app.services.spool_service import SpoolFullRuleError, SpoolService
 
 _MATERIAL_TEMP_DEFAULTS: dict[str, tuple[int, int]] = {
     "PLA": (180, 230),
@@ -852,6 +852,60 @@ async def weigh_spool(
         remaining_weight_g=remaining if remaining is not None else 0.0,
         spool_id=spool.id,
         filament_name=filament_designation
+    )
+
+
+@router.post("/scale/spool-full", response_model=SpoolFullResponse)
+async def spool_full(
+    data: SpoolFullRequest,
+    db: DBSession,
+    device: Device = Depends(get_current_device),
+):
+    """Teach the empty-spool weight from a weighed, completely full spool."""
+    service = SpoolService(db)
+
+    spool = None
+    if data.tag_uuid:
+        spool = await service.get_spool_by_identifier(
+            rfid_uid=data.tag_uuid.lower(), external_id=None
+        )
+    if not spool and data.spool_id:
+        spool = await service.get_spool(data.spool_id)
+    if not spool:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"code": "not_found", "message": "Spool not found"},
+        )
+
+    # Cache before the service commits (relationships expire afterwards).
+    spool_id = spool.id
+    filament_name = spool.filament.designation if spool.filament else None
+
+    principal = Principal(auth_type="device", device_id=device.id, scopes=device.scopes)
+    try:
+        _, new_tara, old_tara = await service.record_spool_full(
+            spool=spool,
+            measured_weight_g=data.measured_weight_g,
+            confirm_overwrite=data.confirm_overwrite,
+            principal=principal,
+            source="device",
+            note=f"Recorded by device {device.name}",
+        )
+    except SpoolFullRuleError as exc:
+        code = (
+            status.HTTP_409_CONFLICT
+            if exc.code == "tara_differs"
+            else status.HTTP_422_UNPROCESSABLE_ENTITY
+        )
+        raise HTTPException(status_code=code, detail=exc.detail)
+
+    await db.refresh(spool)
+    return SpoolFullResponse(
+        spool_id=spool_id,
+        old_tara_g=old_tara,
+        new_tara_g=new_tara,
+        remaining_weight_g=spool.remaining_weight_g,
+        filament_name=filament_name,
     )
 
 

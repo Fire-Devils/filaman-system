@@ -26,6 +26,15 @@ class RfidSlotsFullError(Exception):
     """Both RFID slots of the spool are taken and replacing was not allowed."""
 
 
+class SpoolFullRuleError(Exception):
+    """Business-rule failure of the spool-full flow; detail is the API payload."""
+
+    def __init__(self, code: str, detail: dict[str, Any]):
+        super().__init__(code)
+        self.code = code
+        self.detail = detail
+
+
 @dataclass
 class RfidChange:
     """Outcome of an RFID add: who lost the chip, and what this spool dropped."""
@@ -538,6 +547,177 @@ class SpoolService:
         await self.db.commit()
         return event, remaining
 
+    async def _get_app_settings(self) -> AppSettings | None:
+        result = await self.db.execute(select(AppSettings).where(AppSettings.id == 1))
+        return result.scalar_one_or_none()
+
+    async def record_spool_full(
+        self,
+        spool: Spool,
+        measured_weight_g: float,
+        confirm_overwrite: bool = False,
+        event_at: datetime | None = None,
+        principal: Principal | None = None,
+        source: str = "device",
+        note: str | None = None,
+    ) -> tuple[SpoolEvent, float, float | None]:
+        """Teach the empty-spool weight from a weighed, completely full spool.
+
+        new_tara = measured - nominal - core; stored in empty_spool_weight_g
+        (without core, matching _get_tara which adds the core again). The
+        remaining weight is set to the nominal filament weight.
+
+        Raises SpoolFullRuleError (tara_out_of_range / tara_differs) without
+        changing anything. Returns (event, new_tara_g, old_tara_g).
+        """
+        event_at = event_at or datetime.now(timezone.utc)
+        await self.lock_balance(spool)
+
+        app_settings = await self._get_app_settings()
+        tara_min = app_settings.spool_full_tara_min_g if app_settings else 100.0
+        tara_max = app_settings.spool_full_tara_max_g if app_settings else 350.0
+        threshold = app_settings.spool_full_overwrite_threshold_g if app_settings else 5.0
+
+        filament = spool.filament
+        nominal = filament.raw_material_weight_g if filament else None
+        if nominal is None or nominal <= 0:
+            nominal = (
+                app_settings.spool_full_nominal_weight_g if app_settings else 1000.0
+            )
+        core = await self._resolve_core_weight(spool)
+        new_tara = measured_weight_g - nominal - core
+        old_tara = spool.empty_spool_weight_g
+
+        if not (tara_min <= new_tara <= tara_max):
+            await self.db.rollback()
+            raise SpoolFullRuleError(
+                "tara_out_of_range",
+                {
+                    "code": "tara_out_of_range",
+                    "new_tara_g": new_tara,
+                    "min_g": tara_min,
+                    "max_g": tara_max,
+                },
+            )
+        if (
+            old_tara is not None
+            and abs(new_tara - old_tara) > threshold
+            and not confirm_overwrite
+        ):
+            await self.db.rollback()
+            raise SpoolFullRuleError(
+                "tara_differs",
+                {
+                    "code": "tara_differs",
+                    "old_tara_g": old_tara,
+                    "new_tara_g": new_tara,
+                },
+            )
+
+        old_remaining = spool.remaining_weight_g
+        event = await self._create_event(
+            spool_id=spool.id,
+            event_type="spool_full",
+            event_at=event_at,
+            user_id=principal.user_id if principal else None,
+            device_id=principal.device_id if principal else None,
+            source=source,
+            measured_weight_g=measured_weight_g,
+            note=note,
+            meta={
+                "old_tara_g": old_tara,
+                "new_tara_g": new_tara,
+                "old_remaining_g": old_remaining,
+                "new_remaining_g": nominal,
+                "nominal_g": nominal,
+                "core_g": core,
+            },
+        )
+        spool.empty_spool_weight_g = new_tara
+        spool.remaining_weight_g = nominal
+        await self.db.commit()
+        return event, new_tara, old_tara
+
+    async def undo_spool_full(
+        self,
+        spool: Spool,
+        event_id: int,
+        principal: Principal | None = None,
+    ) -> SpoolEvent:
+        """Revert the newest, not yet undone spool_full event of a spool.
+
+        Raises SpoolFullRuleError: event_not_found, not_spool_full, already_undone,
+        not_latest_spool_full.
+        """
+        await self.lock_balance(spool)
+        try:
+            return await self._undo_spool_full_locked(spool, event_id, principal)
+        except SpoolFullRuleError:
+            # Release the write lock taken by lock_balance before reporting.
+            await self.db.rollback()
+            raise
+
+    async def _undo_spool_full_locked(
+        self,
+        spool: Spool,
+        event_id: int,
+        principal: Principal | None,
+    ) -> SpoolEvent:
+        result = await self.db.execute(
+            select(SpoolEvent).where(
+                SpoolEvent.id == event_id, SpoolEvent.spool_id == spool.id
+            )
+        )
+        target = result.scalar_one_or_none()
+        if target is None:
+            raise SpoolFullRuleError("event_not_found", {"code": "event_not_found"})
+        if target.event_type != "spool_full":
+            raise SpoolFullRuleError("not_spool_full", {"code": "not_spool_full"})
+        meta = dict(target.meta or {})
+        if meta.get("undone"):
+            raise SpoolFullRuleError("already_undone", {"code": "already_undone"})
+
+        latest_result = await self.db.execute(
+            select(SpoolEvent)
+            .where(
+                SpoolEvent.spool_id == spool.id,
+                SpoolEvent.event_type == "spool_full",
+            )
+            .order_by(SpoolEvent.event_at.desc(), SpoolEvent.id.desc())
+        )
+        latest = next(
+            (e for e in latest_result.scalars().all() if not (e.meta or {}).get("undone")),
+            None,
+        )
+        if latest is None or latest.id != target.id:
+            raise SpoolFullRuleError(
+                "not_latest_spool_full", {"code": "not_latest_spool_full"}
+            )
+
+        now = datetime.now(timezone.utc)
+        old_tara = meta.get("old_tara_g")
+        old_remaining = meta.get("old_remaining_g")
+        spool.empty_spool_weight_g = old_tara
+        spool.remaining_weight_g = old_remaining
+        meta["undone"] = True
+        meta["undone_at"] = now.isoformat()
+        target.meta = meta
+        undo_event = await self._create_event(
+            spool_id=spool.id,
+            event_type="spool_full_undone",
+            event_at=now,
+            user_id=principal.user_id if principal else None,
+            device_id=principal.device_id if principal else None,
+            source="ui",
+            meta={
+                "undone_event_id": target.id,
+                "restored_tara_g": old_tara,
+                "restored_remaining_g": old_remaining,
+            },
+        )
+        await self.db.commit()
+        return undo_event
+
     async def record_adjustment(
         self,
         spool: Spool,
@@ -1039,6 +1219,13 @@ class SpoolService:
                     remaining += event.delta_weight_g
                     if remaining < 0:
                         remaining = 0
+
+            elif event.event_type == "spool_full":
+                event_meta = event.meta or {}
+                if not event_meta.get("undone"):
+                    new_remaining = event_meta.get("new_remaining_g")
+                    if new_remaining is not None:
+                        remaining = max(new_remaining, 0)
 
             elif event.event_type == "print_consumption" and remaining is not None:
                 remaining += event.delta_weight_g
