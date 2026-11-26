@@ -94,6 +94,7 @@ import InventoryFilterReset from '../../components/InventoryFilterReset.astro'
     import { createManufacturerDialog, type Manufacturer } from '../../lib/manufacturer-dialog'
     import type { AppDialogs } from '../../lib/form-dialog'
     import { mountPanel } from '../../lib/panel-navigation'
+    import { fetchContributions, loadContribContext, openContributeDialog, statusBadge, type ContribRef } from '../../lib/filamentdb-contrib'
 
     mountPanel('manufacturers', async (panelSignal) => {
     const dialogWindow = window as unknown as AppDialogs
@@ -102,6 +103,16 @@ import InventoryFilterReset from '../../components/InventoryFilterReset.astro'
 
     const filamentDbActive = await checkFilamentDbActive()
     if (panelSignal.aborted) return
+    const fdbContext = await loadContribContext()
+    const fdbStatuses = new Map<number, ContribRef>()
+    async function loadFdbStatuses() {
+      if (!fdbContext.canContribute) return
+      try {
+        fdbStatuses.clear()
+        for (const entry of await fetchContributions('manufacturer')) fdbStatuses.set(entry.local_id, entry)
+      } catch { /* Status ist optional */ }
+    }
+    await loadFdbStatuses()
     const manufacturerDialog = createManufacturerDialog({
       filamentDbActive,
       signal: panelSignal,
@@ -316,7 +327,7 @@ import InventoryFilterReset from '../../components/InventoryFilterReset.astro'
         const website = safeExternalUrl(mf.url)
         return `
         <tr style="cursor: pointer;" class="manufacturer-row" data-manufacturer-id="${mf.id}">
-          <td class="col-name" style="font-weight: 500;">${escapeHtml(mf.name)}</td>
+          <td class="col-name" style="font-weight: 500;">${escapeHtml(mf.name)}${fdbStatuses.has(mf.id) ? ` ${statusBadge(fdbStatuses.get(mf.id)!)}` : ''}</td>
           <td class="col-logo" style="padding: 12px; text-align: center;">${mf.logo_url ? `<span style="color: var(--text-muted);" hidden>-</span><img src="${escapeHtml(mf.logo_url)}" alt="" style="height: 24px; width: auto; max-width: 72px; object-fit: contain; background: color-mix(in srgb, white 30%, var(--bg-soft) 70%); border: 1px solid color-mix(in srgb, white 22%, var(--border) 78%); border-radius: 8px; padding: 4px 8px; vertical-align: middle;" onerror="this.style.display='none'; this.previousElementSibling?.removeAttribute('hidden')" />` : '<span style="color: var(--text-muted);">-</span>'}</td>
           <td class="col-url">${website ? `<a href="${website}" target="_blank" rel="noopener" style="color: var(--accent); text-decoration: none;">${escapeHtml(mf.url)}</a>` : `<span style="color: var(--text-muted);">${escapeHtml(mf.url) || '-'}</span>`}</td>
           <td class="col-filaments"><a href="/filaments?manufacturer_id=${mf.id}" style="color: var(--accent); text-decoration: none; font-weight: 500;">${mf.filament_count || 0}</a></td>
@@ -326,7 +337,7 @@ import InventoryFilterReset from '../../components/InventoryFilterReset.astro'
           <td class="col-archived" style="color: var(--text-muted);">${mf.archived_spool_count ?? '-'}</td>
           <td class="col-spool_weight" style="font-family: monospace;">${mf.empty_spool_weight_g != null ? mf.empty_spool_weight_g + 'g' : '-'}</td>
           <td style="text-align: right;">
-            <span class="fm-row-actions">${tableAction('edit', { id: mf.id })}${tableAction('delete', { id: mf.id })}</span>
+            <span class="fm-row-actions">${fdbContext.canContribute ? `<button type="button" class="fm-btn fm-btn-outline fm-btn-sm btn-fdb-send" data-id="${mf.id}">${escapeHtml(t('fdbContrib.send'))}</button>` : ''}${tableAction('edit', { id: mf.id })}${tableAction('delete', { id: mf.id })}</span>
           </td>
         </tr>
       `
@@ -340,7 +351,7 @@ import InventoryFilterReset from '../../components/InventoryFilterReset.astro'
     document.getElementById('manufacturers-table')!.addEventListener('click', async event => {
       const target = event.target
       if (!(target instanceof Element)) return
-      const action = target.closest<HTMLButtonElement>('button.btn-edit, button.btn-delete')
+      const action = target.closest<HTMLButtonElement>('button.btn-edit, button.btn-delete, button.btn-fdb-send')
       if (!action) {
         if (target.closest('a')) return
         const row = target.closest<HTMLElement>('[data-manufacturer-id]')
@@ -349,6 +360,10 @@ import InventoryFilterReset from '../../components/InventoryFilterReset.astro'
         return
       }
       const id = Number(action.dataset.id)
+      if (action.classList.contains('btn-fdb-send')) {
+        void openContributeDialog({ type: 'manufacturer', localId: id, onDone: () => void loadFdbStatuses().then(() => renderManufacturers()) })
+        return
+      }
       if (action.classList.contains('btn-edit')) {
         const manufacturer = manufacturerList.get(id)
         if (manufacturer) manufacturerDialog.open(manufacturer)

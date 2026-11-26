@@ -6,7 +6,13 @@ import FormDialog from './FormDialog.astro'
     <h2 style="font-weight: 600; margin: 0;" data-i18n="printProfiles.title">Print profiles</h2>
     <button type="button" class="fm-btn fm-btn-primary fm-btn-sm hidden" data-pp-add data-i18n="printProfiles.add">Add print profile</button>
   </div>
+  <div class="fdb-contrib-row" data-fdb-filament-contrib></div>
   <div class="pp-cards" data-pp-list></div>
+</section>
+
+<section id="community-profiles" class="print-profiles fm-detail-content hidden">
+  <h2 style="font-weight: 600; margin: 0;" data-i18n="fdbContrib.community.title">Community print profiles</h2>
+  <div data-cp-list></div>
 </section>
 
 <FormDialog id="print-profile-dialog" titleId="print-profile-dialog-title" titleKey="printProfiles.addTitle" title="Add print profile" wide>
@@ -20,6 +26,26 @@ import FormDialog from './FormDialog.astro'
 </FormDialog>
 
 <style is:global>
+  .fdb-contrib-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .fdb-contrib-row:empty, .pp-contrib:empty { display: none; }
+  .pp-contrib { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .fdb-status { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: .75rem; font-weight: 600; border: 1px solid var(--border); }
+  .fdb-status-success { color: var(--success-text); }
+  .fdb-status-warning { color: var(--warning-text); }
+  .fdb-status-error { color: var(--error-text); }
+  .fdb-stars { color: var(--warning-text); letter-spacing: 1px; }
+  .fdb-star { background: none; border: 0; padding: 0 2px; cursor: pointer; font-size: 1.1rem; color: var(--text-muted); }
+  .fdb-star.fdb-star-on { color: var(--warning-text); }
+  .cp-printer { display: grid; gap: 8px; margin-top: 8px; }
+  .cp-printer h3 { margin: 0; font-size: .95rem; font-weight: 600; }
+  #community-profiles.hidden { display: none; }
+  #fdb-contrib-dialog ul { margin: 4px 0 0; padding-left: 18px; }
+  #fdb-contrib-dialog .fdb-payload { display: grid; grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr)); gap: 6px 16px; margin: 12px 0 0; }
+  #fdb-contrib-dialog .fdb-payload dt { font-size: .7rem; color: var(--text-muted); }
+  #fdb-contrib-dialog .fdb-payload dd { margin: 0; overflow-wrap: anywhere; }
+  #fdb-contrib-dialog .fdb-match { display: flex; align-items: center; justify-content: space-between; gap: 12px; list-style: none; margin-left: -18px; padding: 4px 0; }
+  #fdb-contrib-dialog .fdb-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
+  #fdb-contrib-dialog .fdb-matches, #fdb-contrib-dialog .fdb-deps { margin-top: 12px; }
   .print-profiles { margin-top: 24px; display: grid; gap: 12px; }
   .print-profiles.hidden { display: none; }
   .pp-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }

@@ -270,6 +270,8 @@ class FilamentPrinterProfile(Base, TimestampMixin):
     bridge_flow_percent: Mapped[int | None] = mapped_column(Integer, nullable=True)
     bridge_fan_percent: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
+    build_plate: Mapped[str | None] = mapped_column(String(100), nullable=True)
+
     material_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     custom_fields: Mapped[dict[str, Any] | None] = mapped_column(nullable=True)
 

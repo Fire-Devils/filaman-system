@@ -89,6 +89,8 @@ export function getStaticPaths() {
     import { getAbortSignal, isAbortError } from '../../../lib/abort'
     import { initPrinterSetup } from '../../../lib/printer-setup'
     import { initPrintProfiles } from '../../../lib/print-profiles'
+    import { initCommunityProfiles } from '../../../lib/community-profiles'
+    import { mountContributeControl } from '../../../lib/filamentdb-contrib'
     import { buildFilamentExtraFieldsForPrint, buildFilamentPrintSearchParams } from '../../../lib/filament-label-data'
     import { writeScopedLabelFields } from '../../../lib/label-print-session'
     await initI18n()
@@ -192,7 +194,15 @@ export function getStaticPaths() {
         if (profilesMount && profilesDialog && !printProfilesStarted) {
           printProfilesStarted = true
           profilesMount.classList.remove('hidden')
-          void initPrintProfiles({ mount: profilesMount, dialog: profilesDialog, filamentId: parseInt(id) })
+          const filamentId = parseInt(id)
+          const profiles = initPrintProfiles({ mount: profilesMount, dialog: profilesDialog, filamentId })
+          const contribHost = profilesMount.querySelector<HTMLElement>('[data-fdb-filament-contrib]')
+          if (contribHost) void mountContributeControl(contribHost, 'filament', filamentId, { showNotice: true })
+          const communityMount = document.getElementById('community-profiles')
+          const filamentdbId = Number((filament as { custom_fields?: Record<string, unknown> | null }).custom_fields?.filamentdb_id)
+          if (communityMount && filamentdbId > 0) {
+            void initCommunityProfiles({ mount: communityMount, filamentId, filamentdbId, onAdopted: () => void profiles.then(controller => controller.reload()) })
+          }
         }
         if (editMode) void filamentPluginHooks?.enterEdit()
       } catch (error) {

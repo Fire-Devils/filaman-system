@@ -1,0 +1,76 @@
+---
+import Layout from '../../../layouts/Layout.astro'
+import AdminHeader from '../../../components/AdminHeader.astro'
+---
+
+<Layout title="FilaMan - My submissions">
+  <div class="fm-admin-page">
+  <AdminHeader titleKey="fdbContrib.list.title" title="My submissions">
+    <button type="button" id="fdb-refresh" class="fm-btn fm-btn-primary" data-i18n="fdbContrib.list.refresh">Refresh</button>
+  </AdminHeader>
+  <p style="color: var(--text-muted); margin-bottom: 24px;" data-i18n="fdbContrib.list.subtitle">Everything this FilaMan instance has sent to the FilaMan-DB.</p>
+  <div id="fdb-message" role="status"></div>
+  <div class="fm-card fm-section">
+    <div class="fm-section-body" style="overflow-x: auto;">
+      <table class="fm-table" id="fdb-contrib-table">
+        <thead><tr>
+          <th data-i18n="fdbContrib.list.type">Type</th>
+          <th data-i18n="fdbContrib.list.object">Object</th>
+          <th data-i18n="fdbContrib.list.status">Status</th>
+          <th data-i18n="fdbContrib.list.checked">Last checked</th>
+          <th data-i18n="fdbContrib.list.note">Note</th>
+        </tr></thead>
+        <tbody id="fdb-contrib-body"></tbody>
+      </table>
+    </div>
+  </div>
+  </div>
+  <script>
+    import { api } from '../../../lib/api'
+    import { escapeHtml } from '../../../lib/extra-fields'
+    import { contribErrorMessage, fetchContributions, loadContribContext, statusBadge, type ContribRef } from '../../../lib/filamentdb-contrib'
+    import { initI18n, t } from '../../../lib/i18n'
+
+    await initI18n()
+    const body = document.getElementById('fdb-contrib-body')!
+    const message = document.getElementById('fdb-message')!
+    const refreshButton = document.getElementById('fdb-refresh') as HTMLButtonElement
+    const context = await loadContribContext()
+    refreshButton.disabled = !context.canContribute
+
+    function render(items: ContribRef[]) {
+      if (!items.length) {
+        body.innerHTML = `<tr><td colspan="5" style="text-align: center; color: var(--text-muted); padding: 24px;">${escapeHtml(t('fdbContrib.list.empty'))}</td></tr>`
+        return
+      }
+      body.innerHTML = items.map(item => `<tr>
+        <td>${escapeHtml(t(`fdbContrib.types.${item.entity_type}`))}</td>
+        <td>${escapeHtml(item.label ?? `#${item.local_id}`)}</td>
+        <td>${statusBadge(item)}</td>
+        <td>${item.last_checked_at ? escapeHtml(new Date(item.last_checked_at).toLocaleString()) : '—'}</td>
+        <td>${escapeHtml(item.last_error ?? '')}</td></tr>`).join('')
+    }
+
+    async function load(refresh: boolean) {
+      message.textContent = ''
+      message.classList.remove('fm-alert-error')
+      refreshButton.disabled = true
+      try {
+        const items = refresh
+          ? (await api.post<{ items: ContribRef[] }>('/filamentdb/contributions/refresh')).items
+          : await fetchContributions()
+        render(items)
+      } catch (error) {
+        message.textContent = contribErrorMessage(error)
+        message.classList.add('fm-alert-error')
+        try { render(await fetchContributions()) } catch { body.innerHTML = '' }
+      } finally {
+        refreshButton.disabled = !context.canContribute
+      }
+    }
+
+    refreshButton.addEventListener('click', () => void load(true))
+    // Beim Öffnen gleich abgleichen, sofern ein Token da ist.
+    void load(context.canContribute)
+  </script>
+</Layout>

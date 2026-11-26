@@ -63,6 +63,28 @@ Every default role (`viewer`, `user`, `admin`) holds `spools:read`, so these
 checks only bite for custom roles without it or for API keys whose scopes leave
 it out.
 
+## FilaMan-DB community (`filamentdb:contribute`)
+
+`filamentdb:contribute` guards everything that sends to, rates on or reports to
+the FilaMan-DB with the stored API token: `POST /filamentdb/contributions/preview`,
+`/submit`, `/refresh`, and `PUT .../print-profiles/{id}/rating`,
+`POST .../print-profiles/{id}/report`. Each uses it as a dependency
+(`principal=RequirePermission("filamentdb:contribute")`) in the function head.
+It is seeded for the `admin` role only; grant it to other roles in the role
+editor. Because `seed_permissions()` inserts at startup, no migration is needed
+to add the key.
+
+Neighbouring rules:
+
+- The token itself (set, test, remove: `/filamentdb/token`) is a system setting
+  and needs `admin:system`. It is never returned, only "saved" plus the display
+  name. It is stored Fernet-encrypted with a key of its own (`FILAMAN_ENC_KEY`,
+  else the file `DATA_DIR/.filaman_enc.key`), not `OIDC_ENC_KEY`.
+- Adopting a community print profile (`POST .../print-profiles/{id}/import`)
+  creates a local profile and needs `filaments:update`.
+- Reading stays open: `GET /filamentdb/contributions`, `/contributions/status`
+  and the community profile search use `PrincipalDep`.
+
 ## API keys are self-service
 
 `backend/app/api/v1/me_api_keys.py` (create, list, delete) preserves ownership-based

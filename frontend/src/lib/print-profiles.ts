@@ -7,6 +7,7 @@ import { ApiError, api } from './api'
 import { getMe, hasPermission } from './auth'
 import { escapeHtml } from './extra-fields'
 import { bindFormDialog } from './form-dialog'
+import { mountContributeControl } from './filamentdb-contrib'
 import { t } from './i18n'
 
 export type ProfileFieldKind = 'int' | 'float' | 'text' | 'textarea' | 'tristate'
@@ -15,6 +16,7 @@ export interface ProfileField {
   key: string
   kind: ProfileFieldKind
   unit?: string
+  maxLength?: number
   min?: number
   max?: number
   step?: number
@@ -69,7 +71,7 @@ export const PROFILE_GROUPS: ProfileGroup[] = [
       int('bridge_fan_percent', '%', 0, 100),
     ],
   },
-  { id: 'other', fields: [int('bridge_flow_percent', '%', 50, 150), { key: 'material_notes', kind: 'textarea' }] },
+  { id: 'other', fields: [int('bridge_flow_percent', '%', 50, 150), { key: 'build_plate', kind: 'text', maxLength: 100 }, { key: 'material_notes', kind: 'textarea' }] },
 ]
 
 export const ALL_PROFILE_FIELDS: ProfileField[] = PROFILE_GROUPS.flatMap(group => group.fields)
@@ -153,7 +155,7 @@ function renderField(field: ProfileField, value: unknown): string {
     const sel = (v: string) => (text === v ? ' selected' : '')
     control = `<select id="${id}" class="fm-select" data-pp-field="${field.key}"><option value=""${sel('')}>${escapeHtml(t('printProfiles.unset'))}</option><option value="true"${sel('true')}>${escapeHtml(t('common.yes'))}</option><option value="false"${sel('false')}>${escapeHtml(t('common.no'))}</option></select>`
   } else {
-    control = `<input type="text" id="${id}" class="fm-input" maxlength="50" data-pp-field="${field.key}" value="${escapeHtml(text)}" />`
+    control = `<input type="text" id="${id}" class="fm-input" maxlength="${field.maxLength ?? 50}" data-pp-field="${field.key}" value="${escapeHtml(text)}" />`
   }
   return `<div class="pp-field"><label for="${id}" class="fm-label">${label}${unit}</label>${control}</div>`
 }
@@ -196,7 +198,7 @@ export interface PrintProfilesOptions {
   filamentId: number
 }
 
-export async function initPrintProfiles(options: PrintProfilesOptions) {
+export async function initPrintProfiles(options: PrintProfilesOptions): Promise<{ reload: () => Promise<void> }> {
   const { mount, dialog, filamentId } = options
   const base = `/filaments/${filamentId}/printer-profiles`
   const user = await getMe()
@@ -232,10 +234,14 @@ export async function initPrintProfiles(options: PrintProfilesOptions) {
       return `<article class="fm-card pp-card">
         <header><h3>${escapeHtml(profilePrinterLabel(profile))}</h3>
           <span class="pp-muted">${escapeHtml(profile.profile_name)}${profile.is_default_for_printer ? ` · ${escapeHtml(t('printProfiles.default'))}` : ''}</span></header>
-        <dl>${rows || `<p class="pp-muted">${escapeHtml(t('printProfiles.noCore'))}</p>`}</dl>${actions}</article>`
+        <dl>${rows || `<p class="pp-muted">${escapeHtml(t('printProfiles.noCore'))}</p>`}</dl>${actions}
+        <div class="pp-contrib" data-pp-contrib="${profile.id}"></div></article>`
     }).join('')
     mount.querySelector('[data-pp-list]')!.innerHTML = cards || `<p class="pp-muted">${escapeHtml(t('printProfiles.empty'))}</p>`
     mount.querySelector('[data-pp-add]')?.classList.toggle('hidden', !canEdit || printers.length === 0)
+    mount.querySelectorAll<HTMLElement>('[data-pp-contrib]').forEach(host => {
+      void mountContributeControl(host, 'print_profile', Number(host.dataset.ppContrib))
+    })
   }
 
   function openForm(profile: PrintProfile | null) {
@@ -290,4 +296,5 @@ export async function initPrintProfiles(options: PrintProfilesOptions) {
   })
 
   await load()
+  return { reload: load }
 }

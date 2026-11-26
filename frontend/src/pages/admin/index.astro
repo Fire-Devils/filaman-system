@@ -41,6 +41,10 @@ import Layout from '../../layouts/Layout.astro'
       <p style="font-size: 0.85rem; color: var(--text-muted);" data-i18n="admin.oidcDesc">Configure OpenID Connect Single Sign-On</p>
       <span id="oidc-https-warning" style="display: none; font-size: 0.8rem; color: var(--error-text); margin-top: 8px; display: none;" data-i18n="admin.oidcHttpsRequired">OIDC requires HTTPS</span>
     </a>
+    <a href="/admin/system/filamentdb-contributions" class="fm-card fm-card-hover" style="padding: 24px; text-decoration: none; display: block; color: inherit;">
+      <h2><svg aria-hidden="true" focusable="false"><use href="/icons.svg?v=2#icon-database" /></svg><span data-i18n="fdbContrib.list.cardTitle">My submissions</span></h2>
+      <p style="font-size: 0.85rem; color: var(--text-muted);" data-i18n="fdbContrib.list.cardDesc">Status of submissions to the FilaMan-DB</p>
+    </a>
     <a href="/admin/app-settings" class="fm-card fm-card-hover" style="padding: 24px; text-decoration: none; display: block; color: inherit;">
       <h2><svg aria-hidden="true" focusable="false"><use href="/icons.svg?v=2#icon-settings" /></svg><span data-i18n="admin.appSettings">App Settings</span></h2>
       <p style="font-size: 0.85rem; color: var(--text-muted);" data-i18n="admin.appSettingsDesc">Application-wide settings like login and authentication</p>

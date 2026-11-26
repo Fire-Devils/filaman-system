@@ -50,6 +50,8 @@ class PrintProfileFields(BaseModel):
     bridge_flow_percent: int | None = None
     bridge_fan_percent: int | None = None
 
+    build_plate: str | None = Field(None, max_length=100)
+
     material_notes: str | None = Field(None, max_length=2000)
 
 
