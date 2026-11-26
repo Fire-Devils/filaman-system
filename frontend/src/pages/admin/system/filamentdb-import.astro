@@ -167,6 +167,7 @@ import FormSection from '../../../components/FormSection.astro'
     interface LinkedFilament { fdb_id: number; local_id: number; designation: string; changes: LinkedChange[] }
     interface LinkedManufacturer {
       fdb_manufacturer_id: number
+      local_id?: number | null
       name: string
       changes: LinkedChange[]
       filaments: LinkedFilament[]
@@ -178,6 +179,7 @@ import FormSection from '../../../components/FormSection.astro'
       identical_count: number
       missing_in_db: { fdb_id: number; designation: string; manufacturer_name: string }[]
       manufacturers: LinkedManufacturer[]
+      warnings?: string[]
     }
 
     interface ImportResult {
@@ -983,13 +985,45 @@ import FormSection from '../../../components/FormSection.astro'
       return escapeHtml(typeof v === 'object' ? (Array.isArray(v) ? v.join(', ') : JSON.stringify(v)) : String(v))
     }
 
-    function renderLinkedChange(c: LinkedChange, attrs: string): string {
+    const IMG_STYLE = 'max-height: 48px; max-width: 96px; vertical-align: middle; border: 1px solid var(--border); border-radius: 4px; background: #fff;'
+
+    function thumb(src: string, label: string): string {
+      return `<img src="${escapeHtml(src)}" alt="${escapeHtml(label)}" title="${escapeHtml(label)}" loading="lazy" style="${IMG_STYLE}" onerror="this.replaceWith(document.createTextNode('-'))" />`
+    }
+
+    function spoolImageSrc(v: unknown): string {
+      if (typeof v !== 'string' || v.length > 500 || v.includes('..') || !/^[A-Za-z0-9][A-Za-z0-9_.-]*$/.test(v)) return ''
+      return `/api/v1/filamentdb/spool-profile-image?image_file=${encodeURIComponent(v)}`
+    }
+
+    // Bild-Felder als Vorschau; null = normale Textanzeige
+    function formatImageValue(c: LinkedChange, side: 'old' | 'new', mfrLocalId?: number | null): string | null {
+      const v = side === 'old' ? c.old : c.new
+      if (v === null || v === undefined || v === '') return null
+      if (c.field === 'filamentdb_spool_image_file') {
+        const src = spoolImageSrc(v)
+        return src ? thumb(src, String(v)) : null
+      }
+      if (c.field === 'image_url') {
+        return typeof v === 'string' && /^https?:\/\//i.test(v) ? thumb(v, v) : null
+      }
+      if (c.field === 'logo' || c.field === 'label_logo') {
+        if (side === 'new') return escapeHtml(t('filamentdb.newLogoVersion'))
+        if (!mfrLocalId) return escapeHtml(String(v))
+        return thumb(`/api/v1/manufacturers/${mfrLocalId}/${c.field === 'logo' ? 'logo' : 'label-logo'}`, fieldLabel(c.field))
+      }
+      return null
+    }
+
+    function renderLinkedChange(c: LinkedChange, attrs: string, mfrLocalId?: number | null): string {
+      const oldHtml = formatImageValue(c, 'old', mfrLocalId) ?? formatLinkedValue(c.old)
+      const newHtml = formatImageValue(c, 'new', mfrLocalId) ?? formatLinkedValue(c.new)
       return `<label style="display: flex; align-items: baseline; gap: 8px; padding: 2px 0; font-size: 0.8rem;">
         <input type="checkbox" class="chg-cb" ${attrs} data-field="${escapeHtml(c.field)}" checked />
         <span style="min-width: 160px; color: var(--text-muted);">${escapeHtml(fieldLabel(c.field))}</span>
-        <span style="color: var(--error-text);">${formatLinkedValue(c.old)}</span>
+        <span style="color: var(--error-text);">${oldHtml}</span>
         <span aria-hidden="true">&rarr;</span>
-        <span style="color: var(--accent-2, green);">${formatLinkedValue(c.new)}</span>
+        <span style="color: var(--accent-2, green);">${newHtml}</span>
       </label>`
     }
 
@@ -1005,7 +1039,7 @@ import FormSection from '../../../components/FormSection.astro'
           </summary><div style="padding: 8px 14px;">`
         if (g.changes.length) {
           html += `<div style="margin-bottom: 8px;"><div style="font-size: 0.85rem; font-weight: 500;">${escapeHtml(t('filamentdb.syncLinkedMfrData'))}</div>`
-          html += g.changes.map(c => renderLinkedChange(c, `data-scope="mfr" data-mfr-id="${mid}"`)).join('')
+          html += g.changes.map(c => renderLinkedChange(c, `data-scope="mfr" data-mfr-id="${mid}"`, g.local_id)).join('')
           html += '</div>'
         }
         for (const f of g.filaments) {
@@ -1102,6 +1136,9 @@ import FormSection from '../../../components/FormSection.astro'
             linked: data.linked_count, changed, identical: data.identical_count, unlinked: data.unlinked_count,
           }),
         )}</div>`
+        if (data.warnings?.length) {
+          html += `<ul style="padding-left: 20px; font-size: 0.85rem; color: var(--text-muted);">${data.warnings.map(w => `<li>${escapeHtml(w)}</li>`).join('')}</ul>`
+        }
         if (data.unlinked_count > 0) {
           html += `<div style="padding-bottom: 8px; font-size: 0.85rem; color: var(--text-muted);">${escapeHtml(t('filamentdb.syncLinkedUnlinkedHint'))}</div>`
         }
