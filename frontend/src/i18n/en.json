@@ -1895,7 +1895,10 @@
     "importInProgress": "Another Spoolman import or repair is already running."
   },
   "filamentdb": {
+    "newLogoVersion": "new version",
     "fieldLabels": {
+      "logo": "Logo",
+      "label_logo": "Label logo",
       "designation": "Designation",
       "material_subgroup": "Material subgroup",
       "diameter_mm": "Diameter (mm)",

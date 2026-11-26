@@ -1896,7 +1896,10 @@
     "importInProgress": "Ein anderer Spoolman-Import oder eine Reparatur wird bereits ausgeführt."
   },
   "filamentdb": {
+    "newLogoVersion": "neue Version",
     "fieldLabels": {
+      "logo": "Logo",
+      "label_logo": "Etikett-Logo",
       "designation": "Bezeichnung",
       "material_subgroup": "Materialuntergruppe",
       "diameter_mm": "Durchmesser (mm)",

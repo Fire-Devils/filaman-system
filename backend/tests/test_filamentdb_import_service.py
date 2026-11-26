@@ -1225,3 +1225,167 @@ async def test_update_linked_empty_selection_is_noop(db_session):
     result = await service.update_linked_filaments([], [])
     service._linked_detail.assert_not_called()
     assert result.filaments_updated == 0
+
+
+# ------------------------------------------------------------------ #
+#  Hersteller-Logos im Abgleich
+# ------------------------------------------------------------------ #
+
+_PNG = b"\x89PNG\r\n\x1a\n" + b"logo-bytes"
+
+
+class _FakeLogoClient:
+    responses: dict = {}
+
+    def __init__(self, *a, **kw):
+        pass
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *a):
+        return False
+
+    async def get(self, url):
+        status, content = self.responses[url.rsplit("/logos/", 1)[1]]
+        return MagicMock(status_code=status, content=content)
+
+
+async def _logo_fixture(db_session, tmp_path, monkeypatch, responses, *, web=True, label=False):
+    monkeypatch.setattr("app.services.filamentdb_import_service.LOGO_DIR", tmp_path)
+    monkeypatch.setattr("app.services.filamentdb_import_service.httpx.AsyncClient", _FakeLogoClient)
+    _FakeLogoClient.responses = responses
+    service, linked, mfr = await _linked_fixture(db_session)
+    cached = response_cache.get(SYNC_CACHE_KEY)
+    m = cached["data"]["manufacturers"][0]
+    m.update(slug="acme", has_web_logo=web, has_label_logo=label)
+    response_cache.set(SYNC_CACHE_KEY, cached)
+    return service, mfr
+
+
+def _logo_changes(out):
+    return {c["field"]: c for c in out["manufacturers"][0]["changes"] if "logo" in c["field"]}
+
+
+@pytest.mark.asyncio
+async def test_logo_missing_locally_is_a_change_and_update_writes_it(db_session, tmp_path, monkeypatch):
+    service, mfr = await _logo_fixture(
+        db_session, tmp_path, monkeypatch, {"web/acme.png": (200, _PNG), "label/acme.png": (200, _PNG)}, label=True
+    )
+    out = await service.diff_linked_filaments(snapshot_id="linked")
+    ch = _logo_changes(out)
+    assert set(ch) == {"logo", "label_logo"}
+    assert ch["logo"]["old"] is None and len(ch["logo"]["new"]) == 12
+    assert "_logo_cache" not in out
+    result = await service.update_linked_filaments(
+        [], [{"fdb_manufacturer_id": 5, "fields": ["logo"]}], snapshot_id="linked"
+    )
+    assert result.logos_downloaded == 1
+    await db_session.refresh(mfr)
+    assert mfr.logo_file == f"{mfr.id}.png"
+    assert (tmp_path / f"{mfr.id}.png").read_bytes() == _PNG
+    assert not (tmp_path / f"{mfr.id}_label.png").exists()  # abgewaehlt
+    assert mfr.label_logo_file is None
+
+
+@pytest.mark.asyncio
+async def test_same_logo_is_no_change_and_different_logo_is_change(db_session, tmp_path, monkeypatch):
+    service, mfr = await _logo_fixture(db_session, tmp_path, monkeypatch, {"web/acme.png": (200, _PNG)})
+    (tmp_path / f"{mfr.id}.png").write_bytes(_PNG)
+    mfr.logo_file = f"{mfr.id}.png"
+    await db_session.commit()
+    assert _logo_changes(await service.diff_linked_filaments(snapshot_id="linked")) == {}
+    (tmp_path / f"{mfr.id}.png").write_bytes(_PNG + b"old")
+    ch = _logo_changes(await service.diff_linked_filaments(snapshot_id="linked"))
+    assert ch["logo"]["old"] == "vorhanden"
+    await service.update_linked_filaments([], [{"fdb_manufacturer_id": 5, "fields": ["logo"]}], snapshot_id="linked")
+    assert (tmp_path / f"{mfr.id}.png").read_bytes() == _PNG
+
+
+@pytest.mark.asyncio
+async def test_invalid_logo_is_discarded_with_warning(db_session, tmp_path, monkeypatch):
+    for content in (b"<html>not png</html>", _PNG + b"x" * (2 * 1024 * 1024)):
+        service, _mfr = await _logo_fixture(db_session, tmp_path, monkeypatch, {"web/acme.png": (200, content)})
+        out = await service.diff_linked_filaments(snapshot_id="linked")
+        assert _logo_changes(out) == {}
+        assert any("verworfen" in w for w in out["warnings"])
+        await db_session.rollback()
+        await db_session.execute(delete(Filament))
+        await db_session.execute(delete(Manufacturer))
+        await db_session.commit()
+
+
+@pytest.mark.asyncio
+async def test_logo_http_error_gives_warning_not_change(db_session, tmp_path, monkeypatch):
+    service, _mfr = await _logo_fixture(db_session, tmp_path, monkeypatch, {"web/acme.png": (404, b"")})
+    out = await service.diff_linked_filaments(snapshot_id="linked")
+    assert _logo_changes(out) == {}
+    assert any("404" in w for w in out["warnings"])
+
+
+class _CountingClient(_FakeLogoClient):
+    calls = 0
+
+    async def get(self, url):
+        type(self).calls += 1
+        return await super().get(url)
+
+
+async def _ts_fixture(db_session, tmp_path, monkeypatch, *, fdb_ts, local_ts, local_bytes):
+    service, mfr = await _logo_fixture(db_session, tmp_path, monkeypatch, {"web/acme.png": (200, _PNG)})
+    monkeypatch.setattr("app.services.filamentdb_import_service.httpx.AsyncClient", _CountingClient)
+    _CountingClient.calls = 0
+    cached = response_cache.get(SYNC_CACHE_KEY)
+    if fdb_ts:
+        cached["data"]["manufacturers"][0]["web_logo_updated_at"] = fdb_ts
+    response_cache.set(SYNC_CACHE_KEY, cached)
+    mfr.logo_file = f"{mfr.id}.png"
+    (tmp_path / f"{mfr.id}.png").write_bytes(local_bytes)
+    if local_ts:
+        mfr.custom_fields = {"filamentdb_logo_updated_at": local_ts}
+    await db_session.commit()
+    return service, mfr
+
+
+@pytest.mark.asyncio
+async def test_same_timestamp_skips_download(db_session, tmp_path, monkeypatch):
+    service, _ = await _ts_fixture(
+        db_session, tmp_path, monkeypatch, fdb_ts="2026-01-01T00:00:00Z",
+        local_ts="2026-01-01T00:00:00Z", local_bytes=b"whatever",
+    )
+    out = await service.diff_linked_filaments(snapshot_id="linked")
+    assert _logo_changes(out) == {} and _CountingClient.calls == 0
+
+
+@pytest.mark.asyncio
+async def test_other_timestamp_downloads_and_update_stores_timestamp(db_session, tmp_path, monkeypatch):
+    service, mfr = await _ts_fixture(
+        db_session, tmp_path, monkeypatch, fdb_ts="2026-02-01T00:00:00Z",
+        local_ts="2026-01-01T00:00:00Z", local_bytes=_PNG + b"old",
+    )
+    out = await service.diff_linked_filaments(snapshot_id="linked")
+    assert "logo" in _logo_changes(out) and _CountingClient.calls == 1
+    await service.update_linked_filaments([], [{"fdb_manufacturer_id": 5, "fields": ["logo"]}], snapshot_id="linked")
+    await db_session.refresh(mfr)
+    assert mfr.custom_fields["filamentdb_logo_updated_at"] == "2026-02-01T00:00:00Z"
+
+
+@pytest.mark.asyncio
+async def test_missing_fdb_timestamp_uses_hash_compare(db_session, tmp_path, monkeypatch):
+    service, mfr = await _ts_fixture(
+        db_session, tmp_path, monkeypatch, fdb_ts=None, local_ts="2026-01-01T00:00:00Z", local_bytes=_PNG,
+    )
+    out = await service.diff_linked_filaments(snapshot_id="linked")
+    assert _logo_changes(out) == {} and _CountingClient.calls == 1
+    assert mfr.custom_fields["filamentdb_logo_updated_at"] == "2026-01-01T00:00:00Z"
+
+
+@pytest.mark.asyncio
+async def test_same_hash_new_timestamp_backfills_timestamp(db_session, tmp_path, monkeypatch):
+    service, mfr = await _ts_fixture(
+        db_session, tmp_path, monkeypatch, fdb_ts="2026-03-01T00:00:00Z", local_ts=None, local_bytes=_PNG,
+    )
+    out = await service.diff_linked_filaments(snapshot_id="linked")
+    assert _logo_changes(out) == {} and _CountingClient.calls == 1
+    await db_session.refresh(mfr)
+    assert mfr.custom_fields["filamentdb_logo_updated_at"] == "2026-03-01T00:00:00Z"

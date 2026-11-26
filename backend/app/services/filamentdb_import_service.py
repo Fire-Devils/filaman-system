@@ -1,7 +1,11 @@
 """FilamentDB-Import-Service: Daten aus der FilamentDB importieren."""
 
+import asyncio
 import copy
+import hashlib
 import logging
+import os
+import tempfile
 from collections import Counter, defaultdict
 from dataclasses import dataclass, field
 from typing import Any, ClassVar, Literal
@@ -36,6 +40,10 @@ SYNC_CACHE_TTL_SECONDS = 300
 
 # Uploads-Verzeichnis fuer Hersteller-Logos (persistenter Pfad)
 from app.core.config import MANUFACTURER_LOGO_DIR as LOGO_DIR
+
+LOGO_MAX_BYTES = 2 * 1024 * 1024
+LOGO_PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
+LOGO_CONCURRENCY = 5
 
 # Schwellwert fuer Fuzzy-Matching (75%)
 FUZZY_THRESHOLD = FUZZY_MATCH_THRESHOLD
@@ -1015,8 +1023,148 @@ class FilamentDBImportService:
         ("spool_material", "spool_material"),
     ]
     _MFR_WRITABLE: ClassVar[frozenset[str]] = frozenset(
-        {"url", "empty_spool_weight_g", "spool_outer_diameter_mm", "spool_width_mm", "spool_material"}
+        {
+            "url",
+            "empty_spool_weight_g",
+            "spool_outer_diameter_mm",
+            "spool_width_mm",
+            "spool_material",
+            "logo",
+            "label_logo",
+        }
     )
+    # Logo-Feld -> (FDB-Flag, URL-Unterordner, lokales Attribut, Dateisuffix)
+    _LOGO_KINDS: ClassVar[dict[str, tuple[str, str, str, str]]] = {
+        "logo": ("has_web_logo", "web", "logo_file", ".png"),
+        "label_logo": ("has_label_logo", "label", "label_logo_file", "_label.png"),
+    }
+    # Logo-Feld -> (FDB-Zeitstempelfeld, lokaler custom_fields-Key)
+    _LOGO_TS: ClassVar[dict[str, tuple[str, str]]] = {
+        "logo": ("web_logo_updated_at", "filamentdb_logo_updated_at"),
+        "label_logo": ("label_logo_updated_at", "filamentdb_label_logo_updated_at"),
+    }
+
+    @classmethod
+    def _local_logo_ts(cls, mfr: Manufacturer, kind: str) -> str | None:
+        cf = mfr.custom_fields
+        val = cf.get(cls._LOGO_TS[kind][1]) if isinstance(cf, dict) else None
+        return val if isinstance(val, str) and val else None
+
+    @classmethod
+    def _set_logo_ts(cls, mfr: Manufacturer, kind: str, ts: str | None) -> None:
+        if not ts:
+            return
+        cf = dict(mfr.custom_fields) if isinstance(mfr.custom_fields, dict) else {}
+        cf[cls._LOGO_TS[kind][1]] = ts
+        mfr.custom_fields = cf
+
+    @staticmethod
+    def _check_logo_bytes(content: bytes) -> str | None:
+        """Fehlertext, wenn die Datei kein gueltiges (PNG, <= 2 MB) Logo ist."""
+        if len(content) > LOGO_MAX_BYTES:
+            return "Datei groesser als 2 MB"
+        if not content.startswith(LOGO_PNG_SIGNATURE):
+            return "keine PNG-Datei"
+        return None
+
+    @staticmethod
+    def _local_logo_sha(mfr: Manufacturer, attr: str) -> str | None:
+        name = getattr(mfr, attr, None)
+        if not name:
+            return None
+        path = LOGO_DIR / os.path.basename(name)
+        try:
+            return hashlib.sha256(path.read_bytes()).hexdigest()
+        except OSError:
+            return None
+
+    async def _fetch_logo_changes(
+        self,
+        targets: list[tuple[Manufacturer, dict[str, Any]]],
+        warnings: list[str],
+        cache: dict[tuple[int, str], bytes],
+        ts_cache: dict[tuple[int, str], str],
+    ) -> dict[int, list[dict[str, Any]]]:
+        """Logos der FDB laden und per SHA-256 mit den lokalen vergleichen."""
+        jobs: list[tuple[Manufacturer, str, str, str | None]] = []
+        for mfr, fdb_mfr in targets:
+            slug = fdb_mfr.get("slug")
+            if not slug:
+                continue
+            for kind, (flag, folder, attr, _suffix) in self._LOGO_KINDS.items():
+                if not fdb_mfr.get(flag):
+                    continue
+                ts = fdb_mfr.get(self._LOGO_TS[kind][0])
+                ts = ts if isinstance(ts, str) and ts else None
+                if (
+                    ts
+                    and ts == self._local_logo_ts(mfr, kind)
+                    and getattr(mfr, attr) is not None
+                    and self._local_logo_sha(mfr, attr) is not None
+                ):
+                    continue  # unveraendert laut Zeitstempel, kein Download
+                jobs.append((mfr, kind, f"{FILAMENTDB_URL}/uploads/logos/{folder}/{slug}.png", ts))
+        out: dict[int, list[dict[str, Any]]] = defaultdict(list)
+        if not jobs:
+            return out
+        sem = asyncio.Semaphore(LOGO_CONCURRENCY)
+
+        async with httpx.AsyncClient(timeout=HTTP_TIMEOUT) as client:
+
+            async def fetch(url: str) -> tuple[bytes | None, str | None]:
+                async with sem:
+                    try:
+                        resp = await client.get(url)
+                    except httpx.HTTPError as e:
+                        return None, f"fehlgeschlagen: {e}"
+                if resp.status_code != 200:
+                    return None, f"nicht verfuegbar (HTTP {resp.status_code})"
+                err = self._check_logo_bytes(resp.content)
+                if err:
+                    return None, f"verworfen ({err})"
+                return resp.content, None
+
+            fetched = await asyncio.gather(*(fetch(url) for _, _, url, _ in jobs))
+        for (mfr, kind, _url, ts), (content, err) in zip(jobs, fetched, strict=True):
+            label = "Logo" if kind == "logo" else "Etikett-Logo"
+            if content is None:
+                warnings.append(f"{label} fuer '{mfr.name}': {err}")
+                continue
+            new_sha = hashlib.sha256(content).hexdigest()
+            old_sha = self._local_logo_sha(mfr, self._LOGO_KINDS[kind][2])
+            if old_sha == new_sha:
+                if ts and ts != self._local_logo_ts(mfr, kind):
+                    self._set_logo_ts(mfr, kind, ts)  # reine Metadaten nachtragen
+                continue
+            cache[(mfr.id, kind)] = content
+            if ts:
+                ts_cache[(mfr.id, kind)] = ts
+            out[mfr.id].append(
+                {
+                    "field": kind,
+                    "old": "vorhanden" if old_sha else None,
+                    "new": new_sha[:12],
+                }
+            )
+        return out
+
+    def _write_logo(self, mfr: Manufacturer, kind: str, content: bytes) -> None:
+        """Logo atomar unter festem Namen schreiben und am Hersteller setzen."""
+        _flag, _folder, attr, suffix = self._LOGO_KINDS[kind]
+        filename = f"{mfr.id}{suffix}"
+        LOGO_DIR.mkdir(parents=True, exist_ok=True)
+        fd, tmp = tempfile.mkstemp(dir=LOGO_DIR, suffix=".tmp")
+        try:
+            with os.fdopen(fd, "wb") as fh:
+                fh.write(content)
+            os.replace(tmp, LOGO_DIR / filename)
+        except BaseException:
+            try:
+                os.unlink(tmp)
+            except OSError:
+                pass
+            raise
+        setattr(mfr, attr, filename)
     _FILAMENT_PROTECTED: ClassVar[frozenset[str]] = frozenset(
         {"id", "manufacturer_id", "custom_fields", "label_field_aliases", "record_token"}
     )
@@ -1070,6 +1218,9 @@ class FilamentDBImportService:
             "identical_count": 0,
             "missing_in_db": [],
             "manufacturers": [],
+            "warnings": [],
+            "_logo_cache": {},
+            "_logo_ts": {},
         }
         if not linked:
             return empty
@@ -1136,17 +1287,20 @@ class FilamentDBImportService:
             )
 
         manufacturers: list[dict[str, Any]] = []
+        pending: list[tuple[int, dict[str, Any], Manufacturer | None, str, list[dict[str, Any]], dict]] = []
+        warnings: list[str] = []
+        logo_cache: dict[tuple[int, str], bytes] = {}
+        logo_ts: dict[tuple[int, str], str] = {}
         for fdb_mfr_id, group in groups.items():
             name = fdb_mfr_names.get(fdb_mfr_id, "")
             mfr_changes: list[dict[str, Any]] = []
-            local_mfr_id: int | None = None
+            fdb_mfr: dict[str, Any] = {}
             mfr = (
                 await self.db.execute(
                     select(Manufacturer).where(func.lower(Manufacturer.name) == name.lower())
                 )
             ).scalars().first() if name else None
             if mfr is not None:
-                local_mfr_id = mfr.id
                 fdb_mfr = next((m for m in data.get("manufacturers", []) if m.get("id") == fdb_mfr_id), {})
                 website = (fdb_mfr.get("website") or "").strip() or None
                 if website and website != mfr.url:
@@ -1172,12 +1326,22 @@ class FilamentDBImportService:
                         elif new == old:
                             continue
                         mfr_changes.append({"field": attr, "old": old, "new": new})
+            pending.append((fdb_mfr_id, group, mfr, name, mfr_changes, fdb_mfr))
+
+        logo_changes = await self._fetch_logo_changes(
+            [(m, f) for _, _, m, _, _, f in pending if m is not None], warnings, logo_cache, logo_ts
+        )
+        if self.db.dirty:
+            await self.db.commit()
+        for fdb_mfr_id, group, mfr, name, mfr_changes, _fdb_mfr in pending:
+            if mfr is not None:
+                mfr_changes.extend(logo_changes.get(mfr.id, []))
             if not mfr_changes and not group["filaments"]:
                 continue
             manufacturers.append(
                 {
                     "fdb_manufacturer_id": fdb_mfr_id,
-                    "local_id": local_mfr_id,
+                    "local_id": mfr.id if mfr is not None else None,
                     "name": mfr.name if mfr is not None else name,
                     "changes": mfr_changes,
                     "filaments": group["filaments"],
@@ -1191,13 +1355,16 @@ class FilamentDBImportService:
             "identical_count": identical_count,
             "missing_in_db": missing,
             "manufacturers": manufacturers,
+            "warnings": warnings,
+            "_logo_cache": logo_cache,
+            "_logo_ts": logo_ts,
         }
 
     async def diff_linked_filaments(self, snapshot_id: str | None = None) -> dict[str, Any]:
         """Alle mit der FilamentDB verknuepften lokalen Filamente abgleichen."""
         detail = await self._linked_detail(snapshot_id)
-        for group in detail["manufacturers"]:
-            group.pop("local_id", None)
+        detail.pop("_logo_cache", None)
+        detail.pop("_logo_ts", None)
         return detail
 
     async def update_linked_filaments(
@@ -1266,6 +1433,18 @@ class FilamentDBImportService:
             if mfr is None:
                 continue
             for field_name, value in chosen.items():
+                if field_name in self._LOGO_KINDS:
+                    content = detail["_logo_cache"].get((mfr.id, field_name))
+                    err = self._check_logo_bytes(content) if content is not None else "nicht geladen"
+                    if err is None and hashlib.sha256(content).hexdigest()[:12] != value:
+                        err = "Inhalt weicht vom Abgleich ab"
+                    if err is not None:
+                        result.warnings.append(f"Logo fuer '{mfr.name}' nicht geschrieben: {err}")
+                        continue
+                    self._write_logo(mfr, field_name, content)
+                    self._set_logo_ts(mfr, field_name, detail["_logo_ts"].get((mfr.id, field_name)))
+                    result.logos_downloaded += 1
+                    continue
                 setattr(mfr, field_name, value)
             result.manufacturers_updated += 1
 
@@ -2054,6 +2233,7 @@ class FilamentDBImportService:
                                 mfr = mfr_result.scalar_one_or_none()
                                 if mfr:
                                     mfr.logo_file = logo_filename
+                                    self._set_logo_ts(mfr, "logo", mfr_data.get("web_logo_updated_at"))
                                 result.logos_downloaded += 1
                             else:
                                 result.logos_failed += 1
@@ -2089,6 +2269,7 @@ class FilamentDBImportService:
                                 mfr = mfr_result.scalar_one_or_none()
                                 if mfr:
                                     mfr.label_logo_file = label_filename
+                                    self._set_logo_ts(mfr, "label_logo", mfr_data.get("label_logo_updated_at"))
                                 result.logos_downloaded += 1
                             else:
                                 result.warnings.append(
