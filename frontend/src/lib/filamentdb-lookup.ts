@@ -222,7 +222,7 @@ export function createFilamentDbLookup<T = unknown>(opts: LookupOptions<T>): Loo
 
         if (items.length === 0) {
           const contribute = `${t('filamentdbLookup.noResultsContribute')} <a href="${FILAMENTDB_SITE_URL}" target="_blank" rel="noopener noreferrer">${t('filamentdbLookup.contributeLink')}</a>`
-          resultsEl.innerHTML = `<div class="fdb-lookup-empty">${t('filamentdbLookup.noResults')}<br>${contribute}</div>`
+          resultsEl.innerHTML = `<div class="fdb-lookup-empty">${t('filamentdbLookup.noResults')}<div class="fm-db-hint">${contribute}</div></div>`
         } else {
           resultsEl.innerHTML = items
             .map((item: T, idx: number) => `<button type="button" class="fdb-lookup-item" data-index="${idx}">${renderItem(item)}</button>`)
