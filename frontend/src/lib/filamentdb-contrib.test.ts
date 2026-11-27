@@ -173,3 +173,14 @@ describe('planBulkSend', () => {
     ])
   })
 })
+
+describe('formatPayloadValue colors', () => {
+  it('hides a color name that only repeats the hex code', () => {
+    expect(formatPayloadValue([{ color_name: 'eeff00', hex_code: '#EEFF00' }])).toBe('#EEFF00')
+    expect(formatPayloadValue([{ color_name: '#EEFF00', hex_code: '#eeff00' }])).toBe('#eeff00')
+    expect(formatPayloadValue([{ hex_code: '#ff0000' }])).toBe('#ff0000')
+  })
+  it('keeps real names', () => {
+    expect(formatPayloadValue([{ color_name: 'Rot', hex_code: '#ff0000' }, { color_name: 'Blau', hex_code: '#0000ff' }])).toBe('Rot #ff0000, Blau #0000ff')
+  })
+})

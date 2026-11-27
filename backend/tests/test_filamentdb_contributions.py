@@ -973,7 +973,7 @@ async def test_preview_blocker_carries_ids_for_links(auth_client, fake_db, entit
 
 
 @pytest.mark.asyncio
-async def test_profile_model_link_applies_to_profiles_and_printers(auth_client, fake_db, entities, db_session):
+async def test_profile_model_link_applies_to_profiles_not_printers(auth_client, fake_db, entities, db_session):
     client, csrf = auth_client
     await _save_token(client, csrf)
     fake_db.matches = {"printer_model": [{"id": 13, "score": 0.8}]}
@@ -984,4 +984,42 @@ async def test_profile_model_link_applies_to_profiles_and_printers(auth_client, 
     for obj in entities.values():
         await db_session.refresh(obj)
     assert entities["profile"].filamentdb_printer_model_id == 13
-    assert entities["printer"].filamentdb_printer_model_id == 13
+    # Profil-Link läuft unter filaments:update und darf keine Drucker ändern
+    assert entities["printer"].filamentdb_printer_model_id is None
+
+
+@pytest.mark.parametrize("name", ["eeff00", "#EEFF00", "ffe100", "abc", "#ABC", "11223344", " eeff00 "])
+def test_hex_only_names_are_detected(name):
+    from app.services.filamentdb_contribution_service import is_hex_only_name
+
+    assert is_hex_only_name(name)
+
+
+@pytest.mark.parametrize("name", ["Rot", "Yellow Fluorescent", "beef", "eeff0", "eeff000", "ggg", "", None, "Fade"])
+def test_real_names_are_not_hex_only(name):
+    from app.services.filamentdb_contribution_service import is_hex_only_name
+
+    assert not is_hex_only_name(name)
+
+
+@pytest.mark.asyncio
+async def test_hex_only_color_names_are_not_sent(auth_client, fake_db, entities, db_session):
+    client, csrf = auth_client
+    await _save_token(client, csrf)
+    entities["mfr"].custom_fields = {"filamentdb_id": 7}
+    entities["fil"].manufacturer_color_name = "eeff00"
+    color = Color(name="eeff00", hex_code="#EEFF00")
+    db_session.add(color)
+    await db_session.flush()
+    db_session.add(FilamentColor(filament_id=entities["fil"].id, color_id=color.id, position=2))
+    await db_session.commit()
+    resp = await client.post(
+        f"{BASE}/contributions/preview",
+        json={"type": "filament", "local_id": entities["fil"].id},
+        headers=_h(csrf),
+    )
+    assert resp.status_code == 200, resp.text
+    payload = resp.json()["payload"]
+    assert "color_name" not in payload
+    assert payload["colors"][0]["color_name"] == "Rot"
+    assert payload["colors"][1] == {"hex_code": "#eeff00", "position": 2}

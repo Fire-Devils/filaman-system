@@ -179,9 +179,13 @@ export function formatPayloadValue(value: unknown): string {
   if (value === null || value === undefined) return '—'
   if (typeof value === 'boolean') return t(value ? 'fdbContrib.yes' : 'fdbContrib.no')
   if (Array.isArray(value)) {
-    return value.map(item => (item && typeof item === 'object'
-      ? [(item as Record<string, unknown>).color_name, (item as Record<string, unknown>).hex_code].filter(Boolean).join(' ')
-      : String(item))).join(', ')
+    return value.map(item => {
+      if (!item || typeof item !== 'object') return String(item)
+      const { color_name: name, hex_code: hex } = item as Record<string, unknown>
+      const bare = (v: unknown) => String(v ?? '').replace(/^#/, '').toLowerCase()
+      const showName = name && bare(name) !== bare(hex)
+      return [showName ? name : null, hex].filter(Boolean).join(' ')
+    }).join(', ')
   }
   return String(value)
 }
