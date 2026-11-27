@@ -2822,6 +2822,7 @@
       "implausible_value": "Valeur peu plausible"
     },
     "errors": {
+      "no_changes": "FilaMan-DB contient déjà les mêmes valeurs. Rien à envoyer.",
       "filamentdb_token_missing": "Aucun jeton FilaMan-DB n'est enregistré.",
       "filamentdb_token_invalid": "Le jeton FilaMan-DB est invalide ou expiré. Saisissez-le à nouveau dans les paramètres du profil.",
       "filamentdb_token_user_required": "Le jeton FilaMan-DB appartient à un compte utilisateur et n'est pas disponible avec une clé API ou un appareil.",

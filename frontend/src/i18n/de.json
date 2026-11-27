@@ -2823,6 +2823,7 @@
       "implausible_value": "Unplausibler Wert"
     },
     "errors": {
+      "no_changes": "In der FilaMan-DB stehen schon dieselben Werte. Es gibt nichts zu senden.",
       "filamentdb_token_missing": "Es ist kein FilaMan-DB-Token hinterlegt.",
       "filamentdb_token_invalid": "Der FilaMan-DB-Token ist ungültig oder abgelaufen. Bitte in den Profileinstellungen neu eingeben.",
       "filamentdb_token_user_required": "Der FilaMan-DB-Token gehört zu einem Benutzerkonto; mit einem API-Key oder Gerät ist er nicht verfügbar.",

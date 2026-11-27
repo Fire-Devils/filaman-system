@@ -2822,6 +2822,7 @@
       "implausible_value": "Implausible value"
     },
     "errors": {
+      "no_changes": "The FilaMan-DB already has the same values. There is nothing to send.",
       "filamentdb_token_missing": "No FilaMan-DB token is saved.",
       "filamentdb_token_invalid": "The FilaMan-DB token is invalid or expired. Please enter it again in your profile settings.",
       "filamentdb_token_user_required": "The FilaMan-DB token belongs to a user account and is not available with an API key or device.",
