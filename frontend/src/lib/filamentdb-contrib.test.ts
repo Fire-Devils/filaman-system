@@ -86,6 +86,16 @@ describe('FilaMan-DB contribution rendering', () => {
     expect(html).toContain('Acme')
   })
 
+  it('shows "already linked" as an info note, not as a missing item', () => {
+    const html = renderPreviewBody({
+      ...basePreview,
+      blockers: [{ code: 'already_linked', message: 'Manufacturer is already linked' }],
+    })
+    expect(html).toContain('fm-alert-info')
+    expect(html).not.toContain('fm-alert-error')
+    expect(html).toContain('nothing to send')
+  })
+
   it('shows names instead of ids when display values exist', () => {
     const html = renderPreviewBody({
       ...basePreview,

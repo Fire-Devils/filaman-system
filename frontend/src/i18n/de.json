@@ -2776,6 +2776,7 @@
     "dependenciesTitle": "Wird zuerst eingereicht",
     "dependenciesHint": "Das Objekt wartet, bis diese Einträge freigegeben sind, und wird dann automatisch gesendet.",
     "blockersTitle": "Das fehlt noch",
+    "alreadyLinkedInfo": "Ist bereits mit der FilaMan-DB verknüpft. Es gibt nichts zu senden.",
     "noPayload": "Keine Daten zum Senden.",
     "yes": "Ja",
     "no": "Nein",

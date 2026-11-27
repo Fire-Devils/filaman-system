@@ -2775,6 +2775,7 @@
     "dependenciesTitle": "Soumis en premier",
     "dependenciesHint": "Cet élément attend l'approbation de ces entrées, puis il est envoyé automatiquement.",
     "blockersTitle": "Il manque encore",
+    "alreadyLinkedInfo": "Déjà lié à FilaMan-DB. Rien à envoyer.",
     "noPayload": "Rien à envoyer.",
     "yes": "Oui",
     "no": "Non",

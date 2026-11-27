@@ -227,8 +227,12 @@ export function renderPreviewBody(preview: ContribPreview): string {
   if (preview.mode === 'edit') parts.push(`<p class="fm-field-hint">${e(t('fdbContrib.noteEdit'))}</p>`)
   if (preview.mode === 'update') parts.push(`<p class="fm-field-hint">${e(t('fdbContrib.noteUpdate'))}</p>`)
 
-  if (preview.blockers.length) {
-    const items = preview.blockers.map(b => {
+  // "Schon verknüpft" ist kein Fehler, sondern ein Hinweis: nichts zu senden.
+  const alreadyLinked = preview.blockers.some(b => b.code === 'already_linked')
+  const realBlockers = preview.blockers.filter(b => b.code !== 'already_linked')
+  if (alreadyLinked) parts.push(`<div class="fm-alert-info" role="status">${e(t('fdbContrib.alreadyLinkedInfo'))}</div>`)
+  if (realBlockers.length) {
+    const items = realBlockers.map(b => {
       const links = blockerLinks(b).map(l => `<a href="${e(l.href)}">${e(t(l.labelKey))}</a>`).join(' · ')
       return `<li>${e(blockerText(b))}${links ? ` ${links}` : ''}</li>`
     }).join('')

@@ -2775,6 +2775,7 @@
     "dependenciesTitle": "Submitted first",
     "dependenciesHint": "This item waits until these entries are approved, then it is sent automatically.",
     "blockersTitle": "Still missing",
+    "alreadyLinkedInfo": "Already linked to the FilaMan-DB. There is nothing to send.",
     "noPayload": "Nothing to send.",
     "yes": "Yes",
     "no": "No",
