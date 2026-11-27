@@ -100,7 +100,7 @@ async def list_printer_models(db: DBSession, _principal: PrincipalDep):
         return {"available": True, "items": cache["items"]}
 
     try:
-        data = await _proxy_get("/printer-models", {"page_size": 1000})
+        raw_items = await _proxy_get_all_items("/printer-models")
     except HTTPException:
         # Stale-Cache ist besser als nichts, wenn die DB kurz weg ist.
         if cache["items"] is not None and cache["url"] == base:
@@ -114,7 +114,7 @@ async def list_printer_models(db: DBSession, _principal: PrincipalDep):
             "model": item.get("model"),
             "default_nozzle_mm": item.get("default_nozzle_mm"),
         }
-        for item in _response_items(data)
+        for item in raw_items
         if isinstance(item.get("id"), int)
     ]
     cache.update(at=now, url=base, items=items)
@@ -168,6 +168,25 @@ async def _proxy_get(
                 "message": "Cannot reach FilamentDB",
             },
         )
+
+
+FDB_MAX_PAGE_SIZE = 200  # die FilaMan-DB lehnt page_size > 200 ab
+_FDB_MAX_PAGES = 50
+
+
+async def _proxy_get_all_items(path: str) -> list[dict[str, Any]]:
+    """Alle Seiten einer paginierten FilaMan-DB-Liste einsammeln."""
+    collected: list[dict[str, Any]] = []
+    for page in range(1, _FDB_MAX_PAGES + 1):
+        data = await _proxy_get(path, {"page": page, "page_size": FDB_MAX_PAGE_SIZE})
+        items = _response_items(data)
+        collected.extend(items)
+        total = data.get("total") if isinstance(data, dict) else None
+        if len(items) < FDB_MAX_PAGE_SIZE or (
+            isinstance(total, int) and len(collected) >= total
+        ):
+            break
+    return collected
 
 
 def _response_items(data: Any) -> list[dict[str, Any]]:

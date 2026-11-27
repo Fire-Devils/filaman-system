@@ -210,9 +210,31 @@ async def get_row(db: AsyncSession, entity_type: str, local_id: int) -> Filament
     )
 
 
+FDB_MAX_PAGE_SIZE = 200  # die FilaMan-DB lehnt page_size > 200 ab
+_FDB_MAX_PAGES = 50
+
+
+async def _fetch_all_items(path: str) -> list[dict[str, Any]]:
+    """Alle Seiten einer paginierten FilaMan-DB-Liste einsammeln."""
+    collected: list[dict[str, Any]] = []
+    for page in range(1, _FDB_MAX_PAGES + 1):
+        data = await fdb_request(
+            "GET", path, params={"page": page, "page_size": FDB_MAX_PAGE_SIZE}
+        )
+        if not isinstance(data, dict):
+            break
+        items = [i for i in (data.get("items") or []) if isinstance(i, dict)]
+        collected.extend(items)
+        total = data.get("total")
+        if len(items) < FDB_MAX_PAGE_SIZE or (
+            isinstance(total, int) and len(collected) >= total
+        ):
+            break
+    return collected
+
+
 async def _resolve_material_id(material_type: str) -> int | None:
-    data = await fdb_request("GET", "/materials", params={"page_size": 1000})
-    items = data.get("items", []) if isinstance(data, dict) else []
+    items = await _fetch_all_items("/materials")
     wanted = _norm(material_type)
     for item in items:
         if wanted and wanted in (_norm(item.get("name")), _norm(item.get("key"))):

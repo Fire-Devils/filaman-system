@@ -406,3 +406,20 @@ async def test_manufacturer_detail_preserves_catalog_metadata(monkeypatch):
     monkeypatch.setattr(filamentdb_proxy, "_proxy_get", get)
     assert await filamentdb_proxy.get_manufacturer(119, _principal=None) == record
     assert calls == ["/manufacturers/119"]
+
+
+@pytest.mark.asyncio
+async def test_proxy_get_all_items_pages_with_max_page_size(monkeypatch):
+    calls = []
+    size = filamentdb_proxy.FDB_MAX_PAGE_SIZE
+
+    async def fake_proxy_get(path, params=None, **kwargs):
+        calls.append(dict(params))
+        n = size if params["page"] == 1 else 5
+        return {"items": [{"id": params["page"] * 1000 + i} for i in range(n)], "total": size + 5}
+
+    monkeypatch.setattr(filamentdb_proxy, "_proxy_get", fake_proxy_get)
+    items = await filamentdb_proxy._proxy_get_all_items("/printer-models")
+    assert len(items) == size + 5
+    assert [c["page"] for c in calls] == [1, 2]
+    assert all(c["page_size"] <= 200 for c in calls)

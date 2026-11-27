@@ -928,3 +928,22 @@ async def test_link_sets_payload_hash(auth_client, fake_db, entities, db_session
     )
     assert row.payload_hash and len(row.payload_hash) == 64
     assert resp.json()["changed"] is False
+
+
+@pytest.mark.asyncio
+async def test_resolve_material_id_pages_with_max_page_size(monkeypatch):
+    from app.services import filamentdb_contribution_service as svc
+
+    calls = []
+    size = svc.FDB_MAX_PAGE_SIZE
+
+    async def fake_request(method, path, params=None, **kwargs):
+        calls.append(dict(params))
+        if params["page"] == 1:
+            return {"items": [{"id": i, "name": f"X{i}", "key": f"x{i}"} for i in range(size)], "total": size + 1}
+        return {"items": [{"id": 999, "name": "PETG", "key": "petg"}], "total": size + 1}
+
+    monkeypatch.setattr(svc, "fdb_request", fake_request)
+    assert await svc._resolve_material_id("PETG") == 999
+    assert [c["page"] for c in calls] == [1, 2]
+    assert all(c["page_size"] <= 200 for c in calls)
