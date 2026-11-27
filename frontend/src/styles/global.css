@@ -3529,7 +3529,8 @@ html.sidebar-collapsed #sidebar-color-mode { display: none; }
 .fdb-status-success { color: var(--success-text); background: var(--success-bg); border-color: var(--success-border); }
 .fdb-status-warning { color: var(--warning-text); background: var(--warning-bg); border-color: var(--warning-border); }
 .fdb-status-error { color: var(--error-text); background: var(--error-bg); border-color: var(--error-border); }
-.fdb-header-contrib { margin-left: auto; flex: 0 0 auto; }
+.fdb-status-inline { margin-left: 8px; padding: 0 8px; font-size: 0.7rem; }
+.fdb-header-contrib { margin-left: auto; margin-top: 12px; flex: 0 0 auto; }
 .fdb-header-contrib:empty { display: none; }
 .fdb-header-contrib + .detail-page-actions { margin-left: 0; }
 .fdb-bulk-list { margin: 8px 0 0; padding-left: 18px; }

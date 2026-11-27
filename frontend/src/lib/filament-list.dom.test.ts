@@ -10,12 +10,12 @@ import { columnClassName } from './column-key'
 const source = readFileSync('src/pages/filaments/index.astro', 'utf8')
 const script = source.slice(source.indexOf('    function renderColorDots'), source.indexOf('    function setupHeaderFilters'))
 const render = new Function('escapeHtml', 'formatNumericRange', 'toColorSwatchBackground', 'formatPrice', 'getExtraFieldColumnValue', 'renderExtraFieldColumn', 'columnClassName', `
-  const selectedFilamentIds = new Set(), getCurrency = () => 'EUR', t = () => '';
+  const selectedFilamentIds = new Set(), filamentContribBadges = new Map(), getCurrency = () => 'EUR', t = () => '';
   const compactPicker = false, selectForSpool = false, createFilamentHref = '/filaments/new', updateBulkBar = () => {};
   const filamentExtraFields = [{ key: 'notes', label: 'Notes', field_type: 'text' }];
   const filReorder = { applyOrder() {} }, filResize = { refreshColumns() {} };
   ${transpileModule(script, {}).outputText}
-  return { renderFilaments, renderGroupedFilaments };
+  return { renderFilaments, renderGroupedFilaments, filamentContribBadges };
 `)(escapeHtml, formatNumericRange, toColorSwatchBackground, formatPrice, getExtraFieldColumnValue, renderExtraFieldColumn, columnClassName)
 
 afterEach(() => { document.body.innerHTML = '' })
@@ -54,4 +54,17 @@ it('preserves missing-value fallbacks and normal text', () => {
   for (const column of ['sku', 'ams', 'build_plates', 'spool_material', 'cf_notes']) {
     expect(document.querySelector(`.col-${column}`)?.textContent).toBe('-')
   }
+})
+
+it('shows a cached contribution pill next to the designation', () => {
+  document.body.innerHTML = '<table><tbody id="filaments-table"></tbody></table>'
+  const badge = '<span class="fdb-status fdb-status-inline" data-fdb-status="pending">In Prüfung</span>'
+  render.filamentContribBadges.set(1, badge)
+  render.renderFilaments([
+    { id: 1, designation: 'PLA A', material_type: 'PLA', diameter_mm: 1.75, colors: [] },
+    { id: 2, designation: 'PLA B', material_type: 'PLA', diameter_mm: 1.75, colors: [] },
+  ])
+  const rows = document.querySelectorAll('tr[data-filament-row]')
+  expect(rows[0].querySelector('.col-designation .fdb-status')?.textContent).toBe('In Prüfung')
+  expect(rows[1].querySelector('.fdb-status')).toBeNull()
 })

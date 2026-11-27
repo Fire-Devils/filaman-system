@@ -190,7 +190,7 @@ const { compactPicker = false } = Astro.props
     import { mountFilamentPluginHooks } from '../../lib/filament-plugin-hooks'
     import type { AppDialogs } from '../../lib/form-dialog'
     import { mountPanel } from '../../lib/panel-navigation'
-    import { loadContribContext } from '../../lib/filamentdb-contrib'
+    import { fetchContributions, loadContribContext, statusBadge } from '../../lib/filamentdb-contrib'
     import { openBulkSendDialog } from '../../lib/filamentdb-bulk'
 
     mountPanel('filaments', async (panelSignal) => {
@@ -238,6 +238,7 @@ const { compactPicker = false } = Astro.props
     let sortDirection: 'asc' | 'desc' | null = null
     const sortStorageKey = `filaman-sort-${storageScope}`
     const selectedFilamentIds = new Set<number>()
+    const filamentContribBadges = new Map<number, string>()
     const selectedPickerFilaments = new Map<number, Pick<Filament, 'id' | 'manufacturer_id' | 'designation' | 'material_type' | 'record_token'>>()
 
     // Map frontend sort keys to backend sort_by values; empty string = client-side only (not server-sortable)
@@ -612,7 +613,7 @@ const { compactPicker = false } = Astro.props
       const href = selectForSpool ? `/spools/new?filament_id=${f.id}` : `/filaments/${f.id}`
       const selectionLabel = escapeHtml(`${t('common.select')}: ${f.manufacturer?.name || ''} ${f.material_type || ''} ${f.designation || ''}`)
       return `
-        <tr class="${selectedFilamentIds.has(f.id) ? 'bulk-selected' : ''}" ${compactPicker ? '' : `style="cursor: pointer;" onclick="window.location='${href}'"`}>
+        <tr data-filament-row="${f.id}" class="${selectedFilamentIds.has(f.id) ? 'bulk-selected' : ''}" ${compactPicker ? '' : `style="cursor: pointer;" onclick="window.location='${href}'"`}>
           <td style="padding: 12px; text-align: center;" onclick="event.stopPropagation()">${selectForSpool
             ? `<a href="${href}" class="filament-spool-select" aria-label="${selectionLabel}" title="${selectionLabel}"><svg width="28" height="28" aria-hidden="true"><use href="/icons.svg?v=2#icon-status" /></svg></a>`
             : `<input type="checkbox" class="fm-checkbox bulk-checkbox" data-filament-id="${f.id}" aria-label="${selectionLabel}" ${selectedFilamentIds.has(f.id) ? 'checked' : ''} />`}</td>
@@ -620,7 +621,7 @@ const { compactPicker = false } = Astro.props
           <td class="col-logo" style="padding: 12px;">${f.manufacturer?.logo_url ? `<span style="color: var(--text-muted);" hidden>-</span><img src="${escapeHtml(f.manufacturer.logo_url)}" alt="" style="height: 24px; width: auto; max-width: 72px; object-fit: contain; background: color-mix(in srgb, white 30%, var(--bg-soft) 70%); border: 1px solid color-mix(in srgb, white 22%, var(--border) 78%); border-radius: 8px; padding: 4px 8px; vertical-align: middle;" onerror="this.style.display='none'; this.previousElementSibling?.removeAttribute('hidden')" />` : '<span style="color: var(--text-muted);">-</span>'}</td>
           <td class="col-type" style="padding: 12px; color: var(--text-muted);">${escapeHtml(f.material_type)}</td>
           <td class="col-designation" style="padding: 12px;">
-            <div style="font-weight: 500;">${escapeHtml(f.designation)}</div>
+            <div style="font-weight: 500;">${escapeHtml(f.designation)}${filamentContribBadges.get(f.id) ?? ''}</div>
             ${compactPicker && f.manufacturer?.name ? `<div class="fm-picker-manufacturer">${escapeHtml(f.manufacturer.name)}</div>` : ''}
             ${f.manufacturer_color_name ? `<div style="font-size: 0.85rem; color: var(--text-muted);">${escapeHtml(f.manufacturer_color_name)}</div>` : ''}
           </td>
@@ -1281,6 +1282,21 @@ const { compactPicker = false } = Astro.props
     void loadContribContext().then(context => {
       if (context.canContribute) document.getElementById('bulk-btn-fdb')?.classList.remove('hidden')
     }).catch(() => { /* ohne Kontext kein Knopf */ })
+    // Einreichungsstatus als kleine Pille an der Bezeichnung (ein Request für alle Filamente, Fehler still)
+    if (!compactPicker && !selectForSpool) {
+      void loadContribContext().then(async context => {
+        if (!context.pluginActive) return
+        const items = await fetchContributions('filament')
+        for (const entry of items) {
+          if (!filamentContribBadges.has(entry.local_id)) filamentContribBadges.set(entry.local_id, statusBadge(entry).replace('class="fdb-status ', 'class="fdb-status fdb-status-inline '))
+        }
+        document.querySelectorAll<HTMLElement>('tr[data-filament-row]').forEach(row => {
+          const badge = filamentContribBadges.get(Number(row.dataset.filamentRow))
+          const host = row.querySelector('.col-designation > div')
+          if (badge && host && !host.querySelector('.fdb-status')) host.insertAdjacentHTML('beforeend', badge)
+        })
+      }).catch(() => { /* Status ist optional */ })
+    }
     document.getElementById('bulk-btn-fdb')?.addEventListener('click', () => {
       if (selectedFilamentIds.size === 0) return
       void openBulkSendDialog({

@@ -246,6 +246,17 @@ async def _resolve_material_id(material_type: str) -> int | None:
 
 # ── Payload ──────────────────────────────────────────────────────────────
 
+_HEX_NAME_RE = re.compile(r"^#?(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$")
+
+
+def is_hex_only_name(name: str | None) -> bool:
+    """True, wenn ein Farbname nur ein Hex-Code ist (3, 6 oder 8 Stellen, optional mit #)."""
+    return bool(name) and bool(_HEX_NAME_RE.match(name.strip()))
+
+
+def _real_color_name(name: str | None) -> str | None:
+    return None if is_hex_only_name(name) else name
+
 
 async def _filament_payload(db: AsyncSession, fil: Filament) -> dict[str, Any]:
     color_rows = (
@@ -266,7 +277,7 @@ async def _filament_payload(db: AsyncSession, fil: Filament) -> dict[str, Any]:
         _clean(
             {
                 "hex_code": hex_code,
-                "color_name": fc.display_name_override or color.name,
+                "color_name": _real_color_name(fc.display_name_override or color.name),
                 "position": position,
             }
         )
@@ -278,7 +289,7 @@ async def _filament_payload(db: AsyncSession, fil: Filament) -> dict[str, Any]:
     data = {
         "designation": fil.designation,
         "material_subtype": fil.material_subgroup,
-        "color_name": fil.manufacturer_color_name,
+        "color_name": _real_color_name(fil.manufacturer_color_name),
         "color_mode": fil.color_mode,
         "multi_color_style": fil.multi_color_style,
         "hex_color": colors[0]["hex_code"] if colors else None,
