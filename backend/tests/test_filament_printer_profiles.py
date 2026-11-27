@@ -266,7 +266,7 @@ async def test_printer_models_fetched_and_cached(auth_client, plugin_row, monkey
     assert [i["model"] for i in first.json()["items"]] == ["X1C", "MK4"]
     assert "slug" not in first.json()["items"][0]
     assert second.json() == first.json()
-    assert calls == [("/printer-models", {"page_size": 1000})]
+    assert calls == [("/printer-models", {"page": 1, "page_size": 200})]
 
 
 @pytest.mark.asyncio

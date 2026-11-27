@@ -571,7 +571,9 @@ async def _apply_link(
         printer = await _get_model_source(db, local_id)
         printer.filamentdb_printer_model_id = remote_id
         if printer.printer_manufacturer and printer.printer_model:
-            for table in (Printer, FilamentPrinterProfile):
+            # Profil-Quelle (local_id < 0) läuft unter filaments:update, darf also keine Drucker ändern.
+            tables = (FilamentPrinterProfile,) if local_id < 0 else (Printer, FilamentPrinterProfile)
+            for table in tables:
                 same = await db.scalars(
                     select(table).where(
                         func.lower(table.printer_manufacturer) == printer.printer_manufacturer.lower(),
