@@ -1,0 +1,91 @@
+---
+import Layout from '../../layouts/Layout.astro'
+---
+
+<Layout title="FilaMan - My submissions">
+  <div class="fm-admin-page">
+  <header class="fm-admin-toolbar">
+    <div>
+      <a href="/settings" class="fm-admin-back">&larr; <span data-i18n="apiKeys.backToSettings">Back to Settings</span></a>
+      <h1 data-i18n="fdbContrib.list.title">My submissions</h1>
+    </div>
+    <div class="fm-list-controls"><button type="button" id="fdb-refresh" class="fm-btn fm-btn-primary" data-i18n="fdbContrib.list.refresh">Refresh</button></div>
+  </header>
+  <p style="color: var(--text-muted); margin-bottom: 24px;" data-i18n="fdbContrib.list.subtitle">Everything you have sent to the FilaMan-DB.</p>
+  <div id="fdb-message" role="status"></div>
+  <div class="fm-card fm-section">
+    <div class="fm-section-body" style="overflow-x: auto;">
+      <table class="fm-table" id="fdb-contrib-table">
+        <thead><tr>
+          <th data-i18n="fdbContrib.list.type">Type</th>
+          <th data-i18n="fdbContrib.list.object">Object</th>
+          <th data-i18n="fdbContrib.list.sender" id="fdb-sender-head" hidden>Sent by</th>
+          <th data-i18n="fdbContrib.list.status">Status</th>
+          <th data-i18n="fdbContrib.list.checked">Last checked</th>
+          <th data-i18n="fdbContrib.list.note">Note</th>
+        </tr></thead>
+        <tbody id="fdb-contrib-body"></tbody>
+      </table>
+    </div>
+  </div>
+  </div>
+  <script>
+    import { api } from '../../lib/api'
+    import { escapeHtml } from '../../lib/extra-fields'
+    import { contribErrorMessage, loadContribContext, refreshContributionsIfStale, statusBadge, type ContribRef } from '../../lib/filamentdb-contrib'
+    import { initI18n, t } from '../../lib/i18n'
+
+    await initI18n()
+    const body = document.getElementById('fdb-contrib-body')!
+    const message = document.getElementById('fdb-message')!
+    const refreshButton = document.getElementById('fdb-refresh') as HTMLButtonElement
+    const context = await loadContribContext()
+    refreshButton.disabled = !context.canContribute
+
+    const senderHead = document.getElementById('fdb-sender-head')!
+    interface ContribList { items: ContribRef[]; all_users?: boolean }
+    const fetchList = () => api.get<ContribList>('/filamentdb/contributions')
+
+    function render({ items, all_users: allUsers }: ContribList) {
+      senderHead.hidden = !allUsers
+      const columns = allUsers ? 6 : 5
+      if (!items.length) {
+        body.innerHTML = `<tr><td colspan="${columns}" style="text-align: center; color: var(--text-muted); padding: 24px;">${escapeHtml(t('fdbContrib.list.empty'))}</td></tr>`
+        return
+      }
+      body.innerHTML = items.map(item => `<tr>
+        <td>${escapeHtml(t(`fdbContrib.types.${item.entity_type}`))}</td>
+        <td>${escapeHtml(item.label ?? `#${item.local_id}`)}</td>
+        ${allUsers ? `<td>${escapeHtml(item.created_by_name ?? '—')}</td>` : ''}
+        <td>${statusBadge(item)}</td>
+        <td>${item.last_checked_at ? escapeHtml(new Date(item.last_checked_at).toLocaleString()) : '—'}</td>
+        <td>${escapeHtml(item.last_error ?? '')}</td></tr>`).join('')
+    }
+
+    async function load(refresh: boolean) {
+      message.textContent = ''
+      message.classList.remove('fm-alert-error')
+      refreshButton.disabled = true
+      try {
+        render(refresh ? await api.post<ContribList>('/filamentdb/contributions/refresh') : await fetchList())
+      } catch (error) {
+        message.textContent = contribErrorMessage(error)
+        message.classList.add('fm-alert-error')
+        try { render(await fetchList()) } catch { body.innerHTML = '' }
+      } finally {
+        refreshButton.disabled = !context.canContribute
+      }
+    }
+
+    refreshButton.addEventListener('click', () => void load(true))
+    // Beim Öffnen laden und, sofern ein Token da ist und etwas offen ist, höchstens alle 2 Minuten abgleichen.
+    void (async () => {
+      await load(false)
+      if (!context.canContribute) return
+      try {
+        const list = await fetchList()
+        if (await refreshContributionsIfStale(list.items)) render(await fetchList())
+      } catch { /* Status ist optional */ }
+    })()
+  </script>
+</Layout>

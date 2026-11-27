@@ -6,17 +6,18 @@ import { escapeHtml, formatNumericRange, getExtraFieldColumnValue, renderExtraFi
 import { toColorSwatchBackground } from './colors'
 import { formatPrice } from './format'
 import { columnClassName } from './column-key'
+import { fdbContribCell, fdbLinkCell } from './filamentdb-contrib'
 
 const source = readFileSync('src/pages/filaments/index.astro', 'utf8')
 const script = source.slice(source.indexOf('    function renderColorDots'), source.indexOf('    function setupHeaderFilters'))
-const render = new Function('escapeHtml', 'formatNumericRange', 'toColorSwatchBackground', 'formatPrice', 'getExtraFieldColumnValue', 'renderExtraFieldColumn', 'columnClassName', `
-  const selectedFilamentIds = new Set(), getCurrency = () => 'EUR', t = () => '';
+const render = new Function('escapeHtml', 'formatNumericRange', 'toColorSwatchBackground', 'formatPrice', 'getExtraFieldColumnValue', 'renderExtraFieldColumn', 'columnClassName', 'fdbLinkCell', 'fdbContribCell', `
+  const selectedFilamentIds = new Set(), filamentContribEntries = new Map(), getCurrency = () => 'EUR', t = () => '';
   const compactPicker = false, selectForSpool = false, createFilamentHref = '/filaments/new', updateBulkBar = () => {};
   const filamentExtraFields = [{ key: 'notes', label: 'Notes', field_type: 'text' }];
   const filReorder = { applyOrder() {} }, filResize = { refreshColumns() {} };
   ${transpileModule(script, {}).outputText}
-  return { renderFilaments, renderGroupedFilaments };
-`)(escapeHtml, formatNumericRange, toColorSwatchBackground, formatPrice, getExtraFieldColumnValue, renderExtraFieldColumn, columnClassName)
+  return { renderFilaments, renderGroupedFilaments, filamentContribEntries };
+`)(escapeHtml, formatNumericRange, toColorSwatchBackground, formatPrice, getExtraFieldColumnValue, renderExtraFieldColumn, columnClassName, fdbLinkCell, fdbContribCell)
 
 afterEach(() => { document.body.innerHTML = '' })
 
@@ -54,4 +55,17 @@ it('preserves missing-value fallbacks and normal text', () => {
   for (const column of ['sku', 'ams', 'build_plates', 'spool_material', 'cf_notes']) {
     expect(document.querySelector(`.col-${column}`)?.textContent).toBe('-')
   }
+})
+
+it('shows the contribution status in its own column, not next to the designation', () => {
+  document.body.innerHTML = '<table><tbody id="filaments-table"></tbody></table>'
+  render.filamentContribEntries.set(1, { status: 'pending' })
+  render.renderFilaments([
+    { id: 1, designation: 'PLA A', material_type: 'PLA', diameter_mm: 1.75, colors: [] },
+    { id: 2, designation: 'PLA B', material_type: 'PLA', diameter_mm: 1.75, colors: [] },
+  ])
+  const rows = document.querySelectorAll('tr[data-filament-row]')
+  expect(rows[0].querySelector('.col-designation .fdb-status')).toBeNull()
+  expect(rows[0].querySelector('.col-fdb_contrib [data-fdb-status]')?.getAttribute('data-fdb-status')).toBe('pending')
+  expect(rows[1].querySelector('.col-fdb_contrib [data-fdb-submitted="false"]')).not.toBeNull()
 })

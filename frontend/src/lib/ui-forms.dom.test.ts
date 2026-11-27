@@ -6,6 +6,7 @@ import * as state from './form-state'
 import * as driver from './driver-config-form'
 import * as i18n from './i18n'
 import * as abort from './abort'
+import * as printerModels from './printer-model-picker'
 import * as scanner from './tag-scanner'
 import * as escape from './extra-fields'
 import * as actions from './table-actions'
@@ -39,13 +40,13 @@ let intercept: ((path: string, init?: RequestInit) => Response | Promise<Respons
 const settings = { login_disabled: false, currency: 'EUR', rfid_protocol: 'openspool', rfid_extended_data_enabled: false, rfid_display_colons: true, default_spool_core_weight_g: 0, bambu_unmatched_profile_fallback: 'generic', filament_lookup_source: 'filamandb' }
 const printer = { id: 4, name: 'Example printer', driver_key: 'moonraker', driver_config: { url: 'http://printer.local', enabled: true, targets: [{ slot: 1 }] } }
 const dependencies = {
-  ...dialog, ...state, ...driver, ...i18n, ...abort, ...scanner, ...escape, ...actions, ...colors, ...filters, ...inventoryScroll, ...locationTypes, ...driverLocations, api, createExtraFieldDefinitionDialog, copyText, initColumnLocks, colorUsageHtml,
+  ...dialog, ...state, ...driver, ...i18n, ...abort, ...scanner, ...escape, ...actions, ...colors, ...filters, ...inventoryScroll, ...locationTypes, ...driverLocations, ...printerModels, api, createExtraFieldDefinitionDialog, copyText, initColumnLocks, colorUsageHtml,
   mountColorPluginHooks: (_host: HTMLElement, _workspace: HTMLDialogElement, options: ColorHookOptions) => { capturedColorHooks = options; return {close() {}, refresh: async () => [], updateEligibility() {}} },
   mountPluginUiLaunchers: () => ({refresh: async () => [], updateEligibility() {}}),
   hasPermission, getMe: async () => fixtureUser,
   bindColorCleanup, bindColorPickerPopup,
   fetchAllPages: async () => ({ items: [{ id: 2, name: 'Translucent blue', hex_code: fixtureColorHex, usage_count: 1 }] }),
-  initI18n: async () => {}, initCurrency: async () => {}, initMaterialPresets: () => {}, initColumnPicker: () => {}, initColumnResize: () => {},
+  initI18n: async () => {}, initFdbTokenSettings: async () => {}, initCurrency: async () => {}, initMaterialPresets: () => {}, initColumnPicker: () => {}, initColumnResize: () => {},
   invalidateCachePrefix: () => {}, CACHE_KEYS: { LOCATIONS: 'locations' },
   cachedFetchAllPages: async () => ({ items: [{ id: 3, name: 'Shelf "A" <blue>', identifier: 'UID', location_type: 'Storage', spool_count: 1 }] }),
 }
@@ -161,7 +162,7 @@ it('retains structured driver config when editing through the printer dialog', a
   change('printer-name', 'Updated printer')
   submit('modal-form')
   await vi.waitFor(() => expect(writes()).toHaveLength(1))
-  expect(JSON.parse(String(writes()[0].init!.body))).toEqual({ name: 'Updated printer', driver_key: 'moonraker', driver_config: printer.driver_config, nozzle_diameter_mm: null, nozzle_hardened: null })
+  expect(JSON.parse(String(writes()[0].init!.body))).toEqual({ name: 'Updated printer', driver_key: 'moonraker', driver_config: printer.driver_config, nozzle_diameter_mm: null, nozzle_hardened: null, filamentdb_printer_model_id: null, printer_manufacturer: null, printer_model: null })
   await vi.waitFor(() => expect(document.querySelector<HTMLDialogElement>('#modal-container')!.open).toBe(false))
 })
 it.each([['en', 'Edit'], ['de', 'Bearbeiten']] as const)('retains quoted location names and translated actions (%s)', async (lang, label) => {

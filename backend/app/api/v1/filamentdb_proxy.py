@@ -7,6 +7,7 @@ and colors locally before returning pre-filled data for the create form.
 
 import asyncio
 import logging
+import time
 from typing import Any
 
 import httpx
@@ -63,6 +64,116 @@ async def filamentdb_status(db: DBSession, _principal: PrincipalDep):
     return {"active": plugin is not None and plugin.is_active}
 
 
+_PRINTER_MODELS_TTL = 3600.0  # 1 Stunde
+_printer_models_cache: dict[str, Any] = {"at": 0.0, "url": None, "items": None}
+
+
+def clear_printer_models_cache() -> None:
+    _printer_models_cache.update(at=0.0, url=None, items=None)
+
+
+@router.get("/printer-models")
+async def list_printer_models(db: DBSession, _principal: PrincipalDep):
+    """Druckermodelle der FilaMan-DB (1 h im Speicher gecacht).
+
+    Ist das Plugin ``filamentdb_import`` aus oder die FilaMan-DB nicht
+    erreichbar, kommt ``{"available": false, "items": []}`` statt eines Fehlers.
+    """
+    plugin = (
+        await db.execute(
+            select(InstalledPlugin).where(
+                InstalledPlugin.plugin_key == "filamentdb_import",
+            )
+        )
+    ).scalar_one_or_none()
+    if plugin is None or not plugin.is_active:
+        return {"available": False, "items": []}
+
+    base = settings.filamentdb_url.rstrip("/")
+    cache = _printer_models_cache
+    now = time.monotonic()
+    if (
+        cache["items"] is not None
+        and cache["url"] == base
+        and now - cache["at"] < _PRINTER_MODELS_TTL
+    ):
+        return {"available": True, "items": cache["items"]}
+
+    try:
+        raw_items = await _proxy_get_all_items("/printer-models")
+    except HTTPException:
+        # Stale-Cache ist besser als nichts, wenn die DB kurz weg ist.
+        if cache["items"] is not None and cache["url"] == base:
+            return {"available": True, "items": cache["items"]}
+        return {"available": False, "items": []}
+
+    items = [
+        {
+            "id": item.get("id"),
+            "manufacturer": item.get("manufacturer"),
+            "model": item.get("model"),
+            "default_nozzle_mm": item.get("default_nozzle_mm"),
+        }
+        for item in raw_items
+        if isinstance(item.get("id"), int)
+    ]
+    cache.update(at=now, url=base, items=items)
+    return {"available": True, "items": items}
+
+
+_BUILD_PLATES_TTL = 3600.0  # 1 Stunde
+_build_plates_cache: dict[str, Any] = {"at": 0.0, "url": None, "items": None}
+
+
+def clear_build_plates_cache() -> None:
+    _build_plates_cache.update(at=0.0, url=None, items=None)
+
+
+@router.get("/build-plates")
+async def list_build_plates(db: DBSession, _principal: PrincipalDep):
+    """Druckplatten der FilaMan-DB (1 h im Speicher gecacht, Stale-Fallback).
+
+    Ohne aktives Plugin oder bei nicht erreichbarer DB (und ohne Cache) kommt
+    ``{"available": false, "items": []}`` statt eines Fehlers.
+    """
+    plugin = (
+        await db.execute(
+            select(InstalledPlugin).where(
+                InstalledPlugin.plugin_key == "filamentdb_import",
+            )
+        )
+    ).scalar_one_or_none()
+    if plugin is None or not plugin.is_active:
+        return {"available": False, "items": []}
+
+    base = settings.filamentdb_url.rstrip("/")
+    cache = _build_plates_cache
+    now = time.monotonic()
+    if (
+        cache["items"] is not None
+        and cache["url"] == base
+        and now - cache["at"] < _BUILD_PLATES_TTL
+    ):
+        return {"available": True, "items": cache["items"]}
+
+    try:
+        raw_items = await _proxy_get_all_items("/build-plates")
+    except HTTPException:
+        if cache["items"] is not None and cache["url"] == base:
+            return {"available": True, "items": cache["items"]}
+        return {"available": False, "items": []}
+
+    items = [
+        {"id": item.get("id"), "name": item.get("name")}
+        for item in raw_items
+        if isinstance(item.get("id"), int)
+        and isinstance(item.get("name"), str)
+        and item["name"].strip()
+    ]
+    cache.update(at=now, url=base, items=items)
+    return {"available": True, "items": items}
+
+
 def _api_url(path: str) -> str:
     return f"{settings.filamentdb_url.rstrip('/')}/api/v1{path}"
 
@@ -110,6 +221,25 @@ async def _proxy_get(
                 "message": "Cannot reach FilamentDB",
             },
         )
+
+
+FDB_MAX_PAGE_SIZE = 200  # die FilaMan-DB lehnt page_size > 200 ab
+_FDB_MAX_PAGES = 50
+
+
+async def _proxy_get_all_items(path: str) -> list[dict[str, Any]]:
+    """Alle Seiten einer paginierten FilaMan-DB-Liste einsammeln."""
+    collected: list[dict[str, Any]] = []
+    for page in range(1, _FDB_MAX_PAGES + 1):
+        data = await _proxy_get(path, {"page": page, "page_size": FDB_MAX_PAGE_SIZE})
+        items = _response_items(data)
+        collected.extend(items)
+        total = data.get("total") if isinstance(data, dict) else None
+        if len(items) < FDB_MAX_PAGE_SIZE or (
+            isinstance(total, int) and len(collected) >= total
+        ):
+            break
+    return collected
 
 
 def _response_items(data: Any) -> list[dict[str, Any]]:

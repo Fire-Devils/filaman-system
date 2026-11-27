@@ -4,6 +4,7 @@ import FilamentForm from '../../../components/FilamentForm.astro'
 import FilamentFormActions from '../../../components/FilamentFormActions.astro'
 import DetailScrollIdentity from '../../../components/DetailScrollIdentity.astro'
 import PrinterSetup from '../../../components/PrinterSetup.astro'
+import PrintProfiles from '../../../components/PrintProfiles.astro'
 
 export function getStaticPaths() {
   return [
@@ -31,6 +32,8 @@ export function getStaticPaths() {
   </div>
 
   <PrinterSetup />
+
+  <PrintProfiles />
 
   <section class="spool-filament-panel filament-spool-panel fm-detail-content">
   <div id="spools-section" class="hidden">
@@ -85,6 +88,9 @@ export function getStaticPaths() {
     import { formatPrice, getCurrency, initCurrency } from '../../../lib/format'
     import { getAbortSignal, isAbortError } from '../../../lib/abort'
     import { initPrinterSetup } from '../../../lib/printer-setup'
+    import { initPrintProfiles } from '../../../lib/print-profiles'
+    import { initCommunityProfiles } from '../../../lib/community-profiles'
+    import { mountContributeControl } from '../../../lib/filamentdb-contrib'
     import { buildFilamentExtraFieldsForPrint, buildFilamentPrintSearchParams } from '../../../lib/filament-label-data'
     import { writeScopedLabelFields } from '../../../lib/label-print-session'
     await initI18n()
@@ -126,6 +132,7 @@ export function getStaticPaths() {
     let editGeneration = 0
     let filamentNeedsRefresh = false
     let printerSetup: ReturnType<typeof initPrinterSetup> | null = null
+    let printProfilesStarted = false
     let filamentFormController: ReturnType<typeof createFilamentFormController> | null = null
     let filamentPluginHooks: ReturnType<typeof mountFilamentPluginHooks> | undefined
     let editorRecordToken: string | undefined
@@ -182,6 +189,19 @@ export function getStaticPaths() {
           onDirtyChange: () => filamentFormController?.updateDirtyState(),
           getCsrfToken: getCsrfTokenGlobal, getAbortSignal, isAbortError,
         })
+        const profilesMount = document.getElementById('print-profiles')
+        const profilesDialog = document.getElementById('print-profile-dialog') as HTMLDialogElement | null
+        if (profilesMount && profilesDialog && !printProfilesStarted) {
+          printProfilesStarted = true
+          profilesMount.classList.remove('hidden')
+          const filamentId = parseInt(id)
+          const profiles = initPrintProfiles({ mount: profilesMount, dialog: profilesDialog, filamentId })
+          const communityMount = document.getElementById('community-profiles')
+          const filamentdbId = Number((filament as { custom_fields?: Record<string, unknown> | null }).custom_fields?.filamentdb_id)
+          if (communityMount && filamentdbId > 0) {
+            void initCommunityProfiles({ mount: communityMount, filamentId, filamentdbId, onAdopted: () => void profiles.then(controller => controller.reload()) })
+          }
+        }
         if (editMode) void filamentPluginHooks?.enterEdit()
       } catch (error) {
         if (isAbortError(error)) return
@@ -403,6 +423,7 @@ export function getStaticPaths() {
                 </div>
               </div>
             </div>
+            <div class="fdb-contrib-row fdb-header-contrib" id="fdb-filament-contrib"></div>
             <div class="detail-page-actions" role="group" aria-label="${t('common.actions')}">
               <a id="btn-enter-filament-edit" href="/filaments/${f.id}?edit=1" class="detail-icon-button" aria-label="${t('common.edit')}" title="${t('common.edit')}"><svg aria-hidden="true"><use href="/icons.svg?v=2#icon-edit"></use></svg></a>
               <button id="btn-duplicate-filament" type="button" class="detail-icon-button" aria-label="${t('common.duplicate')}" title="${t('common.duplicate')}"><svg aria-hidden="true"><use href="/icons.svg?v=2#icon-copy"></use></svg></button>
@@ -430,6 +451,8 @@ export function getStaticPaths() {
         event.preventDefault()
         void setFilamentEditing(true)
       })
+      const contribHost = document.getElementById('fdb-filament-contrib')
+      if (contribHost) void mountContributeControl(contribHost, 'filament', f.id)
       document.getElementById('btn-duplicate-filament')?.addEventListener('click', () => {
         sessionStorage.setItem('filaman_duplicate_filament', JSON.stringify(f))
         window.location.href = '/filaments/new'

@@ -10,6 +10,7 @@ from app.models.filament import (
     FilamentRating,
     Manufacturer,
 )
+from app.models.filamentdb_contribution import FilamentDBContribution
 from app.models.label_asset import LabelAsset, LabelPresetAsset
 from app.models.label_preset import LabelPreset
 from app.models.label_print_request import LabelPrintRequest
@@ -46,6 +47,7 @@ __all__ = [
     "FilamentColor",
     "FilamentPrinterInitialization",
     "FilamentPrinterParam",
+    "FilamentDBContribution",
     "FilamentPrinterProfile",
     "FilamentRating",
     "InstalledPlugin",

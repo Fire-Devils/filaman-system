@@ -12,6 +12,7 @@ from app.api.v1.dashboard import router as dashboard_router
 from app.api.v1.devices import router as devices_router
 from app.api.v1.display import router as display_router
 from app.api.v1.events import router as events_router
+from app.api.v1.filamentdb_contributions import router as filamentdb_contributions_router
 from app.api.v1.filamentdb_proxy import router as filamentdb_router
 from app.api.v1.firmware_admin import router as firmware_admin_router
 from app.api.v1.filaments import router, router_colors, router_filaments
@@ -26,6 +27,7 @@ from app.api.v1.oidc_admin import router as oidc_admin_router
 from app.api.v1.print_jobs import router as print_jobs_router
 from app.api.v1.print_jobs import router_projects as print_projects_router
 from app.api.v1.print_jobs import router_spool_jobs as spool_print_jobs_router
+from app.api.v1.filament_printer_profiles import router_filament_profiles
 from app.api.v1.printer_params import router_filament_params, router_spool_params
 from app.api.v1.printers import router as printers_router
 from app.api.v1.slicer_link import router as slicer_link_router
@@ -91,6 +93,9 @@ api_router.include_router(
     router_filament_params, prefix="/filaments", tags=["Filament Printer Params"]
 )
 api_router.include_router(
+    router_filament_profiles, prefix="/filaments", tags=["Filament Print Profiles"]
+)
+api_router.include_router(
     router_spool_params, prefix="/spools", tags=["Spool Printer Params"]
 )
 api_router.include_router(events_router)
@@ -100,6 +105,7 @@ api_router.include_router(material_presets_admin_router)
 api_router.include_router(oidc_public_router)
 api_router.include_router(app_settings_public_router)
 api_router.include_router(filamentdb_router)
+api_router.include_router(filamentdb_contributions_router)
 
 # Keep installed plugin routes separate from the core API so they can be replaced.
 _deferred_plugin_routers: list[tuple[str, APIRouter, dict]] = []

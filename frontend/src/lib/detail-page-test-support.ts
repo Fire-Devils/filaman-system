@@ -95,6 +95,8 @@ const dependencies = {
   ...labelFields,
   ...spoolLabel,
   escapeExtraFieldHtml: extraFields.escapeHtml,
+  // FilaMan-DB control in the header is covered by filamentdb-contrib tests.
+  mountContributeControl: async () => undefined,
 }
 const markup = new Map<string, string>()
 export function clearState() {

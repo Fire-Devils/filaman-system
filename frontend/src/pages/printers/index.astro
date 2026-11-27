@@ -85,6 +85,26 @@ import Layout from '../../layouts/Layout.astro'
             <option value="false" data-i18n="common.no">No</option>
           </select>
         </div>
+        <div id="printer-model-field" class="printer-model-field">
+          <input type="hidden" id="printer-model-id" />
+          <div id="printer-model-search-wrap" class="hidden">
+            <label for="printer-model-search" class="fm-label" data-i18n="printers.modelSearch">Search printer model</label>
+            <input type="search" id="printer-model-search" class="fm-input" autocomplete="off" data-i18n-placeholder="printers.modelSearchPlaceholder" placeholder="e.g. Bambu Lab X1 Carbon" />
+            <ul id="printer-model-results" class="printer-model-results hidden" role="listbox"></ul>
+            <p class="printer-model-hint" data-i18n="printers.modelNotListedHint">Not in the list? Enter manufacturer and model below.</p>
+          </div>
+          <div class="printer-model-row">
+            <div>
+              <label for="printer-manufacturer" class="fm-label" data-i18n="printers.printerManufacturer">Printer manufacturer</label>
+              <input type="text" id="printer-manufacturer" class="fm-input" maxlength="255" autocomplete="off" />
+            </div>
+            <div>
+              <label for="printer-model" class="fm-label" data-i18n="printers.printerModel">Printer model</label>
+              <input type="text" id="printer-model" class="fm-input" maxlength="255" autocomplete="off" />
+            </div>
+          </div>
+          <div id="printer-model-suggest" class="printer-model-suggest hidden" role="status"></div>
+        </div>
         <div id="config-fields" style="display: flex; flex-direction: column; gap: 12px;"></div>
         <div id="modal-error" class="fm-alert-error hidden" role="alert"></div>
     </form>
@@ -101,6 +121,7 @@ import Layout from '../../layouts/Layout.astro'
     import { bindFormDialog } from '../../lib/form-dialog'
     import { bindFormState } from '../../lib/form-state'
     import { mountPanel } from '../../lib/panel-navigation'
+    import { createPrinterModelPicker } from '../../lib/printer-model-picker'
 
     mountPanel('printers', async (panelSignal) => {
     await initI18n()
@@ -110,7 +131,7 @@ import Layout from '../../layouts/Layout.astro'
     const formDialog = bindFormDialog(document.getElementById('modal-container') as HTMLDialogElement, { canClose: () => !formState.busy })
 
     interface SlotSummary { external_spool?: boolean; ams_type?: string; ams_units?: { ams_id: number; tray_count: number }[] }
-    interface PrinterRecord { id: number; name: string; driver_key: string; is_active: boolean; driver_config?: Record<string, unknown> | null; nozzle_diameter_mm?: number | null; nozzle_hardened?: boolean | null; custom_fields?: (Record<string, unknown> & { slot_summary?: SlotSummary | null }) | null }
+    interface PrinterRecord { id: number; name: string; driver_key: string; is_active: boolean; driver_config?: Record<string, unknown> | null; nozzle_diameter_mm?: number | null; nozzle_hardened?: boolean | null; filamentdb_printer_model_id?: number | null; printer_manufacturer?: string | null; printer_model?: string | null; custom_fields?: (Record<string, unknown> & { slot_summary?: SlotSummary | null }) | null }
     interface DriverPlugin { driver_key?: string | null; name: string; is_active: boolean; config_schema?: DriverSchema | null }
     interface DriverHealth extends SlotSummary { running?: boolean; connected?: boolean; ams_count?: number; slot_count?: number }
     const dialogs = window as unknown as AppDialogs
@@ -291,6 +312,28 @@ import Layout from '../../layouts/Layout.astro'
       })
     }
     
+    // ── Druckermodell (FilaMan-DB-Liste, sonst Freitext) ──────────────────
+    const modelPicker = createPrinterModelPicker(
+      {
+        idInput: document.getElementById('printer-model-id') as HTMLInputElement,
+        searchWrap: document.getElementById('printer-model-search-wrap') as HTMLElement,
+        searchInput: document.getElementById('printer-model-search') as HTMLInputElement,
+        results: document.getElementById('printer-model-results') as HTMLElement,
+        manufacturer: document.getElementById('printer-manufacturer') as HTMLInputElement,
+        model: document.getElementById('printer-model') as HTMLInputElement,
+        suggest: document.getElementById('printer-model-suggest') as HTMLElement,
+      },
+      { t, escapeHtml, isAborted: () => panelSignal.aborted },
+    )
+
+    function fillPrinterModelFields(printer?: PrinterRecord) {
+      modelPicker.setValue({
+        id: printer?.filamentdb_printer_model_id ?? null,
+        manufacturer: printer?.printer_manufacturer ?? '',
+        model: printer?.printer_model ?? '',
+      })
+    }
+
     function openModal(id: number | null = null, name: string = '', driver: string = '', config?: Record<string, unknown>, printer?: PrinterRecord) {
       const title = document.getElementById('modal-title')!
       const idInput = document.getElementById('printer-id') as HTMLInputElement
@@ -304,6 +347,7 @@ import Layout from '../../layouts/Layout.astro'
       driverInput.value = driver
       ;(document.getElementById('printer-nozzle-diameter') as HTMLInputElement).value = printer?.nozzle_diameter_mm != null ? String(printer.nozzle_diameter_mm) : ''
       ;(document.getElementById('printer-nozzle-hardened') as HTMLSelectElement).value = printer?.nozzle_hardened == null ? '' : String(printer.nozzle_hardened)
+      fillPrinterModelFields(printer)
       error.classList.add('hidden')
       
       renderConfigFields(driver, config)
@@ -352,11 +396,14 @@ import Layout from '../../layouts/Layout.astro'
       }
       const nozzleDiameter = (document.getElementById('printer-nozzle-diameter') as HTMLInputElement).value
       const nozzleHardened = (document.getElementById('printer-nozzle-hardened') as HTMLSelectElement).value
-      const data: { name: string; driver_key: string; driver_config?: Record<string, unknown>; nozzle_diameter_mm: number | null; nozzle_hardened: boolean | null } = {
+      const data: { name: string; driver_key: string; driver_config?: Record<string, unknown>; nozzle_diameter_mm: number | null; nozzle_hardened: boolean | null; filamentdb_printer_model_id: number | null; printer_manufacturer: string | null; printer_model: string | null } = {
         name,
         driver_key,
         nozzle_diameter_mm: nozzleDiameter ? Number(nozzleDiameter) : null,
         nozzle_hardened: nozzleHardened === '' ? null : nozzleHardened === 'true',
+        filamentdb_printer_model_id: modelPicker.getValue().id,
+        printer_manufacturer: modelPicker.getValue().manufacturer || null,
+        printer_model: modelPicker.getValue().model || null,
       }
       if (driver_config) data.driver_config = driver_config
       
@@ -466,6 +513,28 @@ import Layout from '../../layouts/Layout.astro'
     })
 
     loadPrinters()
+
+    // Direktlink aus anderen Seiten: /printers?edit=<id> öffnet den Bearbeiten-Dialog.
+    const editId = Number(new URLSearchParams(window.location.search).get('edit'))
+    if (Number.isInteger(editId) && editId > 0) {
+      try {
+        const resp = await fetch(`/api/v1/printers/${editId}`, { credentials: 'include', signal: getAbortSignal() })
+        if (resp.ok && !panelSignal.aborted) {
+          const printer: PrinterRecord = await resp.json()
+          openModal(editId, printer.name, printer.driver_key, printer.driver_config || undefined, printer)
+        }
+      } catch {}
+    }
     })
   </script>
+
+  <style is:global>
+    .printer-model-field { display: flex; flex-direction: column; gap: 10px; }
+    .printer-model-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    .printer-model-results { list-style: none; margin: 4px 0 0; padding: 0; max-height: 200px; overflow-y: auto; border: 1px solid var(--border, #ccc); border-radius: 8px; background: var(--bg-soft, transparent); }
+    .printer-model-results li { padding: 8px 12px; cursor: pointer; }
+    .printer-model-results li:hover, .printer-model-results li:focus { background: var(--bg-soft, rgba(128,128,128,.15)); outline: none; }
+    .printer-model-suggest { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; font-size: 0.875rem; }
+    .printer-model-hint { margin: 4px 0 0; font-size: 0.8125rem; color: var(--text-muted); }
+  </style>
 </Layout>

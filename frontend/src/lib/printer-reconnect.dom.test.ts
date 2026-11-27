@@ -2,6 +2,7 @@
 import { bootAstroPage } from '../../tests/helpers/astro-page'
 import { afterEach, expect, it, vi } from 'vitest'
 import * as abort from './abort'
+import * as printerModels from './printer-model-picker'
 import { api } from './api'
 import * as driverConfig from './driver-config-form'
 import { escapeHtml } from './extra-fields'
@@ -35,7 +36,7 @@ it.each([
   })
   vi.stubGlobal('fetch', fetchMock)
   await bootAstroPage('printers/index', {
-    ...abort, ...driverConfig, api, bindFormDialog, bindFormState, escapeHtml, initI18n: async () => {}, t, tableAction,
+    ...abort, ...driverConfig, ...printerModels, api, bindFormDialog, bindFormState, escapeHtml, initI18n: async () => {}, t, tableAction,
   })
 
   const button = document.querySelector<HTMLButtonElement>('#btn-check-all')!

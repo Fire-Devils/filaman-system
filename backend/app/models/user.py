@@ -46,6 +46,11 @@ class User(Base, TimestampMixin):
     custom_fields: Mapped[dict[str, Any] | None] = mapped_column(nullable=True)
     ui_preferences: Mapped[dict[str, Any] | None] = mapped_column(nullable=True)
 
+    # Personal FilaMan-DB community token (Fernet-encrypted with app_secret) and
+    # the display name returned by the DB when it was saved.
+    filamentdb_token_enc: Mapped[str | None] = mapped_column(Text, nullable=True)
+    filamentdb_token_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+
     oauth_identities: Mapped[list["OAuthIdentity"]] = relationship(
         back_populates="user", cascade="all, delete-orphan"
     )

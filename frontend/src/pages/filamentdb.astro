@@ -1,0 +1,247 @@
+---
+import Layout from '../layouts/Layout.astro'
+import { FILAMENTDB_SITE_URL } from '../lib/filamentdb-lookup'
+
+const featureIcons = {
+  match: 'M6 12h18l-5-5M26 20H8l5 5',
+  import: 'M16 5v16M9 14l7 7 7-7M6 26h20',
+  submit: 'M16 27V11M9 18l7-7 7 7M6 6h20',
+  rate: 'M16 5l3.3 6.8 7.4 1-5.4 5.2 1.3 7.4L16 21.9l-6.6 3.5 1.3-7.4L5.3 12.8l7.4-1z',
+  sync: 'M26 16a10 10 0 1 1-3-7.1M26 6v5h-5',
+}
+const features = ['match', 'import', 'submit', 'profiles', 'rate', 'sync'] as const
+---
+
+<Layout panel="filamentdb" title="FilaMan - FilaMan-DB">
+  <div class="fdbp">
+    <section class="fdbp-hero">
+      <div>
+        <span class="fdbp-tag" data-i18n="fdbConnect.page.heroTag">FilaMan-DB · db.filaman.app</span>
+        <h1 data-i18n="fdbConnect.page.heroTitle">Building the best filament database together</h1>
+        <p data-i18n="fdbConnect.page.heroText"></p>
+        <div class="fdbp-cta">
+          <a class="fm-btn fm-btn-primary" href="#setup" data-i18n="fdbConnect.page.ctaConnect">Connect now</a>
+          <a class="fm-btn fm-btn-outline" href={FILAMENTDB_SITE_URL} target="_blank" rel="noopener noreferrer"><span data-i18n="fdbConnect.page.ctaOpenSite">Open db.filaman.app</span>
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3H3v10h10v-3M9 3h4v4M13 3 7 9"/></svg></a>
+        </div>
+      </div>
+      <svg class="fdbp-hero-art" viewBox="0 0 420 275" role="img" data-i18n-aria-label="fdbConnect.page.heroAlt" aria-label="FilaMan exchanges data with the FilaMan-DB and the community">
+        <defs>
+          <linearGradient id="fdbp-hg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" style="stop-color:var(--accent)"></stop><stop offset="1" style="stop-color:var(--accent-2)"></stop></linearGradient>
+          <radialGradient id="fdbp-glow"><stop offset="0" style="stop-color:var(--accent-2);stop-opacity:.35"></stop><stop offset="1" style="stop-color:var(--accent-2);stop-opacity:0"></stop></radialGradient>
+        </defs>
+        <circle cx="300" cy="120" r="110" fill="url(#fdbp-glow)"></circle>
+        <rect x="20" y="70" width="130" height="150" rx="18" class="fdbp-svg-card"></rect>
+        <text x="85" y="96" text-anchor="middle" class="fdbp-svg-muted" font-size="11" data-i18n="fdbConnect.page.heroDevice">FilaMan</text>
+        <g transform="translate(48,112)" class="fdbp-svg-reels">
+          <circle cx="16" cy="16" r="16" fill="none" style="stroke:var(--accent)" stroke-width="5"></circle><circle cx="16" cy="16" r="5" class="fdbp-svg-hub" style="stroke:var(--accent)" stroke-width="2"></circle>
+          <circle cx="58" cy="16" r="16" fill="none" style="stroke:var(--accent-2)" stroke-width="5"></circle><circle cx="58" cy="16" r="5" class="fdbp-svg-hub" style="stroke:var(--accent-2)" stroke-width="2"></circle>
+          <circle cx="16" cy="58" r="16" fill="none" style="stroke:var(--accent-3)" stroke-width="5"></circle><circle cx="16" cy="58" r="5" class="fdbp-svg-hub" style="stroke:var(--accent-3)" stroke-width="2"></circle>
+          <circle cx="58" cy="58" r="16" fill="none" style="stroke:color-mix(in srgb, var(--accent) 50%, var(--accent-3))" stroke-width="5"></circle><circle cx="58" cy="58" r="5" class="fdbp-svg-hub" style="stroke:color-mix(in srgb, var(--accent) 50%, var(--accent-3))" stroke-width="2"></circle>
+        </g>
+        <path d="M160 125 C 200 105, 220 105, 250 115" fill="none" stroke="url(#fdbp-hg)" stroke-width="2.5" stroke-dasharray="5 6"></path>
+        <path d="M250 150 C 220 165, 200 165, 160 150" fill="none" stroke="url(#fdbp-hg)" stroke-width="2.5" stroke-dasharray="5 6" opacity=".7"></path>
+        <polygon points="250,115 240,108 241,121" style="fill:var(--accent-2)"></polygon>
+        <polygon points="160,150 170,143 170,157" style="fill:var(--accent)"></polygon>
+        <text x="205" y="100" text-anchor="middle" class="fdbp-svg-text" font-size="10" data-i18n="fdbConnect.page.heroSubmit">submit</text>
+        <text x="205" y="182" text-anchor="middle" class="fdbp-svg-text" font-size="10" data-i18n="fdbConnect.page.heroAdopt">adopt</text>
+        <g transform="translate(255,70)">
+          <ellipse cx="55" cy="20" rx="55" ry="18" class="fdbp-svg-db" stroke="url(#fdbp-hg)" stroke-width="2.5"></ellipse>
+          <path d="M0 20v40c0 10 25 18 55 18s55-8 55-18V20" class="fdbp-svg-db" fill-opacity=".6" stroke="url(#fdbp-hg)" stroke-width="2.5"></path>
+          <path d="M0 60v40c0 10 25 18 55 18s55-8 55-18V60" class="fdbp-svg-db" fill-opacity=".4" stroke="url(#fdbp-hg)" stroke-width="2.5" opacity=".75"></path>
+          <text x="55" y="58" text-anchor="middle" class="fdbp-svg-text" font-size="13" font-weight="700" data-i18n="fdbConnect.page.heroDb">FilaMan-DB</text>
+          <g transform="translate(37,74)"><circle cx="18" cy="12" r="11" style="fill:var(--accent)"></circle><path d="M12 12l4 4 8-8" style="stroke:var(--bg)" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round"></path></g>
+        </g>
+        <g class="fdbp-svg-avatar">
+          <circle cx="270" cy="232" r="13"></circle><circle cx="310" cy="240" r="13"></circle><circle cx="350" cy="232" r="13"></circle><circle cx="390" cy="220" r="11"></circle>
+        </g>
+        <g class="fdbp-svg-avatar-dot"><circle cx="270" cy="228" r="4"></circle><circle cx="310" cy="236" r="4"></circle><circle cx="350" cy="228" r="4"></circle><circle cx="390" cy="217" r="3.5"></circle></g>
+        <path d="M310 226 L310 196" class="fdbp-svg-line" stroke-width="1.5" stroke-dasharray="3 4"></path>
+        <text x="330" y="270" text-anchor="middle" class="fdbp-svg-muted" font-size="10" data-i18n="fdbConnect.page.heroCommunity">Community reviews &amp; shares</text>
+      </svg>
+    </section>
+
+    <section class="fdbp-sec">
+      <h2 data-i18n="fdbConnect.state.title">Your status</h2>
+      <p class="fdbp-sub" id="fdbp-state-sub" data-i18n="fdbConnect.state.sub"></p>
+      <div class="fdbp-state" id="fdbp-state" aria-live="polite">
+        <div class="fdbp-st" data-state-item="plugin"><span class="fdbp-st-i" aria-hidden="true">…</span><div><b data-i18n="fdbConnect.state.loading">Checking …</b><small></small></div></div>
+        <div class="fdbp-st" data-state-item="token"><span class="fdbp-st-i" aria-hidden="true">…</span><div><b></b><small></small></div></div>
+        <div class="fdbp-st" data-state-item="perm"><span class="fdbp-st-i" aria-hidden="true">…</span><div><b></b><small></small></div></div>
+      </div>
+    </section>
+
+    <section class="fdbp-sec">
+      <h2 data-i18n="fdbConnect.features.title">What you can do with it</h2>
+      <p class="fdbp-sub" data-i18n="fdbConnect.features.sub"></p>
+      <div class="fdbp-grid">
+        {features.map(key => (
+          <div class="fdbp-feat">
+            <svg viewBox="0 0 32 32" fill="none" stroke="url(#fdbp-hg)" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              {key === 'profiles' ? <><circle cx="16" cy="16" r="10"></circle><circle cx="16" cy="16" r="4"></circle></> : <path d={featureIcons[key]}></path>}
+            </svg>
+            <h3 data-i18n={`fdbConnect.features.${key}Title`}></h3>
+            <p data-i18n={`fdbConnect.features.${key}Text`}></p>
+          </div>
+        ))}
+      </div>
+    </section>
+
+    <section class="fdbp-sec">
+      <h2 data-i18n="fdbConnect.flow.title">How a submission works</h2>
+      <p class="fdbp-sub" data-i18n="fdbConnect.flow.sub"></p>
+      <ol class="fdbp-flow">
+        {[1, 2, 3, 4].map(n => (
+          <li><span class="fdbp-flow-n">{n}</span><b data-i18n={`fdbConnect.flow.s${n}`}></b><small data-i18n={`fdbConnect.flow.s${n}Hint`}></small></li>
+        ))}
+      </ol>
+    </section>
+
+    <section class="fdbp-sec" id="setup">
+      <h2 data-i18n="fdbConnect.setup.title">Set up in a few minutes</h2>
+      <p class="fdbp-sub" data-i18n="fdbConnect.setup.sub"></p>
+      <div class="fdbp-steps">
+        <div class="fdbp-who" id="fdbp-admin-card">
+          <h3><span data-i18n="fdbConnect.setup.adminTitle">Admin</span> <span class="fdbp-role" data-i18n="fdbConnect.setup.adminRole">once</span></h3>
+          <ol>
+            <li data-i18n-html="fdbConnect.setup.admin1"></li>
+            <li data-i18n-html="fdbConnect.setup.admin2"></li>
+            <li data-i18n="fdbConnect.setup.admin3"></li>
+          </ol>
+          <a class="fm-btn fm-btn-outline" id="fdbp-to-plugins" href="/admin/system" hidden data-i18n="fdbConnect.setup.toPlugins">Go to plugins</a>
+        </div>
+        <div class="fdbp-who">
+          <h3><span data-i18n="fdbConnect.setup.userTitle">Every user</span> <span class="fdbp-role" data-i18n="fdbConnect.setup.userRole">about 2 minutes</span></h3>
+          <ol>
+            <li data-i18n-html="fdbConnect.setup.user1"></li>
+            <li data-i18n-html="fdbConnect.setup.user2"></li>
+            <li data-i18n-html="fdbConnect.setup.user3"></li>
+          </ol>
+          <div class="fdbp-actions">
+            <a class="fm-btn fm-btn-primary" href={FILAMENTDB_SITE_URL} target="_blank" rel="noopener noreferrer" data-i18n="fdbConnect.setup.openSite">Open db.filaman.app</a>
+            <a class="fm-btn fm-btn-outline" href="/settings#fdb-token-wrap" data-i18n="fdbConnect.setup.toSettings">Go to settings</a>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="fdbp-sec">
+      <h2 data-i18n="fdbConnect.privacy.title">Privacy &amp; security</h2>
+      <div class="fdbp-trust">
+        <div><b data-i18n="fdbConnect.privacy.encryptedTitle"></b><span data-i18n="fdbConnect.privacy.encryptedText"></span></div>
+        <div><b data-i18n="fdbConnect.privacy.onlySentTitle"></b><span data-i18n="fdbConnect.privacy.onlySentText"></span></div>
+        <div><b data-i18n="fdbConnect.privacy.revocableTitle"></b><span data-i18n="fdbConnect.privacy.revocableText"></span></div>
+      </div>
+    </section>
+
+    <section class="fdbp-sec">
+      <h2 data-i18n="fdbConnect.faq.title">Frequently asked questions</h2>
+      {['cost', 'noToken', 'noButton', 'rejected'].map(key => (
+        <details class="fdbp-faq"><summary data-i18n={`fdbConnect.faq.${key}Q`}></summary><p data-i18n={`fdbConnect.faq.${key}A`}></p></details>
+      ))}
+    </section>
+  </div>
+
+  <style is:global>
+    .fdbp { display: grid; gap: var(--section-gap, 24px); max-width: var(--content-max-width, 1110px); }
+    .fdbp > section { border-radius: var(--radius-lg); border: 1px solid var(--border); background: var(--bg-elevated); }
+    .fdbp-hero { display: grid; grid-template-columns: 1.1fr 1fr; gap: 32px; align-items: center; padding: 40px;
+      background: linear-gradient(120deg, color-mix(in srgb, var(--accent) 14%, var(--bg-elevated)), color-mix(in srgb, var(--accent-2) 8%, var(--bg-elevated))) !important; }
+    .fdbp-hero h1 { margin: 0 0 12px; font-size: 2rem; line-height: 1.15; font-family: var(--font-serif); }
+    .fdbp-hero p { margin: 0 0 20px; color: var(--text-muted); }
+    .fdbp-hero-art { width: 100%; height: auto; }
+    .fdbp-tag { display: block; margin-bottom: 8px; font-size: .7rem; letter-spacing: .1em; text-transform: uppercase; color: var(--accent-3); }
+    .fdbp-cta, .fdbp-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+    .fdbp-sec { padding: 28px 32px; }
+    .fdbp-sec h2 { margin: 0 0 6px; font-size: 1.2rem; }
+    .fdbp-sub { margin: 0 0 20px; max-width: 70ch; color: var(--text-muted); font-size: .9rem; }
+    .fdbp-svg-card { fill: var(--bg-soft); stroke: var(--border); }
+    .fdbp-svg-hub { fill: var(--bg-soft); }
+    .fdbp-svg-muted { fill: var(--text-muted); font-family: var(--font-sans); }
+    .fdbp-svg-text { fill: var(--text); font-family: var(--font-sans); }
+    .fdbp-svg-db { fill: var(--bg-soft); }
+    .fdbp-svg-avatar circle { fill: var(--bg-elevated); stroke: var(--text-muted); stroke-width: 1.5; }
+    .fdbp-svg-avatar-dot circle { fill: var(--text-muted); }
+    .fdbp-svg-line { stroke: var(--text-muted); fill: none; }
+    .fdbp-state, .fdbp-grid, .fdbp-trust { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+    .fdbp-st { display: flex; align-items: flex-start; gap: 12px; padding: 14px 16px; border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--bg-soft); }
+    .fdbp-st-i { display: grid; place-items: center; flex: none; width: 28px; height: 28px; border-radius: 50%; font-size: .85rem; font-weight: 700; background: var(--bg-elevated); color: var(--text-muted); }
+    .fdbp-st[data-ok="true"] .fdbp-st-i { background: var(--success-bg); color: var(--success-text); }
+    .fdbp-st[data-ok="false"] .fdbp-st-i { background: var(--warning-bg); color: var(--warning-text); }
+    .fdbp-st b { display: block; font-size: .88rem; }
+    .fdbp-st small { color: var(--text-muted); font-size: .78rem; }
+    .fdbp-feat { padding: 18px; border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--bg-soft); }
+    .fdbp-feat svg { width: 32px; height: 32px; }
+    .fdbp-feat h3 { margin: 10px 0 4px; font-size: .95rem; }
+    .fdbp-feat p { margin: 0; color: var(--text-muted); font-size: .82rem; }
+    .fdbp-flow { display: grid; grid-template-columns: repeat(4, 1fr); margin: 0; padding: 0; list-style: none; }
+    .fdbp-flow li { position: relative; padding: 0 10px; text-align: center; }
+    .fdbp-flow li + li::before { content: ""; position: absolute; top: 22px; left: -50%; width: 100%; height: 2px; opacity: .5; background: linear-gradient(90deg, var(--accent), var(--accent-2)); }
+    .fdbp-flow-n { position: relative; z-index: 1; display: grid; place-items: center; width: 44px; height: 44px; margin: 0 auto 10px; border-radius: 50%; border: 2px solid var(--accent); background: var(--bg-soft); font-weight: 700; }
+    .fdbp-flow b { display: block; font-size: .88rem; }
+    .fdbp-flow small { color: var(--text-muted); font-size: .78rem; }
+    .fdbp-steps { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+    .fdbp-who { padding: 20px; border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--bg-soft); }
+    .fdbp-who h3 { display: flex; align-items: center; gap: 8px; margin: 0 0 12px; font-size: .95rem; }
+    .fdbp-role { padding: 2px 8px; border-radius: 999px; font-size: .68rem; font-weight: 600; background: color-mix(in srgb, var(--accent-2) 15%, transparent); color: var(--accent-2); }
+    .fdbp-who ol { margin: 0 0 14px; padding-left: 20px; color: var(--text-muted); font-size: .86rem; line-height: 1.9; }
+    .fdbp-who ol b { color: var(--text); }
+    .fdbp-trust div { color: var(--text-muted); font-size: .84rem; }
+    .fdbp-trust b { display: block; margin-bottom: 4px; color: var(--text); }
+    .fdbp-faq { padding: 12px 0; border-top: 1px solid var(--border); }
+    .fdbp-faq:last-child { border-bottom: 1px solid var(--border); }
+    .fdbp-faq summary { cursor: pointer; font-size: .9rem; font-weight: 600; }
+    .fdbp-faq p { margin: 8px 0 0; color: var(--text-muted); font-size: .86rem; }
+    @media (max-width: 900px) {
+      .fdbp-hero, .fdbp-steps { grid-template-columns: 1fr; }
+      .fdbp-state, .fdbp-grid, .fdbp-trust { grid-template-columns: 1fr 1fr; }
+      .fdbp-flow { grid-template-columns: 1fr 1fr; row-gap: 20px; }
+      .fdbp-flow li:nth-child(odd)::before { display: none; }
+    }
+    @media (max-width: 560px) {
+      .fdbp-hero, .fdbp-sec { padding: 20px 16px; }
+      .fdbp-state, .fdbp-grid, .fdbp-trust, .fdbp-flow { grid-template-columns: 1fr; }
+      .fdbp-flow li::before { display: none; }
+    }
+  </style>
+
+  <script>
+    import { api } from '../lib/api'
+    import { getMe } from '../lib/auth'
+    import { initI18n, t } from '../lib/i18n'
+    import { loadContribContext } from '../lib/filamentdb-contrib'
+    import { mountPanel } from '../lib/panel-navigation'
+
+    mountPanel('filamentdb', async (panelSignal) => {
+      await initI18n()
+      document.querySelectorAll<HTMLElement>('[data-i18n-html]').forEach(el => {
+        el.innerHTML = t(el.dataset.i18nHtml ?? '')
+      })
+
+      const [user, context, pluginStatus] = await Promise.all([
+        getMe(),
+        loadContribContext(),
+        api.get<{ active: boolean }>('/filamentdb/status').catch(() => null),
+      ])
+      if (panelSignal.aborted) return
+
+      const isAdmin = !!user && (user.is_superadmin || user.permissions.some(p => p.startsWith('admin:')))
+      document.getElementById('fdbp-to-plugins')?.toggleAttribute('hidden', !isAdmin)
+
+      const pluginActive = pluginStatus ? pluginStatus.active : context.pluginActive
+      const items: Record<string, { ok: boolean; key: string }> = {
+        plugin: { ok: pluginActive, key: pluginActive ? 'pluginOn' : 'pluginOff' },
+        token: { ok: context.tokenSaved, key: context.tokenSaved ? 'tokenOn' : 'tokenOff' },
+        perm: { ok: context.hasPermission, key: context.hasPermission ? 'permOn' : 'permOff' },
+      }
+      for (const [name, { ok, key }] of Object.entries(items)) {
+        const el = document.querySelector<HTMLElement>(`[data-state-item="${name}"]`)
+        if (!el) continue
+        el.dataset.ok = String(ok)
+        el.querySelector('.fdbp-st-i')!.textContent = ok ? '✓' : '!'
+        el.querySelector('b')!.textContent = t(`fdbConnect.state.${key}`)
+        el.querySelector('small')!.textContent = t(`fdbConnect.state.${key}Hint`)
+      }
+    })
+  </script>
+</Layout>

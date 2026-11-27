@@ -157,6 +157,9 @@ class PrinterCreate(BaseModel):
     driver_config: dict | None = None
     nozzle_diameter_mm: float | None = Field(None, gt=0)
     nozzle_hardened: bool | None = None
+    filamentdb_printer_model_id: int | None = Field(None, gt=0)
+    printer_manufacturer: str | None = Field(None, max_length=255)
+    printer_model: str | None = Field(None, max_length=255)
 
 
 class PrinterUpdate(BaseModel):
@@ -167,6 +170,9 @@ class PrinterUpdate(BaseModel):
     driver_config: dict | None = None
     nozzle_diameter_mm: float | None = Field(None, gt=0)
     nozzle_hardened: bool | None = None
+    filamentdb_printer_model_id: int | None = Field(None, gt=0)
+    printer_manufacturer: str | None = Field(None, max_length=255)
+    printer_model: str | None = Field(None, max_length=255)
 
 
 def _slot_warnings(slot: PrinterSlot, printer: Printer | None) -> list[dict[str, Any]]:
@@ -222,6 +228,9 @@ class PrinterResponse(BaseModel):
     custom_fields: dict | None = None
     nozzle_diameter_mm: float | None = None
     nozzle_hardened: bool | None = None
+    filamentdb_printer_model_id: int | None = None
+    printer_manufacturer: str | None = None
+    printer_model: str | None = None
 
     class Config:
         from_attributes = True

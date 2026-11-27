@@ -1401,6 +1401,37 @@ body:has(.fm-header-filter-panel.open)::after {
   font-weight: 500;
 }
 
+/* FilaMan-DB: Ähnliche Einträge im Sende-Dialog (auffällige Warnbox) */
+#fdb-contrib-dialog .fdb-matches-alert {
+  margin: 12px 0;
+  padding: 14px 16px;
+  background: var(--warning-bg);
+  border: 2px solid var(--warning-border);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+}
+#fdb-contrib-dialog .fdb-matches-head { display: flex; align-items: center; gap: 8px; }
+#fdb-contrib-dialog .fdb-matches-icon { font-size: 1.25rem; line-height: 1; color: var(--warning-text); }
+#fdb-contrib-dialog .fdb-matches-title { font-size: 1.05rem; color: var(--warning-text); }
+#fdb-contrib-dialog .fdb-matches-hint { margin: 6px 0 8px; font-size: 0.875rem; color: var(--text); }
+#fdb-contrib-dialog .fdb-matches-alert ul { margin: 0; padding: 0; }
+#fdb-contrib-dialog .fdb-matches-alert .fdb-match { margin-left: 0; padding: 8px 0; border-top: 1px solid var(--warning-border); }
+#fdb-contrib-dialog .fdb-match-label { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-weight: 600; }
+.fdb-score { display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: 0.75rem; font-weight: 700; border: 1px solid var(--border); background: var(--bg-elevated); color: var(--text-muted); white-space: nowrap; }
+.fdb-score-strong { background: var(--success-bg); border-color: var(--success-border); color: var(--success-text); }
+#fdb-contrib-dialog .fdb-submit-hint { margin: 12px 0 -4px; font-size: 0.85rem; font-weight: 600; color: var(--warning-text); }
+
+/* FilaMan-DB: Massenabgleich */
+#fdb-contrib-dialog .fdb-bm-auto { display: flex; align-items: center; gap: 8px; margin-top: 12px; }
+#fdb-contrib-dialog .fdb-bm-section { margin-top: 16px; }
+#fdb-contrib-dialog .fdb-bm-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+#fdb-contrib-dialog .fdb-bm-head h3 { margin: 0; font-size: 1rem; }
+#fdb-contrib-dialog .fdb-bm-list { list-style: none; margin: 8px 0 0; padding: 0; }
+#fdb-contrib-dialog .fdb-bm-row { padding: 8px 0; border-top: 1px solid var(--border); }
+#fdb-contrib-dialog .fdb-bm-name { display: flex; align-items: center; gap: 8px; }
+#fdb-contrib-dialog .fdb-bm-options { display: grid; gap: 4px; margin: 6px 0 0 26px; }
+#fdb-contrib-dialog .fdb-bm-option { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+
 .pc-print-prompt.hidden,
 .pc-print-prompt-stack [hidden] {
   display: none !important;
@@ -3511,3 +3542,73 @@ html.sidebar-collapsed #sidebar-color-mode { display: none; }
 .fm-import-divider { margin-top: 12px; padding-top: 20px; border-top: 2px solid var(--border); }
 .fm-import-divider-title { margin: 0 0 4px; font-size: 1.25rem; font-weight: 700; color: var(--text); }
 .fm-import-divider-desc { margin: 0; color: var(--text-muted); font-size: .9rem; }
+
+/* FilaMan-DB Beitragsstatus als Pille */
+.fdb-status {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 2px 10px;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  line-height: 1.5;
+  white-space: nowrap;
+  vertical-align: middle;
+  border: 1px solid var(--border);
+}
+.fdb-contrib-row .fdb-status, .pp-contrib .fdb-status { margin-left: 0; }
+.fdb-status-success { color: var(--success-text); background: var(--success-bg); border-color: var(--success-border); }
+.fdb-status-warning { color: var(--warning-text); background: var(--warning-bg); border-color: var(--warning-border); }
+.fdb-status-error { color: var(--error-text); background: var(--error-bg); border-color: var(--error-border); }
+.fdb-status-inline { margin-left: 8px; padding: 0 8px; font-size: 0.7rem; }
+.fdb-status.fdb-status-icon { display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; padding: 0; border-radius: 50%; font-size: 0.75rem; font-weight: 700; line-height: 1; vertical-align: middle; cursor: help; }
+.fdb-link-none { color: var(--text-muted); cursor: help; }
+/* Sofortiger Tooltip für FilaMan-DB-Symbole (fixed am body, damit Tabellen-Scrollbereiche ihn nicht abschneiden). */
+.fdb-tooltip {
+  position: fixed;
+  z-index: 1200;
+  max-width: min(260px, calc(100vw - 16px));
+  padding: 7px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-elevated);
+  box-shadow: var(--shadow-md);
+  color: var(--text);
+  font-size: 0.75rem;
+  font-weight: 500;
+  line-height: 1.4;
+  pointer-events: none;
+  transform: translate(-50%, -100%);
+}
+.fdb-tooltip[data-below] { transform: translate(-50%, 0); }
+.fdb-header-contrib { margin-left: auto; margin-top: 12px; flex: 0 0 auto; }
+.fdb-header-contrib:empty { display: none; }
+.fdb-header-contrib + .detail-page-actions { margin-left: 0; }
+.fdb-bulk-list { margin: 8px 0 0; padding-left: 18px; }
+
+/* FilaMan-DB: Hinweis-Banner über den Listen (lib/filamentdb-connect-banner.ts) */
+.fdb-banner {
+  position: relative; overflow: hidden; display: flex; align-items: center; gap: 20px;
+  margin-bottom: var(--section-gap, 16px); padding: 20px 24px; border-radius: var(--radius-lg);
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, transparent);
+  background: linear-gradient(115deg, color-mix(in srgb, var(--accent) 16%, transparent), color-mix(in srgb, var(--accent-2) 10%, transparent) 55%, var(--bg-elevated));
+}
+.fdb-banner::after {
+  content: ""; position: absolute; right: -60px; top: -60px; width: 220px; height: 220px; border-radius: 50%; pointer-events: none;
+  background: radial-gradient(circle, color-mix(in srgb, var(--accent-2) 25%, transparent), transparent 70%);
+}
+.fdb-banner-mark { width: 56px; height: 56px; flex: none; }
+.fdb-banner-text { flex: 1; min-width: 0; position: relative; z-index: 1; }
+.fdb-banner-tag { display: block; margin-bottom: 6px; font-size: .7rem; letter-spacing: .1em; text-transform: uppercase; color: var(--accent-3); }
+.fdb-banner-text strong { display: block; margin-bottom: 4px; font-size: 1.02rem; color: var(--text); }
+.fdb-banner-desc { color: var(--text-muted); font-size: .88rem; }
+.fdb-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.fdb-chip { display: inline-flex; align-items: center; gap: 5px; padding: 3px 9px; border-radius: 999px; font-size: .72rem; border: 1px solid var(--border); background: color-mix(in srgb, var(--text) 6%, transparent); color: var(--text); }
+.fdb-banner-cta { position: relative; z-index: 1; white-space: nowrap; text-decoration: none; }
+.fdb-banner-close { position: relative; z-index: 1; align-self: flex-start; background: none; border: 0; padding: 4px; color: var(--text-muted); font-size: 1.1rem; line-height: 1; cursor: pointer; }
+.fdb-banner-close:hover { color: var(--text); }
+@media (max-width: 640px) {
+  .fdb-banner { flex-wrap: wrap; padding: 16px; gap: 12px; }
+  .fdb-banner-text { flex-basis: calc(100% - 100px); }
+  .fdb-banner-cta { order: 3; }
+}

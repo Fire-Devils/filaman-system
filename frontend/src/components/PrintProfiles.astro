@@ -1,0 +1,102 @@
+---
+import FormDialog from './FormDialog.astro'
+---
+<section id="print-profiles" class="print-profiles fm-detail-content hidden">
+  <div class="pp-heading">
+    <h2 style="font-weight: 600; margin: 0;" data-i18n="printProfiles.title">Print profiles</h2>
+    <button type="button" class="fm-btn fm-btn-primary fm-btn-sm hidden" data-pp-add data-i18n="printProfiles.add">Add print profile</button>
+  </div>
+  <div class="pp-cards" data-pp-list></div>
+</section>
+
+<section id="community-profiles" class="print-profiles fm-detail-content hidden">
+  <details data-cp-details class="fm-card filament-spec-card cp-card">
+    <summary class="filament-spec-title cp-summary">
+      <h2 class="cp-summary-title"><span data-i18n="fdbContrib.community.title">Community print profiles</span><span data-cp-count></span></h2>
+      <svg class="cp-chevron" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6l4 4 4-4" /></svg>
+    </summary>
+    <div class="cp-body">
+      <p class="pp-muted" style="margin: 0 0 8px;" data-i18n="fdbContrib.community.intro">Profiles from other users in FilaMan-DB.</p>
+      <div style="margin-bottom: 8px;">
+        <button type="button" class="fm-btn fm-btn-outline fm-btn-sm hidden" data-cp-search-open data-i18n="fdbContrib.community.searchOpen">Search more profiles</button>
+      </div>
+      <div data-cp-list></div>
+    </div>
+  </details>
+</section>
+
+<FormDialog id="community-search-dialog" titleId="community-search-dialog-title" titleKey="fdbContrib.community.searchTitle" title="Search community profiles" wide>
+  <div data-cs-body></div>
+  <div class="pp-actions">
+    <button type="button" class="fm-btn fm-btn-outline" data-dialog-close data-i18n="common.close">Close</button>
+  </div>
+</FormDialog>
+
+<FormDialog id="print-profile-dialog" titleId="print-profile-dialog-title" titleKey="printProfiles.addTitle" title="Add print profile" wide>
+  <form id="print-profile-form" novalidate={false}>
+    <div data-pp-body></div>
+    <div class="pp-actions">
+      <button type="button" class="fm-btn fm-btn-outline" data-pp-cancel data-i18n="common.cancel">Cancel</button>
+      <button type="submit" class="fm-btn fm-btn-primary" data-i18n="common.save">Save</button>
+    </div>
+  </form>
+</FormDialog>
+
+<style is:global>
+  .fdb-contrib-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .fdb-contrib-row:empty, .pp-contrib:empty { display: none; }
+  .pp-contrib { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .fdb-stars { color: var(--warning-text); letter-spacing: 1px; }
+  .fdb-star { background: none; border: 0; padding: 0 2px; cursor: pointer; font-size: 1.1rem; color: var(--text-muted); }
+  .fdb-star.fdb-star-on { color: var(--warning-text); }
+  .cp-printer { display: grid; gap: 8px; margin-top: 8px; }
+  .cp-printer h3 { margin: 0; font-size: .95rem; font-weight: 600; }
+  #community-profiles.hidden { display: none; }
+  .cp-summary { display: flex; align-items: center; justify-content: space-between; gap: 12px; cursor: pointer; list-style: none; user-select: none; }
+  .cp-summary::-webkit-details-marker { display: none; }
+  .cp-summary:hover { background: color-mix(in srgb, var(--accent) 6%, var(--bg-soft)); }
+  .cp-summary:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+  .cp-summary-title { margin: 0; font-size: inherit; font-weight: inherit; }
+  .cp-chevron { flex: none; color: var(--text-muted); transition: transform .15s ease; }
+  .cp-card[open] > .cp-summary .cp-chevron { transform: rotate(180deg); }
+  .cp-card:not([open]) > .cp-summary { border-bottom: 0; }
+  .cp-body { padding: 12px 16px 16px; }
+  @media (prefers-reduced-motion: reduce) { .cp-chevron { transition: none; } }
+  #fdb-contrib-dialog ul { margin: 4px 0 0; padding-left: 18px; }
+  #fdb-contrib-dialog .fdb-payload { display: grid; grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr)); gap: 6px 16px; margin: 12px 0 0; }
+  #fdb-contrib-dialog .fdb-payload dt { font-size: .7rem; color: var(--text-muted); }
+  #fdb-contrib-dialog .fdb-payload dd { margin: 0; overflow-wrap: anywhere; }
+  #fdb-contrib-dialog .fdb-match { display: flex; align-items: center; justify-content: space-between; gap: 12px; list-style: none; margin-left: -18px; padding: 4px 0; }
+  #fdb-contrib-dialog .fdb-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
+  #fdb-contrib-dialog .fdb-matches, #fdb-contrib-dialog .fdb-deps { margin-top: 12px; }
+  .print-profiles { margin-top: 24px; display: grid; gap: 12px; }
+  .print-profiles.hidden { display: none; }
+  .pp-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+  .pp-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 20rem), 1fr)); gap: 12px; }
+  .pp-card { padding: 12px 16px; display: grid; gap: 8px; }
+  .pp-card h3 { margin: 0; font-size: .95rem; font-weight: 600; overflow-wrap: anywhere; }
+  .pp-card dl { margin: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(7rem, 1fr)); gap: 6px 12px; }
+  .pp-card dt { font-size: .7rem; color: var(--text-muted); }
+  .pp-card dd { margin: 0; font-size: .85rem; font-variant-numeric: tabular-nums; }
+  .pp-card-actions { display: flex; gap: 8px; }
+  .pp-muted { color: var(--text-muted); font-size: .8rem; }
+  .pp-group { border: 1px solid var(--border); border-radius: var(--radius-sm); margin: 12px 0 0; padding: 8px 12px 12px; min-width: 0; }
+  .pp-group legend { font-size: .8rem; font-weight: 600; padding: 0 6px; }
+  .pp-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr)); gap: 10px 12px; }
+  .pp-unit { color: var(--text-muted); font-weight: 400; }
+  .pp-check { display: flex; align-items: center; gap: 8px; margin-top: 10px; }
+  .printer-model-field { display: flex; flex-direction: column; gap: 10px; }
+  .printer-model-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .printer-model-results { list-style: none; margin: 4px 0 0; padding: 0; max-height: 200px; overflow-y: auto; border: 1px solid var(--border, #ccc); border-radius: 8px; background: var(--bg-soft, transparent); }
+  .printer-model-results li { padding: 8px 12px; cursor: pointer; }
+  .printer-model-results li:hover, .printer-model-results li:focus { background: var(--bg-soft, rgba(128,128,128,.15)); outline: none; }
+  .printer-model-suggest { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; font-size: 0.875rem; }
+  .printer-model-hint { margin: 4px 0 0; font-size: 0.8125rem; color: var(--text-muted); }
+  .cp-search-form { display: grid; grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr)); gap: 10px 12px; align-items: end; margin-bottom: 12px; }
+  .cp-search-more { margin-top: 12px; }
+  .cp-adopt-panel { margin-top: 16px; padding: 12px 16px; border: 1px solid var(--border); border-radius: var(--radius-sm); display: grid; gap: 8px; }
+  .cp-adopt-panel h3 { margin: 0; font-size: .95rem; font-weight: 600; }
+  .cp-adopt-panel.hidden, .cp-search-more.hidden, .pp-plate-suggest.hidden { display: none; }
+  .pp-plate-suggest { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 6px; }
+  .pp-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
+</style>
