@@ -200,14 +200,26 @@ async def submit_contribution(
 class BulkCheckRequest(BaseModel):
     type: Literal["manufacturer", "filament"]
     auto_link_exact: bool = False
-    limit: int = Field(200, ge=1, le=200)
+    ids: list[int] = Field(..., min_length=1, max_length=svc.BULK_BATCH_MAX)
+
+
+class BulkCandidatesRequest(BaseModel):
+    type: Literal["manufacturer", "filament"]
+
+
+@router.post("/contributions/bulk-candidates")
+async def bulk_candidates_contributions(
+    data: BulkCandidatesRequest, db: DBSession, principal=_CONTRIBUTE
+):
+    """Ids der lokal unverknüpften Hersteller/Filamente (ohne Aufruf an die DB)."""
+    return await _guard(svc.bulk_candidates(db, principal.user_id, data.type))
 
 
 @router.post("/contributions/bulk-check")
 async def bulk_check_contributions(
     data: BulkCheckRequest, db: DBSession, principal=_CONTRIBUTE
 ):
-    """Alle unverknüpften Hersteller/Filamente gegen die DB abgleichen (sequenziell)."""
+    """Alle unverknüpften Hersteller/Filamente gegen die DB abgleichen, ein Paket (max. 25 ids) je Aufruf."""
     if data.auto_link_exact:
         # Auto-Verknüpfen schreibt an lokalen Objekten: deren Update-Recht ist nötig.
         await ensure_any_permission(db, principal, _LINK_PERMISSION[data.type])
@@ -217,7 +229,7 @@ async def bulk_check_contributions(
             principal.user_id,
             data.type,
             auto_link_exact=data.auto_link_exact,
-            limit=data.limit,
+            ids=data.ids,
         )
     )
 

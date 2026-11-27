@@ -1130,10 +1130,18 @@ async def test_suggest_build_plate_needs_contribute_permission(viewer_auth_clien
 # ─── Massenabgleich ───────────────────────────────────────────────────────
 
 
-async def _bulk(client, csrf, type_="manufacturer", **extra):
+async def _candidates(client, csrf, type_="manufacturer"):
+    return await client.post(
+        f"{BASE}/contributions/bulk-candidates", json={"type": type_}, headers=_h(csrf)
+    )
+
+
+async def _bulk(client, csrf, type_="manufacturer", ids=None, **extra):
+    if ids is None:
+        ids = (await _candidates(client, csrf, type_)).json()["ids"] or [999999]
     return await client.post(
         f"{BASE}/contributions/bulk-check",
-        json={"type": type_, **extra},
+        json={"type": type_, "ids": ids, **extra},
         headers=_h(csrf),
     )
 
@@ -1160,7 +1168,6 @@ async def test_bulk_check_categories_and_sorting(auth_client, fake_db, entities,
     assert [m["id"] for m in acme["matches"]] == [2, 1]
     assert acme["matches"][0]["label"] == "Acme"
     assert body["counts"]["suggested"] == 2
-    assert body["truncated"] is False
 
     fake_db.matches["manufacturer"] = []
     body = (await _bulk(client, csrf, auto_link_exact=False)).json()
@@ -1235,20 +1242,76 @@ async def test_bulk_check_filament_with_linked_manufacturer(auth_client, fake_db
 
 
 @pytest.mark.asyncio
-async def test_bulk_check_limit_truncates_and_single_error_does_not_abort(
-    auth_client, fake_db, entities, db_session
-):
+async def test_bulk_check_single_error_does_not_abort(auth_client, fake_db, entities, db_session):
     client, csrf = auth_client
     await _save_token(client, csrf)
     db_session.add(Manufacturer(name="Noch einer"))
     await db_session.commit()
-    body = (await _bulk(client, csrf, auto_link_exact=False, limit=1)).json()
-    assert body["total"] == 1 and body["truncated"] is True
-
     fake_db.fail["POST /contribute/check"] = (500, {"code": "boom", "message": "kaputt"})
     body = (await _bulk(client, csrf, auto_link_exact=False)).json()
     assert body["counts"]["blocked"] == 2
     assert body["items"][0]["blockers"][0]["code"]
+    assert "truncated" not in body
+
+
+@pytest.mark.asyncio
+async def test_bulk_candidates_filter_and_total(auth_client, fake_db, entities, db_session):
+    client, csrf = auth_client
+    await _save_token(client, csrf)
+    linked = Manufacturer(name="Verknüpft", custom_fields={"filamentdb_id": 4})
+    busy = Manufacturer(name="Aktiv")
+    db_session.add_all([linked, busy])
+    await db_session.flush()
+    db_session.add(
+        FilamentDBContribution(entity_type="manufacturer", local_id=busy.id, status="pending", created_by=1)
+    )
+    await db_session.commit()
+    before = len(fake_db.requests)
+    body = (await _candidates(client, csrf)).json()
+    assert body == {"type": "manufacturer", "ids": [entities["mfr"].id], "total": 1}
+    assert not any(r[0] == "POST" for r in fake_db.requests[before:])
+    fil = (await _candidates(client, csrf, "filament")).json()
+    assert fil["ids"] == [entities["fil"].id]
+
+
+@pytest.mark.asyncio
+async def test_bulk_candidates_needs_token_and_permission(
+    auth_client, viewer_auth_client, fake_db, entities  # noqa: F811
+):
+    client, csrf = auth_client
+    resp = await _candidates(client, csrf)
+    assert resp.status_code >= 400
+    viewer, viewer_csrf = viewer_auth_client
+    assert (await _candidates(viewer, viewer_csrf)).status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_bulk_check_rejects_too_many_or_empty_ids(auth_client, fake_db, entities):
+    client, csrf = auth_client
+    await _save_token(client, csrf)
+    too_many = await _bulk(client, csrf, ids=list(range(1, 27)))
+    assert too_many.status_code == 422
+    empty = await _bulk(client, csrf, ids=[])
+    assert empty.status_code == 422
+    missing = await client.post(
+        f"{BASE}/contributions/bulk-check", json={"type": "manufacturer"}, headers=_h(csrf)
+    )
+    assert missing.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_bulk_check_skips_ids_no_longer_candidates(auth_client, fake_db, entities, db_session):
+    client, csrf = auth_client
+    await _save_token(client, csrf)
+    linked = Manufacturer(name="Inzwischen verknüpft", custom_fields={"filamentdb_id": 4})
+    db_session.add(linked)
+    await db_session.commit()
+    fake_db.matches["manufacturer"] = []
+    body = (
+        await _bulk(client, csrf, ids=[linked.id, entities["mfr"].id, 987654], auto_link_exact=False)
+    ).json()
+    assert [i["local_id"] for i in body["items"]] == [entities["mfr"].id]
+    assert body["total"] == 1
 
 
 @pytest.mark.asyncio
@@ -1267,7 +1330,7 @@ async def test_bulk_check_invalid_token_aborts(auth_client, fake_db, entities):
 @pytest.mark.asyncio
 async def test_bulk_check_needs_contribute_permission(viewer_auth_client, fake_db, entities):  # noqa: F811
     client, csrf = viewer_auth_client
-    resp = await _bulk(client, csrf, auto_link_exact=True)
+    resp = await _bulk(client, csrf, ids=[1], auto_link_exact=True)
     assert resp.status_code == 403
     assert fake_db.requests == []
 
