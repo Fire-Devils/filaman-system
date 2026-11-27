@@ -366,6 +366,7 @@ export function createDialog(): HTMLDialogElement {
   document.getElementById('fdb-contrib-dialog')?.remove()
   const dialog = document.createElement('dialog')
   dialog.id = 'fdb-contrib-dialog'
+  dialog.dataset.handbook = 'fdbSend'
   dialog.className = 'fm-form-dialog fm-form-dialog-wide'
   dialog.setAttribute('aria-labelledby', 'fdb-contrib-title')
   dialog.innerHTML = `

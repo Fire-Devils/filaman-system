@@ -78,13 +78,13 @@ import FormDialog from '../components/FormDialog.astro'
     </div>
   </div>
 
-  <FormDialog id="spool-modal" titleId="modal-title" titleKey="dashboard.lowAndEmptySpools" title="Low & Empty Spools" wide>
+  <FormDialog id="spool-modal" handbook="dashboardLowStock" titleId="modal-title" titleKey="dashboard.lowAndEmptySpools" title="Low & Empty Spools" wide>
     <Fragment slot="actions"><button type="button" class="fm-btn fm-btn-outline" data-dialog-close data-i18n="common.close">Close</button></Fragment>
     <div id="modal-content" class="dashboard-table"><p data-i18n="common.loading">Loading...</p></div>
     <div id="modal-footer" class="hidden"><button type="button" id="btn-archive-all" class="fm-btn fm-btn-warning" data-i18n="dashboard.archiveAll">Archive All</button></div>
   </FormDialog>
 
-  <FormDialog id="fm-changelog-overlay" titleId="fm-changelog-title" titleKey="changelog.popupTitle" title="What's New">
+  <FormDialog id="fm-changelog-overlay" noHelp titleId="fm-changelog-title" titleKey="changelog.popupTitle" title="What's New">
     <Fragment slot="actions"><button type="button" id="fm-changelog-close" class="fm-btn fm-btn-primary" data-dialog-close data-i18n="changelog.dismiss">Got it</button></Fragment>
     <p id="fm-changelog-version" class="dashboard-changelog-version"></p>
     <div id="fm-changelog-list" class="dashboard-stack"></div>

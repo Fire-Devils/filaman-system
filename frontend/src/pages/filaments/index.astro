@@ -157,7 +157,7 @@ const { compactPicker = false } = Astro.props
   <!-- Bulk Prompt Modal -->
   <div id="bulk-prompt-modal" class="fm-modal-overlay">
     <div class="fm-card" style="width: 100%; max-width: 24rem; margin: 0 1rem; padding: 24px;">
-      <h3 id="bulk-prompt-title" style="font-size: 1.15rem; font-weight: 600; margin-bottom: 16px;"></h3>
+      <div class="fm-dialog-head" data-help-slot><h3 id="bulk-prompt-title"></h3></div>
       <div id="bulk-prompt-content" style="margin-bottom: 16px;"></div>
       <div style="display: flex; gap: 12px;">
         <button id="bulk-prompt-ok" class="fm-btn fm-btn-primary" data-i18n="common.confirm">Confirm</button>

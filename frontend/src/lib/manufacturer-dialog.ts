@@ -79,11 +79,12 @@ export function createManufacturerDialog(options: {
   }
   const overlay = document.createElement('dialog')
   overlay.className = 'fm-modal-overlay manufacturer-dialog'
+  overlay.dataset.handbook = 'manufacturerDetail'
   overlay.setAttribute('aria-labelledby', 'manufacturer-dialog-title')
   overlay.innerHTML = `<form data-manufacturer-form class="fm-card manufacturer-panel">
     <header class="manufacturer-header"><div class="manufacturer-toolbar">
       <button type="button" class="fm-btn fm-btn-outline" data-manufacturer-close>${label('common.close')}</button>
-      <div class="manufacturer-actions"><span class="manufacturer-changed" hidden>${label('filaments.changed')}</span>
+      <div class="manufacturer-actions" data-help-slot><span class="manufacturer-changed" hidden>${label('filaments.changed')}</span>
       <button type="button" class="fm-btn fm-btn-outline" data-manufacturer-edit aria-label="${label('manufacturers.editManufacturer')}">${icon('edit')}</button>
       <button type="submit" class="fm-btn fm-btn-primary" data-manufacturer-submit>${label('common.save')}</button>
       <button type="button" class="fm-btn fm-btn-outline" data-manufacturer-cancel>${label('common.cancel')}</button></div></div>

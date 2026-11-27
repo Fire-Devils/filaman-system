@@ -16,9 +16,11 @@ export const handbookTargets = {
   contents: { de: '00-Inhalt', en: '00-Contents' },
   login: { de: '02-Anmeldung', en: '02-Login' },
   dashboard: { de: '04-Dashboard', en: '04-Dashboard' },
+  dashboardLowStock: { de: '04-Dashboard#warnsystem-low-stock-spools', en: '04-Dashboard#alert-system-low-stock-spools' },
 
   manufacturers: { de: '05-Hersteller', en: '05-Manufacturers' },
   manufacturerAdd: { de: '05-Hersteller#hersteller-hinzufugen', en: '05-Manufacturers#add-a-manufacturer' },
+  manufacturerDetail: { de: '05-Hersteller#katalogverknupfung-und-herstellerdetails', en: '05-Manufacturers#catalog-link-and-manufacturer-details' },
   manufacturerBulkMatch: { de: '18-Filamandb#186-mit-filaman-db-abgleichen-massenabgleich', en: '18-Filamandb#186-match-with-filaman-db-bulk-match' },
 
   filaments: { de: '06-Filamente', en: '06-Filaments' },
@@ -40,6 +42,7 @@ export const handbookTargets = {
   spoolFromEmpty: { de: '07-Spulen#spule-voll-leergewicht-von-der-waage-berechnen', en: '07-Spools#spool-full-calculate-the-empty-spool-weight-from-the-scale' },
   spoolWeights: { de: '07-Spulen#gewichte-und-preis', en: '07-Spools#weights-and-price' },
   spoolStatus: { de: '07-Spulen#spulenstatus', en: '07-Spools#spool-status' },
+  spoolMoisture: { de: '07-Spulen#feuchte-tracking', en: '07-Spools#moisture-tracking' },
   labels: { de: '25-Etiketten-Designer#251-etikettendruck-offnen', en: '25-Label-Designer#251-opening-label-printing' },
 
   locations: { de: '08-Lagerorte', en: '08-Locations' },
@@ -63,6 +66,7 @@ export const handbookTargets = {
 
   filamentDb: { de: '18-Filamandb#187-banner-mit-filaman-db-verbinden-und-infoseite', en: '18-Filamandb#187-connect-to-filaman-db-banner-and-info-page' },
   fdbSubmissions: { de: '27-Filaman-Db-Community#275-meine-einreichungen', en: '27-Filaman-Db-Community#275-my-submissions' },
+  fdbSend: { de: '27-Filaman-Db-Community#273-an-filaman-db-senden', en: '27-Filaman-Db-Community#273-send-to-filaman-db' },
 
   settings: { de: '10-Einstellungen', en: '10-Settings' },
   settingsSidebar: { de: '10-Einstellungen#seitenleisten-einstellungen', en: '10-Settings#sidebar-settings' },

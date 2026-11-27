@@ -246,6 +246,7 @@ export interface BulkMatchOptions {
 export async function openBulkMatchDialog(options: BulkMatchOptions): Promise<void> {
   const dialog = createDialog()
   dialog.classList.add('fdb-bulk-match')
+  if (options.type === 'manufacturer') dialog.dataset.handbook = 'manufacturerBulkMatch'
   const body = dialog.querySelector('[data-fdb-body]') as HTMLElement
   const submit = dialog.querySelector('[data-fdb-submit]') as HTMLButtonElement
   const closeButton = dialog.querySelector('[data-dialog-close]') as HTMLButtonElement

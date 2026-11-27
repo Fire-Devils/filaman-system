@@ -129,7 +129,7 @@ import InventoryFilterReset from '../../components/InventoryFilterReset.astro'
   <!-- Bulk Prompt Modal -->
   <div id="bulk-prompt-modal" class="fm-modal-overlay" data-handbook="spoolBulk">
     <div class="fm-card" style="width: 100%; max-width: 24rem; margin: 0 1rem; padding: 24px;">
-      <h3 id="bulk-prompt-title" style="font-size: 1.15rem; font-weight: 600; margin-bottom: 16px;"></h3>
+      <div class="fm-dialog-head" data-help-slot><h3 id="bulk-prompt-title"></h3></div>
       <div id="bulk-prompt-content" style="margin-bottom: 16px;"></div>
       <div style="display: flex; gap: 12px;">
         <button id="bulk-prompt-ok" class="fm-btn fm-btn-primary" data-i18n="common.confirm">Confirm</button>
@@ -141,7 +141,7 @@ import InventoryFilterReset from '../../components/InventoryFilterReset.astro'
   <!-- Add From Empty Spool Modal -->
   <div id="from-empty-modal" class="fm-modal-overlay" data-handbook="spoolFromEmpty">
     <div class="fm-card" style="width: 100%; max-width: 26rem; margin: 0 1rem; padding: 24px; overflow: visible;">
-      <h3 style="font-size: 1.15rem; font-weight: 600; margin-bottom: 8px;" data-i18n="spools.selectEmptySpoolTitle">Select Empty Spool</h3>
+      <div class="fm-dialog-head" data-help-slot><h3 data-i18n="spools.selectEmptySpoolTitle">Select Empty Spool</h3></div>
       <p style="font-size: 0.875rem; color: var(--text-muted); margin-bottom: 16px;" data-i18n="spools.selectEmptySpoolLabel">Select an empty spool as a template. Spool properties will be transferred.</p>
       <div id="from-empty-dropdown" style="position: relative; margin-bottom: 16px;">
         <div id="from-empty-trigger" class="fm-select" tabindex="0"
@@ -167,7 +167,7 @@ import InventoryFilterReset from '../../components/InventoryFilterReset.astro'
   <!-- RFID Modal -->
   <div id="rfid-modal" class="fm-modal-overlay" data-handbook="spoolRfid">
     <div class="fm-card" style="width: 100%; max-width: 28rem; margin: 0 1rem; padding: 24px;">
-      <h3 style="font-size: 1.15rem; font-weight: 600; margin-bottom: 16px;" data-i18n="rfid.writeTag">Write RFID Tag</h3>
+      <div class="fm-dialog-head" data-help-slot><h3 data-i18n="rfid.writeTag">Write RFID Tag</h3></div>
       <div id="rfid-content">
         <p style="margin-bottom: 16px;" id="rfid-text"></p>
         <div id="rfid-device-select-container" class="hidden">

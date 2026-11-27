@@ -49,9 +49,9 @@ const { id } = Astro.params
     </div>
   </div>
   
-  <div id="modal-container" class="hidden fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+  <div id="modal-container" data-help-dialog class="hidden fixed inset-0 bg-black/50 flex items-center justify-center z-50">
     <div class="fm-card" style="padding: 24px; width: 100%; max-width: 420px; margin: 16px;">
-      <h3 id="modal-title" style="font-weight: 600; margin: 0 0 16px 0;"></h3>
+      <div class="fm-dialog-head" data-help-slot><h3 id="modal-title"></h3></div>
       <form id="modal-form" style="display: grid; gap: 16px;">
         <div id="modal-fields"></div>
         <div id="modal-error" class="fm-alert-error hidden"></div>
@@ -70,7 +70,7 @@ const { id } = Astro.params
   <!-- RFID Modal -->
   <div id="rfid-modal" class="fm-modal-overlay" data-handbook="spoolRfid">
     <div class="fm-card" style="width: 100%; max-width: 28rem; margin: 0 1rem; padding: 24px;">
-      <h3 style="font-size: 1.15rem; font-weight: 600; margin-bottom: 16px;" data-i18n="rfid.writeTag">Write RFID Tag</h3>
+      <div class="fm-dialog-head" data-help-slot><h3 data-i18n="rfid.writeTag">Write RFID Tag</h3></div>
       <div id="rfid-content">
         <p style="margin-bottom: 16px;" id="rfid-text"></p>
         <div id="rfid-device-select-container" class="hidden">
@@ -1421,6 +1421,8 @@ const { id } = Astro.params
         dry: t('moisture.dryDialogTitle'),
       }
       title.textContent = titles[type as keyof typeof titles]
+      // Each action explains itself in its own manual section
+      container.dataset.handbook = ({ measurement: 'spoolWeights', adjustment: 'spoolWeights', status: 'spoolStatus', move: 'spoolDetail', dry: 'spoolMoisture' } as Record<string, string>)[type] ?? 'spoolDetail'
       
       if (type === 'measurement') {
         fields.innerHTML = `

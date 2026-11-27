@@ -5,7 +5,7 @@
       "date": "",
       "changes": {
         "de": [
-          { "type": "feature", "text": "Rechts im Seitenkopf gibt es jetzt einen Fragezeichen-Knopf. Er öffnet in einem neuen Tab den Handbuch-Abschnitt zur aktuellen Ansicht (docu.filaman.app), in der passenden Sprache." },
+          { "type": "feature", "text": "Rechts im Seitenkopf gibt es jetzt einen Fragezeichen-Knopf. Er öffnet in einem neuen Tab den Handbuch-Abschnitt zur aktuellen Ansicht (docu.filaman.app), in der passenden Sprache. Den Knopf gibt es auch in den Köpfen der Dialoge; dort öffnet er den Abschnitt zum Dialog." },
           { "type": "fix", "text": "FilaMan-DB-Infoseite: Die Einrichtungsanleitung für Admins sagt jetzt \"Schalte FilamentDB Import ein\" statt \"Installiere und aktiviere\". Das Plugin ist ein Systemplugin und muss nicht installiert werden." },
           { "type": "feature", "text": "FilaMan-DB: Filamente mit einem Material, das es in der FilaMan-DB noch nicht gibt, lassen sich jetzt trotzdem senden. Das Material wird als neu vorgeschlagen und bei der Freigabe angelegt." },
           { "type": "improvement", "text": "FilaMan-DB: Beim Abgleichen, Prüfen und Senden mehrerer Einträge zeigt ein Fortschrittsbalken mit Prozentangabe, wie weit es ist." },
@@ -13,7 +13,7 @@
           { "type": "improvement", "text": "FilaMan-DB: Alle Knöpfe rund um die FilaMan-DB (Senden, Abgleichen, Import, Community-Druckprofile, Einrichtung) sind jetzt einheitlich violett und so auf einen Blick erkennbar. Im Sende-Dialog steht \"Das ist es\" bei ähnlichen Einträgen wieder einzeilig und bündig rechts." }
         ],
         "en": [
-          { "type": "feature", "text": "The page header now has a question mark button on the far right. It opens the manual section for the current view (docu.filaman.app) in a new tab, in the matching language." },
+          { "type": "feature", "text": "The page header now has a question mark button on the far right. It opens the manual section for the current view (docu.filaman.app) in a new tab, in the matching language. The button also appears in dialog headers, where it opens the section for that dialog." },
           { "type": "fix", "text": "FilaMan-DB info page: The admin setup steps now say \"Switch on FilamentDB Import\" instead of \"Install and activate\". The plugin is a system plugin and does not need to be installed." },
           { "type": "feature", "text": "FilaMan-DB: Filaments whose material does not exist in the FilaMan-DB yet can now be sent anyway. The material is proposed as new and created on approval." },
           { "type": "improvement", "text": "FilaMan-DB: Matching, checking and sending several entries now shows a progress bar with a percentage." },

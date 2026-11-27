@@ -3660,3 +3660,10 @@ html.sidebar-collapsed #sidebar-color-mode { display: none; }
 .fm-list-toolbar > .fm-help-btn, .fm-admin-toolbar > .fm-help-btn, .dashboard-header > .fm-help-btn { margin-left: auto; }
 .detail-page-toolbar > .fm-help-btn { margin-left: 4px; }
 @media (max-width: 599px) { .detail-page-toolbar > .fm-help-btn { min-width: 40px; min-height: 40px; } }
+/* Help button in dialog heads (cloned by lib/handbook-button.ts) */
+.fm-help-btn--dialog { margin-left: auto; min-width: 34px; min-height: 34px; padding: 6px; align-self: center; }
+.fm-header-actions > .fm-help-btn--dialog { margin-left: 0; }
+.fm-help-btn--dialog + .filament-color-dialog-close { margin-left: 0; }
+.fm-dialog-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 16px; min-width: 0; }
+.fm-dialog-head h3 { flex: 1 1 auto; min-width: 0; margin: 0; font-size: 1.15rem; font-weight: 600; }
+@media (max-width: 599px) { .fm-help-btn--dialog { min-width: 36px; min-height: 36px; } }

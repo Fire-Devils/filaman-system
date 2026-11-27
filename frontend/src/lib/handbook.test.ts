@@ -3,6 +3,7 @@ import {
   HANDBOOK_BASE,
   getHandbookUrl,
   handbookLang,
+  handbookUrlForKey,
   handbookTargets,
   pickHandbookKey,
   routeToKey,
@@ -53,6 +54,21 @@ describe('getHandbookUrl routes', () => {
       expect(target.en).toMatch(/^\d\d-[\w-]+(#[\w-]+)?$/)
     }
     expect(routeToKey('/spools/new')).toBe('spoolAdd')
+  })
+})
+
+describe('dialog-specific keys', () => {
+  it.each([
+    ['manufacturerDetail', 'de', `${base}/Docs/De/05-Hersteller#katalogverknupfung-und-herstellerdetails`],
+    ['manufacturerDetail', 'en', `${base}/Docs/En/05-Manufacturers#catalog-link-and-manufacturer-details`],
+    ['spoolMoisture', 'de', `${base}/Docs/De/07-Spulen#feuchte-tracking`],
+    ['spoolMoisture', 'en', `${base}/Docs/En/07-Spools#moisture-tracking`],
+    ['dashboardLowStock', 'de', `${base}/Docs/De/04-Dashboard#warnsystem-low-stock-spools`],
+    ['dashboardLowStock', 'en', `${base}/Docs/En/04-Dashboard#alert-system-low-stock-spools`],
+    ['fdbSend', 'de', `${base}/Docs/De/27-Filaman-Db-Community#273-an-filaman-db-senden`],
+    ['fdbSend', 'en', `${base}/Docs/En/27-Filaman-Db-Community#273-send-to-filaman-db`],
+  ])('%s (%s)', (key, lang, url) => {
+    expect(handbookUrlForKey(key, lang)).toBe(url)
   })
 })
 
