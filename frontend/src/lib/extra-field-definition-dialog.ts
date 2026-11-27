@@ -103,6 +103,7 @@ export function extraFieldDefinitionFromDialogDraft(
 export function createExtraFieldDefinitionDialog(options: DialogOptions) {
   const overlay = document.createElement('dialog')
   overlay.className = 'fm-form-dialog fm-form-dialog-wide'
+  overlay.dataset.handbook = 'adminExtraFields'
   overlay.innerHTML = `
     <style>
       .extra-field-dialog-lockable { position: relative; }

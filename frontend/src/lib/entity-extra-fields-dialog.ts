@@ -31,6 +31,7 @@ export function createEntityExtraFieldsDialog(options: DialogOptions) {
   const target = options.targetType === 'spool' ? 'spools' : 'filaments'
   const overlay = document.createElement('dialog')
   overlay.className = 'fm-modal-overlay entity-extra-fields-overlay'
+  overlay.dataset.handbook = 'adminExtraFields'
   overlay.setAttribute('aria-labelledby', 'entity-extra-fields-title')
   overlay.innerHTML = `
     <section class="fm-card entity-extra-fields-dialog">
