@@ -225,6 +225,7 @@
     "chartMaterialsOther": "Sonstige",
     "chartMaterialsCenter": "Restgewicht",
     "chartNoData": "Für diesen Zeitraum gibt es noch keine Daten.",
+    "chartNoSnapshots": "Noch keine Daten – wird ab jetzt täglich aufgezeichnet.",
     "chartLoadError": "Das Diagramm konnte nicht geladen werden.",
     "chartRange": "Zeitraum",
     "chartMonths": "{count} Mon.",
@@ -1741,6 +1742,7 @@
   "spoolLog": {
     "searchPlaceholder": "Spule, Material, Hersteller oder Notiz suchen…",
     "title": "Protokoll",
+    "deletedSpool": "Gelöschte Spule",
     "spool": "Spule",
     "eventType": "Typ",
     "eventDate": "Datum",

@@ -54,3 +54,21 @@ it('draws escaped, labelled svg charts for both kinds and detects empty data', (
   expect(area).toContain('<polyline')
   expect(area).toContain('<path')
 })
+
+it('leaves gaps for months without data instead of drawing points or joining the line', () => {
+  const base = { width: 400, color: 'var(--accent)', formatAxis: String, ariaLabel: 'Stock' }
+  const points = [
+    { label: 'Jan', value: 10, tip: 'jan' },
+    { label: 'Feb', value: 20, tip: 'feb' },
+    { label: 'Mar', value: null, tip: '' },
+    { label: 'Apr', value: 30, tip: 'apr' },
+  ]
+  const area = renderChartSvg(points, { ...base, kind: 'area' })
+  // Two runs: Jan-Feb is a line, the lone April month is only a dot.
+  expect(area.match(/<polyline/g)).toHaveLength(1)
+  expect(area.match(/<circle[^>]*r="3"/g)).toHaveLength(3)
+  expect(area.match(/<title>/g)).toHaveLength(3)
+  expect(renderChartSvg(points, { ...base, kind: 'columns' }).match(/<title>/g)).toHaveLength(3)
+  expect(hasChartData([{ label: 'a', value: null, tip: '' }, { label: 'b', value: null, tip: '' }])).toBe(false)
+  expect(hasChartData(points)).toBe(true)
+})

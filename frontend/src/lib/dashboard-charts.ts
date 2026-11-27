@@ -5,7 +5,8 @@ import { escapeHtml } from './extra-fields'
 export interface ChartPoint {
   /** Short axis label, e.g. "Mar". */
   label: string
-  value: number
+  /** null = nothing recorded for this point: a gap, no mark. */
+  value: number | null
   /** Exact value text for the tooltip. */
   tip: string
 }
@@ -34,14 +35,14 @@ export function niceScale(max: number, integer = false): { top: number; ticks: n
 }
 
 export function hasChartData(points: readonly ChartPoint[]): boolean {
-  return points.some(point => point.value > 0)
+  return points.some(point => point.value !== null && point.value > 0)
 }
 
 const num = (value: number) => Number(value.toFixed(1))
 
 export function renderChartSvg(points: readonly ChartPoint[], options: ChartOptions): string {
   const { width, height = 190, color, kind } = options
-  const { top, ticks } = niceScale(Math.max(0, ...points.map(p => p.value)), options.integer)
+  const { top, ticks } = niceScale(Math.max(0, ...points.map(p => p.value ?? 0)), options.integer)
   const axisLabels = ticks.map(options.formatAxis)
   const padLeft = Math.ceil(Math.max(...axisLabels.map(l => l.length)) * 6.2) + 12
   const pad = { top: 10, right: 10, bottom: 24, left: padLeft }
@@ -64,20 +65,36 @@ export function renderChartSvg(points: readonly ChartPoint[], options: ChartOpti
   if (kind === 'columns') {
     const barW = Math.min(36, band * 0.62)
     marks = points.map((point, i) => {
+      if (point.value === null) return ''
       const barH = Math.max(point.value > 0 ? 1.5 : 0, plotH - (y(point.value) - pad.top))
       return `<g><title>${escapeHtml(point.tip)}</title>
         <rect x="${num(pad.left + band * i)}" y="${pad.top}" width="${num(band)}" height="${plotH}" fill="transparent"/>
         <rect x="${num(cx(i) - barW / 2)}" y="${num(pad.top + plotH - barH)}" width="${num(barW)}" height="${num(barH)}" rx="2" fill="${color}" opacity="0.85"/></g>`
     }).join('')
   } else {
-    const coords = points.map((point, i) => `${num(cx(i))},${num(y(point.value))}`)
     const baseline = num(pad.top + plotH)
-    const area = `M${num(cx(0))},${baseline} L${coords.join(' L')} L${num(cx(points.length - 1))},${baseline} Z`
-    const dots = points.map((point, i) => `<g><title>${escapeHtml(point.tip)}</title>
+    // Consecutive months with data form one run; a gap ends the line and the area.
+    const runs: { i: number; value: number }[][] = []
+    points.forEach((point, i) => {
+      if (point.value === null) return
+      const last = runs[runs.length - 1]
+      if (last && last[last.length - 1].i === i - 1) last.push({ i, value: point.value })
+      else runs.push([{ i, value: point.value }])
+    })
+    const lines = runs.map(run => {
+      const coords = run.map(p => `${num(cx(p.i))},${num(y(p.value))}`)
+      const area = run.length > 1
+        ? `<path d="M${num(cx(run[0].i))},${baseline} L${coords.join(' L')} L${num(cx(run[run.length - 1].i))},${baseline} Z" fill="${color}" opacity="0.14"/>`
+        : ''
+      const line = run.length > 1
+        ? `<polyline points="${coords.join(' ')}" fill="none" stroke="${color}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>`
+        : ''
+      return area + line
+    }).join('')
+    const dots = points.map((point, i) => point.value === null ? '' : `<g><title>${escapeHtml(point.tip)}</title>
         <circle cx="${num(cx(i))}" cy="${num(y(point.value))}" r="9" fill="transparent"/>
         <circle cx="${num(cx(i))}" cy="${num(y(point.value))}" r="${points.length > 18 ? 2 : 3}" fill="var(--bg-elevated)" stroke="${color}" stroke-width="1.75"/></g>`).join('')
-    marks = `<path d="${area}" fill="${color}" opacity="0.14"/>
-      <polyline points="${coords.join(' ')}" fill="none" stroke="${color}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>${dots}`
+    marks = `${lines}${dots}`
   }
 
   return `<svg class="dashboard-chart-svg" viewBox="0 0 ${width} ${height}" width="${width}" height="${height}" role="img" aria-label="${escapeHtml(options.ariaLabel)}">${grid}${marks}${labels}</svg>`

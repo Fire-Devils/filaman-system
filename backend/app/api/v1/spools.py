@@ -47,6 +47,7 @@ from app.api.v1.schemas_spool import (
 )
 from app.api.v1.schemas_filament import ColorFilterStop
 from app.core.event_bus import event_bus
+from app.services.spool_deletion import SPOOL_DELETED_EVENT, preserve_spool_statistics
 from app.services.color_search import filament_color_filter, filament_has_named_color
 from app.models import (
     Color,
@@ -1076,6 +1077,7 @@ async def delete_spools_bulk(
 ):
     """Bulk archive or permanently delete multiple spools."""
     if data.permanent:
+        await preserve_spool_statistics(db, data.spool_ids)
         result = await db.execute(delete(Spool).where(Spool.id.in_(data.spool_ids)))
         count = result.rowcount
     else:
@@ -1135,7 +1137,10 @@ async def list_all_spool_events(
     if search or filters or sort_by in {"manufacturer", "material", "mfr_color"}:
         query = (
             query.outerjoin(Spool, SpoolEvent.spool_id == Spool.id)
-            .outerjoin(Filament, Spool.filament_id == Filament.id)
+            .outerjoin(
+                Filament,
+                Filament.id == func.coalesce(Spool.filament_id, SpoolEvent.filament_id),
+            )
             .outerjoin(Manufacturer, Filament.manufacturer_id == Manufacturer.id)
         )
     lower = await spool_event_text_normalizer(db) if search or filters else func.lower
@@ -1164,7 +1169,13 @@ async def list_all_spool_events(
                 selectinload(Filament.filament_colors).selectinload(
                     FilamentColor.color
                 ),
-            )
+            ),
+            selectinload(SpoolEvent.filament).options(
+                selectinload(Filament.manufacturer),
+                selectinload(Filament.filament_colors).selectinload(
+                    FilamentColor.color
+                ),
+            ),
         )
         .order_by(ordering, SpoolEvent.id.desc())
         .offset((page - 1) * page_size)
@@ -1175,7 +1186,10 @@ async def list_all_spool_events(
     items: list[SpoolEventResponse] = []
     for ev in events:
         resp = SpoolEventResponse.model_validate(ev)
-        filament = ev.spool.filament if ev.spool else None
+        filament = ev.spool.filament if ev.spool else ev.filament
+        if filament is None and ev.event_type == SPOOL_DELETED_EVENT and ev.meta:
+            resp.manufacturer_name = ev.meta.get("manufacturer")
+            resp.material_type = ev.meta.get("material")
         if filament is not None:
             resp.manufacturer_name = (
                 filament.manufacturer.name if filament.manufacturer else None
@@ -1382,7 +1396,7 @@ async def permanently_delete_spool(
     db: DBSession,
     principal=RequirePermission("spools:delete"),
 ):
-    """Permanently delete a spool and all its data (including events) from the database."""
+    """Permanently delete a spool; its events stay for statistics (spool_id becomes NULL)."""
     result = await db.execute(select(Spool).where(Spool.id == spool_id))
     spool = result.scalar_one_or_none()
     if not spool:
@@ -1391,6 +1405,7 @@ async def permanently_delete_spool(
             detail={"code": "not_found", "message": "Spool not found"},
         )
 
+    await preserve_spool_statistics(db, [spool.id])
     await db.delete(spool)
     await db.commit()
     await event_bus.publish({"event": "spools_changed"})

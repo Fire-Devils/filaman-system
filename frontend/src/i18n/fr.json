@@ -224,6 +224,7 @@
     "chartMaterialsOther": "Autres",
     "chartMaterialsCenter": "restant",
     "chartNoData": "Pas encore de données pour cette période.",
+    "chartNoSnapshots": "Pas encore de données – enregistrées chaque jour à partir de maintenant.",
     "chartLoadError": "Impossible de charger le graphique.",
     "chartRange": "Période",
     "chartMonths": "{count} mois",
@@ -1740,6 +1741,7 @@
   "spoolLog": {
     "searchPlaceholder": "Rechercher une bobine, un matériau, un fabricant ou une note…",
     "title": "Journal",
+    "deletedSpool": "Bobine supprimée",
     "spool": "Bobine",
     "eventType": "Type",
     "eventDate": "Date",

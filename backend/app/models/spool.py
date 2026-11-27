@@ -94,8 +94,9 @@ class Spool(Base, TimestampMixin):
     filament: Mapped["Filament"] = relationship(back_populates="spools")
     status: Mapped["SpoolStatus"] = relationship(back_populates="spools")
     location: Mapped["Location"] = relationship(back_populates="spools")
+    # Events outlive the spool (FK ondelete SET NULL), see permanent deletion.
     events: Mapped[list["SpoolEvent"]] = relationship(
-        back_populates="spool", cascade="all, delete-orphan"
+        back_populates="spool", cascade="save-update, merge", passive_deletes=True
     )
     slot_assignments: Mapped[list["PrinterSlotAssignment"]] = relationship(
         back_populates="spool"
@@ -136,8 +137,13 @@ class SpoolEvent(Base):
     __tablename__ = "spool_events"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    spool_id: Mapped[int] = mapped_column(
-        Integer, ForeignKey("spools.id", ondelete="CASCADE"), nullable=False, index=True
+    # NULL once the spool was deleted permanently: the event stays for statistics.
+    spool_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("spools.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    # Filament of the spool at event time, survives deleting the spool.
+    filament_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("filaments.id", ondelete="SET NULL"), nullable=True, index=True
     )
 
     event_type: Mapped[str] = mapped_column(String(50), nullable=False, index=True)
@@ -173,7 +179,8 @@ class SpoolEvent(Base):
         TZDateTime(), default=func.now(), nullable=False
     )
 
-    spool: Mapped["Spool"] = relationship(back_populates="events")
+    spool: Mapped["Spool | None"] = relationship(back_populates="events")
+    filament: Mapped["Filament | None"] = relationship(foreign_keys=[filament_id], viewonly=True)
     user: Mapped["User"] = relationship(back_populates="spool_events")
     device: Mapped["Device"] = relationship(back_populates="spool_events")
     from_status: Mapped["SpoolStatus"] = relationship(

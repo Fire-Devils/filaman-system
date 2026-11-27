@@ -384,3 +384,18 @@ it('loads history only while a chart is visible and draws chart widgets', async 
   expect(document.querySelector('#chart-spend title')!.textContent).toContain('dashboard.chartMonthTip')
   expect(document.querySelector('#chart-spend')!.closest('[data-widget]')!.querySelectorAll('[data-chart-range] button').length).toBe(3)
 })
+
+it('shows the recording hint instead of an empty stock chart while no snapshot exists', async () => {
+  const saved = historyMonths.map(month => ({ ...month }))
+  historyMonths.forEach(month => Object.assign(month, { spool_count: null, total_weight_g: null, stock_value: null }))
+  try {
+    await boot(false, undefined, undefined, undefined, undefined, { dashboard_hidden_widgets: [] })
+    await vi.waitFor(() => expect(document.querySelector('#chart-spend svg')).not.toBeNull())
+    for (const id of ['chart-stock-value', 'chart-spool-count', 'chart-total-weight']) {
+      expect(document.querySelector(`#${id}`)!.textContent).toBe('dashboard.chartNoSnapshots')
+    }
+    expect(document.querySelector('#chart-spend p')).toBeNull()
+  } finally {
+    historyMonths.forEach((month, i) => Object.assign(month, saved[i]))
+  }
+})

@@ -12,6 +12,7 @@ from sqlalchemy.orm import joinedload
 from app.api.deps import DBSession, PrincipalDep
 from app.models import Filament, PrintJob, PrintJobUsage, Spool, SpoolEvent
 from app.services.print_job_service import price_per_gram
+from app.services.spool_deletion import SPOOL_DELETED_EVENT
 
 router = APIRouter(prefix="/analytics", tags=["analytics"])
 
@@ -161,7 +162,9 @@ async def get_analytics_summary(
                 .options(
                     joinedload(SpoolEvent.spool)
                     .joinedload(Spool.filament)
-                    .joinedload(Filament.manufacturer)
+                    .joinedload(Filament.manufacturer),
+                    # Events of permanently deleted spools keep their filament.
+                    joinedload(SpoolEvent.filament).joinedload(Filament.manufacturer),
                 )
             )
         )
@@ -194,11 +197,15 @@ async def get_analytics_summary(
             continue
         cost = snapshot.get(event.id)
         if cost is None:
-            ppg = price_per_gram(event.spool)
+            ppg = (
+                price_per_gram(event.spool)
+                if event.spool
+                else (event.meta or {}).get("price_per_gram")
+            )
             cost = grams * ppg if ppg is not None else None
         when = _aware(event.event_at)
         first_data = min(first_data, when.date()) if first_data else when.date()
-        filament = event.spool.filament if event.spool else None
+        filament = event.spool.filament if event.spool else event.filament
         material = (filament.material_type if filament else None) or "unknown"
         manufacturer = (
             filament.manufacturer.name if filament and filament.manufacturer else None
@@ -257,6 +264,47 @@ async def get_analytics_summary(
         when = _aware(spool.purchase_date or spool.stocked_in_at or spool.created_at)
         material = (spool.filament.material_type if spool.filament else None) or "unknown"
         price = spool.purchase_price or 0.0
+        purchase_month[_month_key(when)][material] += price
+        purchase_material[material] += price
+        purchase_total += price
+        first_data = min(first_data, when.date()) if first_data else when.date()
+
+    # Spools deleted permanently leave a spool_deleted event with their purchase data.
+    deleted_events = (
+        (
+            await db.execute(
+                select(SpoolEvent)
+                .where(
+                    SpoolEvent.event_type == SPOOL_DELETED_EVENT,
+                    SpoolEvent.spool_id.is_(None),
+                )
+                .options(joinedload(SpoolEvent.filament))
+            )
+        )
+        .scalars()
+        .unique()
+        .all()
+    )
+    for event in deleted_events:
+        meta = event.meta or {}
+        price = meta.get("purchase_price")
+        if not isinstance(price, (int, float)) or isinstance(price, bool):
+            continue
+        when = None
+        for key in ("purchase_date", "stocked_in_at", "created_at"):
+            raw = meta.get(key)
+            if raw:
+                try:
+                    when = _aware(datetime.fromisoformat(raw))
+                except (TypeError, ValueError):
+                    continue
+                break
+        if when is None or not (lo <= when < hi):
+            continue
+        filament = event.filament
+        material = (
+            (filament.material_type if filament else None) or meta.get("material") or "unknown"
+        )
         purchase_month[_month_key(when)][material] += price
         purchase_material[material] += price
         purchase_total += price

@@ -256,7 +256,9 @@ class SpoolEventColor(BaseModel):
 
 class SpoolEventResponse(BaseModel):
     id: int
-    spool_id: int
+    # None once the spool was deleted permanently.
+    spool_id: int | None
+    filament_id: int | None = None
     event_type: str
     event_at: datetime
     user_id: int | None

@@ -963,7 +963,7 @@ import FormDialog from '../components/FormDialog.astro'
     // History charts: only fetched while at least one chart widget is visible.
     interface HistoryMonth {
       month: string; spend: number; consumption_g: number
-      spool_count: number; total_weight_g: number; stock_value: number
+      spool_count: number | null; total_weight_g: number | null; stock_value: number | null
     }
     const HISTORY_RANGES = [6, 12, 24]
     let historyMonths = 12
@@ -981,7 +981,7 @@ import FormDialog from '../components/FormDialog.astro'
     const formatCount = (value: number) => String(Math.round(value))
     const chartSpecs: {
       id: string; mount: string; kind: 'columns' | 'area'; color: string; integer?: boolean
-      value: (month: HistoryMonth) => number; format: (value: number) => string; axis: (value: number) => string
+      value: (month: HistoryMonth) => number | null; format: (value: number) => string; axis: (value: number) => string
     }[] = [
       { id: 'chartSpend', mount: 'chart-spend', kind: 'columns', color: 'var(--accent)', value: m => m.spend, format: formatMoney, axis: compactNumber },
       { id: 'chartConsumption', mount: 'chart-consumption', kind: 'columns', color: 'var(--accent-3)', value: m => m.consumption_g, format: formatWeight, axis: formatWeight },
@@ -1033,17 +1033,20 @@ import FormDialog from '../components/FormDialog.astro'
         const key = `${historyVersion}:${width}`
         if (mount.dataset.chartKey === key) continue
         mount.dataset.chartKey = key
-        const points: ChartPoint[] = historyData.map(month => ({
-          label: monthLabel(month.month),
-          value: chart.value(month),
-          tip: t('dashboard.chartMonthTip', { month: monthLabel(month.month, true), value: chart.format(chart.value(month)) }),
-        }))
+        const points: ChartPoint[] = historyData.map(month => {
+          const value = chart.value(month)
+          return {
+            label: monthLabel(month.month),
+            value,
+            tip: value === null ? '' : t('dashboard.chartMonthTip', { month: monthLabel(month.month, true), value: chart.format(value) }),
+          }
+        })
         mount.innerHTML = hasChartData(points)
           ? renderChartSvg(points, {
             kind: chart.kind, width, color: chart.color, integer: chart.integer,
             formatAxis: chart.axis, ariaLabel: widgetTitle(widgetCards.get(chart.id)!),
           })
-          : `<p>${t('dashboard.chartNoData')}</p>`
+          : `<p>${t(chart.kind === 'area' && points.every(p => p.value === null) ? 'dashboard.chartNoSnapshots' : 'dashboard.chartNoData')}</p>`
       }
     }
 

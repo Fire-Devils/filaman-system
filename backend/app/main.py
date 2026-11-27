@@ -59,6 +59,7 @@ _TAKEOVER_INTERVAL = 1  # seconds
 _FIRMWARE_IMPORT_FIRST_DELAY = 5 * 60
 _FIRMWARE_IMPORT_INTERVAL = 6 * 60 * 60
 _FILAMENTDB_CONTRIB_INTERVAL = 30 * 60
+_INVENTORY_SNAPSHOT_INTERVAL = 60 * 60
 _LABEL_ASSET_CLEANUP_INTERVAL = 24 * 60 * 60
 _LABEL_ASSET_REQUEST_BYTES = 6 * 1024 * 1024
 _next_label_asset_cleanup = 0.0
@@ -214,6 +215,24 @@ async def _firmware_auto_import_loop() -> None:
             raise
         except Exception:
             logger.exception("Firmware auto import failed (will retry later)")
+
+
+async def _inventory_snapshot_loop() -> None:
+    """Store the stock figures of today at start and then hourly (primary worker only)."""
+    from app.services.inventory_snapshots import run_inventory_snapshot_once
+
+    delay = 5
+    while True:
+        await asyncio.sleep(delay)
+        delay = _INVENTORY_SNAPSHOT_INTERVAL if _is_primary else _TAKEOVER_INTERVAL
+        if not _is_primary or worker_is_draining():
+            continue
+        try:
+            await run_inventory_snapshot_once()
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception("Inventory snapshot failed (will retry later)")
 
 
 async def _filamentdb_contributions_loop() -> None:
@@ -483,13 +502,16 @@ async def lifespan(app: FastAPI):
         display_task = asyncio.create_task(_display_snapshot_loop())
         firmware_task = asyncio.create_task(_firmware_auto_import_loop())
         contrib_task = asyncio.create_task(_filamentdb_contributions_loop())
+        snapshot_task = asyncio.create_task(_inventory_snapshot_loop())
 
         try:
             logger.info("FilaMan backend started")
             yield
         finally:
             logger.info("Shutting down FilaMan backend...")
-            await finish_on_cancel(_shutdown_workers(watchdog_task, display_task, firmware_task, contrib_task))
+            await finish_on_cancel(_shutdown_workers(
+                    watchdog_task, display_task, firmware_task, contrib_task, snapshot_task
+                ))
             logger.info("FilaMan backend stopped")
 
 

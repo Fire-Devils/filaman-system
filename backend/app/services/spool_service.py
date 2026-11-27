@@ -387,8 +387,10 @@ class SpoolService:
         note: str | None = None,
         meta: dict[str, Any] | None = None,
     ) -> SpoolEvent:
+        spool = await self.db.get(Spool, spool_id)
         event = SpoolEvent(
             spool_id=spool_id,
+            filament_id=spool.filament_id if spool else None,
             event_type=event_type,
             event_at=event_at,
             user_id=user_id,

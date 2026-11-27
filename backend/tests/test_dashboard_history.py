@@ -1,7 +1,7 @@
 from datetime import date, datetime, timezone
 
 import pytest
-from app.models import Filament, Manufacturer, Spool, SpoolEvent, SpoolStatus
+from app.models import Filament, InventorySnapshot, Manufacturer, Spool, SpoolEvent, SpoolStatus
 from sqlalchemy import select
 
 URL = "/api/v1/dashboard/history"
@@ -82,43 +82,47 @@ async def test_months_bounds(auth_client):
 
 
 @pytest.mark.asyncio
-async def test_empty_database_is_all_zero(auth_client):
+async def test_empty_database_has_gaps_and_live_current_month(auth_client):
     client, _ = auth_client
     months = (await client.get(URL, params={"months": 3})).json()["months"]
     assert [m["month"] for m in months] == [_month(o).strftime("%Y-%m") for o in (-2, -1, 0)]
-    assert all(_row(m) == (0, 0, 0, 0, 0) for m in months)
+    assert [_row(m) for m in months] == [
+        (0, 0, None, None, None),
+        (0, 0, None, None, None),
+        (0, 0, 0, 0, 0),
+    ]
 
 
 @pytest.mark.asyncio
-async def test_monthly_values_are_rebuilt_from_events(auth_client, db_session):
+async def test_stock_figures_come_from_snapshots_only(auth_client, db_session):
     client, _ = auth_client
     await _fixture(db_session)
+    # Two snapshots in month -2 (the later day wins), none in month -1.
+    for day, count, weight, value in ((_month(-2), 5, 900.0, 18.0), (_month(-2).replace(day=9), 7, 1100.0, 22.0)):
+        db_session.add(InventorySnapshot(
+            snapshot_date=day, spool_count=count, total_weight_g=weight, stock_value=value, purchase_value=50.0,
+        ))
+    await db_session.commit()
     months = (await client.get(URL, params={"months": 3})).json()["months"]
+    # Spend and consumption are real data; stock never gets estimated from events.
     assert [_row(m) for m in months] == [
-        (20.0, 0.0, 1, 1000.0, 20.0),
-        (10.0, 100.0, 2, 1400.0, 28.0),
+        (20.0, 0.0, 7, 1100.0, 22.0),
+        (10.0, 100.0, None, None, None),
+        # Current month = live tile values: spool A only (B is archived), 600 g, 600/1000 * 20.
         (0.0, 300.0, 1, 600.0, 12.0),
     ]
 
 
 @pytest.mark.asyncio
-async def test_spool_full_event_is_rewound(auth_client, db_session):
+async def test_current_month_ignores_its_own_snapshot(auth_client, db_session):
     client, _ = auth_client
     await _fixture(db_session)
-    spool = (await db_session.execute(select(Spool).where(Spool.purchase_price == 20.0))).scalar_one()
-    # Refilled this month from 700 g to 1000 g (+300), now 1000 g.
-    db_session.add(
-        SpoolEvent(
-            spool_id=spool.id, event_type="spool_full", event_at=_at(0),
-            meta={"old_remaining_g": 700.0, "new_remaining_g": 1000.0},
-        )
-    )
-    spool.remaining_weight_g = 1000.0
+    db_session.add(InventorySnapshot(
+        snapshot_date=datetime.now(timezone.utc).date(), spool_count=99, total_weight_g=1.0, stock_value=1.0,
+    ))
     await db_session.commit()
-    months = (await client.get(URL, params={"months": 3})).json()["months"]
-    # End of M-1: 1000 - (-300 consumption) - (+300 refill) = 1000, plus B 500.
-    assert months[1]["total_weight_g"] == 1000.0 + 500.0
-    assert months[0]["total_weight_g"] == 1000.0
+    months = (await client.get(URL, params={"months": 1})).json()["months"]
+    assert _row(months[0])[2:] == (1, 600.0, 12.0)
 
 
 @pytest.mark.asyncio

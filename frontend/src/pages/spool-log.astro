@@ -60,7 +60,7 @@ import Layout from '../layouts/Layout.astro'
 
     interface EventColor { name: string; hex_code: string }
     interface LogEvent {
-      id: number; spool_id: number; event_type: string; event_at: string
+      id: number; spool_id: number | null; event_type: string; event_at: string
       manufacturer_name: string | null; manufacturer_color_name: string | null
       material_type: string | null; colors: EventColor[]
       measured_weight_g: number | null; delta_weight_g: number | null; note: string | null
@@ -126,7 +126,9 @@ import Layout from '../layouts/Layout.astro'
       tbody.innerHTML = events.map(e => `
         <tr>
           <td class="col-spool-id">
-            <a href="/spools/${e.spool_id}" style="color: var(--accent); text-decoration: none; font-weight: 500;">#${e.spool_id}</a>
+            ${e.spool_id === null
+              ? `<span style="color: var(--text-muted);">${t('spoolLog.deletedSpool')}</span>`
+              : `<a href="/spools/${e.spool_id}" style="color: var(--accent); text-decoration: none; font-weight: 500;">#${e.spool_id}</a>`}
           </td>
           <td style="padding: 12px; font-size: 0.85rem; color: var(--text); white-space: nowrap;">
             <span style="display: inline-flex; align-items: center; gap: 6px;">${renderMfrColorCell(e.colors, e.manufacturer_color_name)}</span>

@@ -224,6 +224,7 @@
     "chartMaterialsOther": "Other",
     "chartMaterialsCenter": "remaining",
     "chartNoData": "No data for this period yet.",
+    "chartNoSnapshots": "No data yet – recorded daily from now on.",
     "chartLoadError": "Could not load the chart.",
     "chartRange": "Period",
     "chartMonths": "{count} mo.",
@@ -1740,6 +1741,7 @@
   "spoolLog": {
     "searchPlaceholder": "Search spool, material, manufacturer or note…",
     "title": "Spool Log",
+    "deletedSpool": "Deleted spool",
     "spool": "Spool",
     "eventType": "Type",
     "eventDate": "Date",
