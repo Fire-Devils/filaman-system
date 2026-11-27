@@ -1,6 +1,20 @@
 {
   "versions": [
     {
+      "version": "UNRELEASED",
+      "date": "",
+      "changes": {
+        "de": [
+          { "type": "fix", "text": "Admin-Übersicht, FilaMan-DB-Infoseite und SQLite-Backups passen jetzt auf Handys, ohne seitlich zu scrollen. Bei den SQLite-Backups steht auf schmalen Bildschirmen der Dateiname in einer eigenen Zeile, darunter Datum, Größe und die Knöpfe \"Wiederherstellen\" und \"Löschen\"." },
+          { "type": "fix", "text": "Seitenleiste: Die Symbole für AMS View, Spulen-Protokoll und Druckaufträge erscheinen wieder als Umriss mit Details statt als graue Fläche." }
+        ],
+        "en": [
+          { "type": "fix", "text": "The admin overview, the FilaMan-DB info page and SQLite Backups now fit on phones without horizontal scrolling. On narrow screens, each SQLite backup shows its filename on its own line, with the date, size and the \"Restore\" and \"Delete\" buttons below." },
+          { "type": "fix", "text": "Sidebar: The icons for AMS View, Spool Log and Print Jobs show as outlines with their details again instead of solid gray shapes." }
+        ]
+      }
+    },
+    {
       "version": "2.13.0",
       "date": "",
       "changes": {
