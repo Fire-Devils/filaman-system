@@ -1,6 +1,6 @@
 """AppSettings model for global application configuration."""
 
-from sqlalchemy import Boolean, Float, String
+from sqlalchemy import Boolean, Float, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base, TimestampMixin
@@ -51,5 +51,9 @@ class AppSettings(Base, TimestampMixin):
     mcp_write_enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     # Periodically import new ESP firmware images from GitHub releases.
     firmware_auto_import: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    # FilaMan-DB community token (Fernet-encrypted with app_secret) and the
+    # display name returned by the DB when it was saved.
+    filamentdb_token_enc: Mapped[str | None] = mapped_column(Text, nullable=True)
+    filamentdb_token_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
     # Keep only the current and the latest other ESP firmware per project.
     firmware_keep_latest_only: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)

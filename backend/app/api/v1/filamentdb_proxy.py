@@ -7,6 +7,7 @@ and colors locally before returning pre-filled data for the create form.
 
 import asyncio
 import logging
+import time
 from typing import Any
 
 import httpx
@@ -61,6 +62,63 @@ async def filamentdb_status(db: DBSession, _principal: PrincipalDep):
     )
     plugin = result.scalar_one_or_none()
     return {"active": plugin is not None and plugin.is_active}
+
+
+_PRINTER_MODELS_TTL = 3600.0  # 1 Stunde
+_printer_models_cache: dict[str, Any] = {"at": 0.0, "url": None, "items": None}
+
+
+def clear_printer_models_cache() -> None:
+    _printer_models_cache.update(at=0.0, url=None, items=None)
+
+
+@router.get("/printer-models")
+async def list_printer_models(db: DBSession, _principal: PrincipalDep):
+    """Druckermodelle der FilaMan-DB (1 h im Speicher gecacht).
+
+    Ist das Plugin ``filamentdb_import`` aus oder die FilaMan-DB nicht
+    erreichbar, kommt ``{"available": false, "items": []}`` statt eines Fehlers.
+    """
+    plugin = (
+        await db.execute(
+            select(InstalledPlugin).where(
+                InstalledPlugin.plugin_key == "filamentdb_import",
+            )
+        )
+    ).scalar_one_or_none()
+    if plugin is None or not plugin.is_active:
+        return {"available": False, "items": []}
+
+    base = settings.filamentdb_url.rstrip("/")
+    cache = _printer_models_cache
+    now = time.monotonic()
+    if (
+        cache["items"] is not None
+        and cache["url"] == base
+        and now - cache["at"] < _PRINTER_MODELS_TTL
+    ):
+        return {"available": True, "items": cache["items"]}
+
+    try:
+        data = await _proxy_get("/printer-models", {"page_size": 1000})
+    except HTTPException:
+        # Stale-Cache ist besser als nichts, wenn die DB kurz weg ist.
+        if cache["items"] is not None and cache["url"] == base:
+            return {"available": True, "items": cache["items"]}
+        return {"available": False, "items": []}
+
+    items = [
+        {
+            "id": item.get("id"),
+            "manufacturer": item.get("manufacturer"),
+            "model": item.get("model"),
+            "default_nozzle_mm": item.get("default_nozzle_mm"),
+        }
+        for item in _response_items(data)
+        if isinstance(item.get("id"), int)
+    ]
+    cache.update(at=now, url=base, items=items)
+    return {"available": True, "items": items}
 
 
 def _api_url(path: str) -> str:

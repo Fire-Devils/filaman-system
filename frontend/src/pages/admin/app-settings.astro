@@ -127,6 +127,27 @@ import FormSection from '../../components/FormSection.astro'
       <p class="fm-field-hint" id="spool-full-threshold-hint" data-i18n="admin.spoolFullThresholdHint">If the new empty spool weight differs from the stored one by more than this, overwriting must be confirmed.</p>
     </FormSection>
   </form>
+  <div class="fm-settings-grid" style="margin-top: var(--section-gap, 24px);">
+    <FormSection titleKey="fdbContrib.settings.title" title="FilaMan-DB community" class="fm-settings-wide" id="fdb-token-title">
+      <div id="fdb-token-section">
+        <p class="fm-field-hint" data-i18n="fdbContrib.settings.intro">Send data to the FilaMan-DB and fetch community print profiles with an API token.</p>
+        <p class="fm-field-hint" data-i18n="fdbContrib.settings.plugin">The FilamentDB Import plugin must be active to send.</p>
+        <p class="fm-field-hint fm-db-hint"><span data-i18n="fdbContrib.settings.tokenHelp">Du brauchst ein Konto auf der FilaMan-DB. Registriere dich dort und erstelle unter „Mein Konto → API-Tokens“ einen Token:</span> <a href="https://db.filaman.app" target="_blank" rel="noopener noreferrer">db.filaman.app</a></p>
+        <div class="fm-settings-row">
+          <label for="fdb-token-input" data-i18n="fdbContrib.settings.tokenLabel">API token</label>
+          <input type="password" id="fdb-token-input" class="fm-input" autocomplete="off" spellcheck="false" placeholder="fdb_…" data-fdb-token-input style="max-width: 420px;" />
+          <p class="fm-field-hint" data-i18n="fdbContrib.settings.hint">The token is stored encrypted and never shown again.</p>
+        </div>
+        <p data-fdb-token-status role="status" style="font-weight: 600;"></p>
+        <div class="fm-settings-row" style="display: flex; gap: 8px; flex-wrap: wrap;">
+          <button type="button" class="fm-btn fm-btn-primary" data-fdb-token-save data-i18n="fdbContrib.settings.save">Save token</button>
+          <button type="button" class="fm-btn" data-fdb-token-test data-i18n="fdbContrib.settings.test">Test connection</button>
+          <button type="button" class="fm-btn fm-btn-danger" data-fdb-token-remove data-i18n="fdbContrib.settings.remove">Remove token</button>
+        </div>
+        <p data-fdb-token-message role="status"></p>
+      </div>
+    </FormSection>
+  </div>
   <div class="fm-settings-grid">
     <FormSection titleKey="admin.materialPresetsTitle" title="Material presets" class="fm-settings-wide" id="presets-title">
       <p class="fm-field-hint" data-i18n="admin.materialPresetsDesc">Default values per material. They are filled into new filaments when a field is empty; values you enter always win. The drying interval also controls the moisture hint of spools.</p>
@@ -164,6 +185,7 @@ import FormSection from '../../components/FormSection.astro'
     import { initCurrency } from '../../lib/format'
     import { copyText } from '../../lib/clipboard'
     import { initMaterialPresets } from '../../lib/material-presets'
+    import { initFdbTokenSettings } from '../../lib/filamentdb-token-settings'
 
     interface McpClient { key: string; name: string; file?: string; snippet: string }
 
@@ -398,5 +420,6 @@ import FormSection from '../../components/FormSection.astro'
     }
 
     init()
+    void initI18n().then(() => initFdbTokenSettings(document.getElementById('fdb-token-section')!))
   </script>
 </Layout>

@@ -227,6 +227,11 @@ PERMISSIONS = [
         "category": "admin",
     },
     {
+        "key": "filamentdb:contribute",
+        "description": "Send data to the FilaMan-DB, rate and report community print profiles",
+        "category": "filaments",
+    },
+    {
         "key": "admin:system",
         "description": "Manage system configuration and extra fields (admin)",
         "category": "admin",

@@ -30,6 +30,10 @@ class Printer(Base, TimestampMixin):
     nozzle_hardened: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     deleted_at: Mapped[datetime | None] = mapped_column(TZDateTime(), nullable=True)
 
+    filamentdb_printer_model_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    printer_manufacturer: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    printer_model: Mapped[str | None] = mapped_column(String(255), nullable=True)
+
     driver_key: Mapped[str] = mapped_column(String(100), nullable=False)
     driver_config: Mapped[dict[str, Any] | None] = mapped_column(nullable=True)
 

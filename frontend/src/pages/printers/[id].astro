@@ -45,7 +45,7 @@ export function getStaticPaths() {
     }
 
     interface SlotAssignment { present?: boolean; spool_id?: number | null; spool_name?: string | null; material_type?: string | null; color_hex?: string | null; tray_color?: string | null; tray_type?: string | null; tray_info_idx?: string | null; setting_id?: string | null; cali_idx?: number | null; nozzle_temp_min?: number | null; nozzle_temp_max?: number | null }
-    interface PrinterRecord { id: number; name: string; driver_key: string; is_active: boolean; driver_config?: Record<string, unknown> | null; nozzle_diameter_mm?: number | null; nozzle_hardened?: boolean | null; slots?: { slot_no: number; warnings?: { code: string; level: string; nozzle_diameter_mm?: number; min_nozzle_mm?: number }[]; is_active?: boolean; name?: string | null; assignment?: SlotAssignment | null }[] }
+    interface PrinterRecord { id: number; name: string; driver_key: string; is_active: boolean; driver_config?: Record<string, unknown> | null; nozzle_diameter_mm?: number | null; nozzle_hardened?: boolean | null; printer_manufacturer?: string | null; printer_model?: string | null; slots?: { slot_no: number; warnings?: { code: string; level: string; nozzle_diameter_mm?: number; min_nozzle_mm?: number }[]; is_active?: boolean; name?: string | null; assignment?: SlotAssignment | null }[] }
     interface DriverHealth { running?: boolean; connected?: boolean; printer_model?: string; external_spool?: boolean; ams_type?: string; sync_actions?: { action: string; label: string; label_de?: string; variant?: string }[]; ams_units?: { ams_id: number; tray_count: number; serial?: string; humidity?: number | null; temp?: number | null }[] }
     interface DebugEntry { ts: string; dir: string; topic: string; payload: unknown }
     const dialogs = window as unknown as AppDialogs
@@ -426,6 +426,7 @@ export function getStaticPaths() {
         <div class="fm-settings-stack">
           <dl class="printer-metadata">
             <div><dt>${t('printers.driver')}</dt><dd>${escapeHtml(printer.driver_key)}</dd></div>
+            <div><dt>${t('printers.printerModel')}</dt><dd>${[printer.printer_manufacturer, printer.printer_model].filter(Boolean).length ? escapeHtml([printer.printer_manufacturer, printer.printer_model].filter(Boolean).join(' ')) : '—'}</dd></div>
             <div><dt>${t('printers.nozzleDiameter')}</dt><dd>${printer.nozzle_diameter_mm != null ? escapeHtml(`${printer.nozzle_diameter_mm} mm`) : '—'}</dd></div>
             <div><dt>${t('printers.nozzleHardened')}</dt><dd>${printer.nozzle_hardened == null ? t('printers.nozzleHardenedUnknown') : printer.nozzle_hardened ? t('common.yes') : t('common.no')}</dd></div>
             <div><dt>${t('common.status')}</dt><dd>
