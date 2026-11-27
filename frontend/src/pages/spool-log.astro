@@ -136,7 +136,7 @@ import Layout from '../layouts/Layout.astro'
           <td style="padding: 12px; font-size: 0.85rem; color: var(--text-muted);">${escapeHtml(e.manufacturer_name) || '-'}</td>
           <td style="padding: 12px; font-size: 0.85rem; color: var(--text-muted);">${escapeHtml(e.material_type) || '-'}</td>
           <td style="padding: 12px;">
-            <span class="fm-pill" style="${getEventTypeStyle(e.event_type)}">${escapeHtml(e.event_type)}</span>
+            <span class="fm-pill" style="${getEventTypeStyle(e.event_type)}">${escapeHtml(e.event_type === 'spool_deleted' ? t('spoolLog.eventSpoolDeleted') : e.event_type)}</span>
           </td>
           <td style="padding: 12px; font-size: 0.85rem; color: var(--text-muted);">
             ${new Date(e.event_at).toLocaleString()}
@@ -186,6 +186,7 @@ import Layout from '../layouts/Layout.astro'
         consumption: 'border-color: var(--accent-3); color: var(--accent-3);',
         status_change: 'border-color: var(--accent-3); color: var(--accent-3);',
         move_location: 'border-color: var(--accent); color: var(--accent);',
+        spool_deleted: 'border-color: var(--error-text); color: var(--error-text);',
       }
       return styles[type] || ''
     }

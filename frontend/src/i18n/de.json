@@ -1743,6 +1743,7 @@
     "searchPlaceholder": "Spule, Material, Hersteller oder Notiz suchen…",
     "title": "Protokoll",
     "deletedSpool": "Gelöschte Spule",
+    "eventSpoolDeleted": "Spule gelöscht",
     "spool": "Spule",
     "eventType": "Typ",
     "eventDate": "Datum",

@@ -1742,6 +1742,7 @@
     "searchPlaceholder": "Search spool, material, manufacturer or note…",
     "title": "Spool Log",
     "deletedSpool": "Deleted spool",
+    "eventSpoolDeleted": "Spool deleted",
     "spool": "Spool",
     "eventType": "Type",
     "eventDate": "Date",

@@ -1742,6 +1742,7 @@
     "searchPlaceholder": "Rechercher une bobine, un matériau, un fabricant ou une note…",
     "title": "Journal",
     "deletedSpool": "Bobine supprimée",
+    "eventSpoolDeleted": "Bobine supprimée",
     "spool": "Bobine",
     "eventType": "Type",
     "eventDate": "Date",

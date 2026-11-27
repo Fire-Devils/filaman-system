@@ -69,3 +69,14 @@ it('keeps the latest search results when an older request finishes last', async 
   expect(document.querySelector('#events-table')!.textContent).toContain('Latest result')
   expect(document.querySelector('#events-table')!.textContent).not.toContain('Stale result')
 })
+
+it('labels events of permanently deleted spools', async () => {
+  i18n.setLang('de')
+  vi.stubGlobal('fetch', vi.fn(async () => Response.json({ total: 1, page: 1, page_size: 50, items: [{
+    id: 2, spool_id: null, event_type: 'spool_deleted', event_at: '2026-01-01T12:00:00Z',
+    measured_weight_g: null, delta_weight_g: null, note: null, manufacturer_name: 'GST 3D', material_type: 'PLA', colors: [],
+  }] })))
+  await boot()
+  await vi.waitFor(() => expect(document.querySelector('#events-table')!.textContent).toContain('Spule gelöscht'))
+  expect(document.querySelector('#events-table')!.textContent).not.toContain('spool_deleted')
+})
