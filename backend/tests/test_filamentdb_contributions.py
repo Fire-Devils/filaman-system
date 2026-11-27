@@ -936,6 +936,43 @@ async def test_link_sets_payload_hash(auth_client, fake_db, entities, db_session
 
 
 @pytest.mark.asyncio
+async def test_no_changes_reply_marks_row_in_sync(auth_client, fake_db, entities, db_session):
+    client, csrf = auth_client
+    await _save_token(client, csrf)
+    entities["fil"].custom_fields = {"filamentdb_id": 9}
+    await db_session.commit()
+    fake_db.fail["POST /contribute"] = (422, {"code": "no_changes", "message": "same"})
+    resp = await _submit(client, csrf, "filament", entities["fil"].id)
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["changed"] is False and body["no_changes"] is True
+    assert body["status"] != "error" and body["last_error"] is None
+    assert (await _listed(client, "filament", entities["fil"].id))["changed"] is False
+
+
+@pytest.mark.asyncio
+async def test_approval_without_local_change_stays_in_sync(auth_client, fake_db, entities, db_session):
+    client, csrf = auth_client
+    await _save_token(client, csrf)
+    resp = await _submit(client, csrf, "manufacturer", entities["mfr"].id)
+    fake_db.approve(resp.json()["remote_submission_id"], 42)
+    listed = (await client.post(f"{BASE}/contributions/refresh", headers=_h(csrf))).json()["items"]
+    assert listed[0]["status"] == "approved" and listed[0]["changed"] is False
+
+
+@pytest.mark.asyncio
+async def test_approval_keeps_local_change_made_during_review(auth_client, fake_db, entities, db_session):
+    client, csrf = auth_client
+    await _save_token(client, csrf)
+    resp = await _submit(client, csrf, "manufacturer", entities["mfr"].id)
+    entities["mfr"].name = "Acme Renamed"
+    await db_session.commit()
+    fake_db.approve(resp.json()["remote_submission_id"], 42)
+    listed = (await client.post(f"{BASE}/contributions/refresh", headers=_h(csrf))).json()["items"]
+    assert listed[0]["status"] == "approved" and listed[0]["changed"] is True
+
+
+@pytest.mark.asyncio
 async def test_resolve_material_id_pages_with_max_page_size(monkeypatch):
     from app.services import filamentdb_contribution_service as svc
 

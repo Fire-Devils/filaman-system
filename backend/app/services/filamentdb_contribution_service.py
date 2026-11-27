@@ -377,6 +377,20 @@ async def _stamp(db: AsyncSession, row: FilamentDBContribution) -> None:
     row.payload_hash = await local_fingerprint(db, row.entity_type, row.local_id)
 
 
+async def mark_in_sync(db: AsyncSession, entity_type: str, local_id: int) -> None:
+    """Beitragszeile als synchron markieren, nachdem Werte AUS der FilaMan-DB lokal übernommen wurden.
+
+    Ohne Beitragszeile passiert nichts. Kein Commit, der Aufrufer committet.
+    """
+    row = await get_row(db, entity_type, local_id)
+    if row is None:
+        return
+    try:
+        await _stamp(db, row)
+    except FilamentDBError:
+        pass  # lokales Objekt gelöscht
+
+
 async def build(db: AsyncSession, entity_type: str, local_id: int) -> Build:
     """Baut genau den Payload, der gesendet würde, samt Voraussetzungen und Blockern."""
     if entity_type not in ENTITY_TYPES:
@@ -705,6 +719,16 @@ async def _submit_row(
     return row
 
 
+async def _mark_no_changes(db: AsyncSession, row: FilamentDBContribution) -> None:
+    """DB hat schon dieselben Werte: als synchron markieren, kein Fehlerstatus."""
+    if row.status in ("draft", "error"):
+        row.status = "linked"
+    row.last_error = None
+    await _stamp(db, row)
+    row._no_changes = True  # type: ignore[attr-defined]  # nur für die Antwort, nicht persistiert
+    await db.flush()
+
+
 async def _send_or_wait(
     db: AsyncSession,
     token: str,
@@ -735,9 +759,15 @@ async def _send_or_wait(
     row.depends_on_id = None
     client_ref = f"filaman-{b.entity_type}-{b.local_id}"
     if b.mode == "update":
-        await fdb_request(
-            "PUT", f"/print-profiles/{b.entity_id}", token=token, json=b.payload
-        )
+        try:
+            await fdb_request(
+                "PUT", f"/print-profiles/{b.entity_id}", token=token, json=b.payload
+            )
+        except FilamentDBError as exc:
+            if exc.code != "no_changes":
+                raise
+            await _mark_no_changes(db, row)
+            return
         row.status = "published"
     else:
         body: dict[str, Any] = {
@@ -747,7 +777,13 @@ async def _send_or_wait(
             "client_ref": client_ref,
             "shown_matches": shown_matches or [],
         }
-        resp = await fdb_request("POST", "/contribute", token=token, json=body)
+        try:
+            resp = await fdb_request("POST", "/contribute", token=token, json=body)
+        except FilamentDBError as exc:
+            if exc.code != "no_changes" or b.mode != "edit":
+                raise
+            await _mark_no_changes(db, row)
+            return
         resp = resp if isinstance(resp, dict) else {}
         if b.entity_type == "print_profile":
             row.status = "published"
@@ -876,8 +912,14 @@ async def _refresh_user(db: AsyncSession, user_id: int, token: str) -> list[Fila
             if status == "approved" and item.get("entity_id"):
                 row.remote_entity_id = int(item["entity_id"])
                 try:
+                    try:
+                        before = await local_fingerprint(db, row.entity_type, row.local_id)
+                    except FilamentDBError:
+                        before = None
                     await _apply_link(db, row.entity_type, row.local_id, row.remote_entity_id)
-                    if row.payload_hash is None:
+                    # Hash neu setzen, wenn er vorher zum lokalen Stand passte (oder fehlte):
+                    # _apply_link ändert eigene Werte, echte lokale Änderungen bleiben sichtbar.
+                    if row.payload_hash is None or (before is not None and row.payload_hash == before):
                         await _stamp(db, row)
                 except FilamentDBError as exc:
                     row.last_error = exc.message
@@ -994,6 +1036,7 @@ async def serialize(db: AsyncSession, row: FilamentDBContribution) -> dict[str, 
         "label": await _label(db, row.entity_type, row.local_id),
         "status": row.status,
         "changed": changed,
+        "no_changes": bool(getattr(row, "_no_changes", False)),
         "remote_submission_id": row.remote_submission_id,
         "remote_entity_id": row.remote_entity_id,
         "depends_on": (

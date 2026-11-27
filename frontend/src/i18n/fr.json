@@ -2807,7 +2807,8 @@
       "pending": "Soumis. L'examen dans FilaMan-DB est en cours.",
       "waiting": "Soumis. L'élément attend l'approbation de ses prérequis, puis il est envoyé automatiquement.",
       "published": "Publié.",
-      "linked": "Lié. Rien n'a été envoyé."
+      "linked": "Lié. Rien n'a été envoyé.",
+      "no_changes": "FilaMan-DB contient déjà les mêmes valeurs. Il n'y avait rien à envoyer."
     },
     "blockerLinks": {
       "editProfile": "Modifier le profil d'impression",

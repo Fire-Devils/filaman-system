@@ -1168,6 +1168,34 @@ async def test_update_linked_writes_only_selected_fields(db_session):
 
 
 @pytest.mark.asyncio
+async def test_update_linked_marks_contributions_in_sync(db_session):
+    from app.models import FilamentDBContribution
+    from app.services import filamentdb_contribution_service as csvc
+
+    service, linked, mfr = await _linked_fixture(db_session)
+    rows = []
+    for type_, obj in (("filament", linked), ("manufacturer", mfr)):
+        row = FilamentDBContribution(
+            entity_type=type_, local_id=obj.id, status="published",
+            payload_hash=await csvc.local_fingerprint(db_session, type_, obj.id),
+        )
+        db_session.add(row)
+        rows.append(row)
+    await db_session.commit()
+
+    result = await service.update_linked_filaments(
+        [{"fdb_id": 71, "fields": ["colors"]}],
+        [{"fdb_manufacturer_id": 5, "fields": ["url"]}],
+        snapshot_id="linked",
+    )
+    assert result.filaments_updated == 1 and result.manufacturers_updated == 1
+    for row in rows:
+        await db_session.refresh(row)
+        assert row.payload_hash == await csvc.local_fingerprint(db_session, row.entity_type, row.local_id)
+        assert (await csvc.serialize(db_session, row))["changed"] is False
+
+
+@pytest.mark.asyncio
 async def test_update_linked_spool_weight_manufacturer_and_colors(db_session):
     service, linked, mfr = await _linked_fixture(db_session, local_color="#00ff00")
     before = await _counts(db_session)

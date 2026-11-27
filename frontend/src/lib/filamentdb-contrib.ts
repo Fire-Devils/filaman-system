@@ -19,6 +19,7 @@ export interface ContribRef {
   label: string | null
   status: string
   changed?: boolean
+  no_changes?: boolean
   depends_on?: { entity_type: ContribType; local_id: number; label: string | null; status: string } | null
   remote_entity_id?: number | null
   last_error?: string | null
@@ -325,7 +326,7 @@ export async function openContributeDialog(options: ContributeDialogOptions): Pr
         match_id: matchId,
         shown_matches: preview.matches.map(m => ({ type: m.type, id: m.id, score: m.score })),
       })
-      const key = entry.status === 'waiting' ? 'waiting' : entry.status === 'linked' ? 'linked' : entry.status === 'published' ? 'published' : 'pending'
+      const key = entry.no_changes ? 'no_changes' : entry.status === 'waiting' ? 'waiting' : entry.status === 'linked' ? 'linked' : entry.status === 'published' ? 'published' : 'pending'
       body.innerHTML = `<p role="status">${escapeHtml(t(`fdbContrib.result.${key}`))}</p><p>${statusBadge(entry)}</p>`
       submit.classList.add('hidden')
       options.onDone?.(entry)
