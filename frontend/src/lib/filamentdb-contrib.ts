@@ -41,7 +41,7 @@ export interface ContribPreview {
   payload: Record<string, unknown>
   display?: Record<string, string>
   matches: ContribMatch[]
-  blockers: { code: string; message: string; field?: string; min?: number; max?: number }[]
+  blockers: { code: string; message: string; field?: string; min?: number; max?: number; profile_id?: number; filament_id?: number; printer_id?: number }[]
   dependencies: { type: ContribType; local_id: number; label: string }[]
 }
 
@@ -205,6 +205,15 @@ export function blockerText(b: ContribPreview['blockers'][number]): string {
   return text
 }
 
+/** Links zur Stelle, an der ein Blocker behoben wird (Profil bzw. Drucker bearbeiten). */
+export function blockerLinks(b: ContribPreview['blockers'][number]): { href: string; labelKey: string }[] {
+  if (b.code !== 'printer_model_missing') return []
+  const links: { href: string; labelKey: string }[] = []
+  if (b.profile_id && b.filament_id) links.push({ href: `/filaments/${b.filament_id}#print-profiles`, labelKey: 'fdbContrib.blockerLinks.editProfile' })
+  if (b.printer_id) links.push({ href: `/printers?edit=${b.printer_id}`, labelKey: 'fdbContrib.blockerLinks.editPrinter' })
+  return links
+}
+
 export function renderPreviewBody(preview: ContribPreview): string {
   const e = escapeHtml
   const parts: string[] = [`<p class="fm-field-hint">${e(t('fdbContrib.previewIntro'))}</p>`]
@@ -212,7 +221,10 @@ export function renderPreviewBody(preview: ContribPreview): string {
   if (preview.mode === 'update') parts.push(`<p class="fm-field-hint">${e(t('fdbContrib.noteUpdate'))}</p>`)
 
   if (preview.blockers.length) {
-    const items = preview.blockers.map(b => `<li>${e(blockerText(b))}</li>`).join('')
+    const items = preview.blockers.map(b => {
+      const links = blockerLinks(b).map(l => `<a href="${e(l.href)}">${e(t(l.labelKey))}</a>`).join(' · ')
+      return `<li>${e(blockerText(b))}${links ? ` ${links}` : ''}</li>`
+    }).join('')
     parts.push(`<div class="fm-alert-error" role="alert"><strong>${e(t('fdbContrib.blockersTitle'))}</strong><ul>${items}</ul></div>`)
   }
 

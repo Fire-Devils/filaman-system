@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest'
 import de from '../i18n/de.json'
 import en from '../i18n/en.json'
 import fr from '../i18n/fr.json'
-import { ALL_PROFILE_FIELDS, PROFILE_GROUPS, buildProfilePayload, profileCoreSummary, profilePrinterLabel } from './print-profiles'
+import { ALL_PROFILE_FIELDS, PROFILE_GROUPS, buildProfilePayload, hasProfileModel, printerLacksModel, printerWithoutModelNotice, profileCoreSummary, profilePrinterLabel } from './print-profiles'
 
 function leafPaths(value: unknown, prefix = ''): string[] {
   if (typeof value === 'string') return [prefix]
@@ -53,9 +53,25 @@ describe('print profile cards', () => {
     expect(rows.map(r => r.value)).toEqual(['215 °C / —', '200 mm/s'])
   })
 
-  it('shows printer name with model', () => {
-    expect(profilePrinterLabel({ printer_name: 'Werkstatt', printer_manufacturer: 'Prusa', printer_model: 'MK4' })).toBe('Werkstatt (Prusa MK4)')
+  it('shows "manufacturer model" with the printer name behind it', () => {
+    expect(profilePrinterLabel({ printer_name: 'Werkstatt', printer_manufacturer: 'Prusa', printer_model: 'MK4' })).toBe('Prusa MK4 · Werkstatt')
+    expect(profilePrinterLabel({ printer_manufacturer: 'Prusa', printer_model: 'MK4' })).toBe('Prusa MK4')
     expect(profilePrinterLabel({ printer_name: 'Werkstatt' })).toBe('Werkstatt')
+  })
+
+  it('requires a model id or manufacturer plus model', () => {
+    expect(hasProfileModel({ id: 5 })).toBe(true)
+    expect(hasProfileModel({ manufacturer: 'Prusa', model: 'MK4' })).toBe(true)
+    expect(hasProfileModel({ manufacturer: 'Prusa', model: ' ' })).toBe(false)
+    expect(hasProfileModel({})).toBe(false)
+  })
+
+  it('warns with an edit link when the chosen printer has no model', () => {
+    expect(printerLacksModel({ id: 3, name: 'A' })).toBe(true)
+    expect(printerLacksModel({ id: 3, name: 'A', filamentdb_printer_model_id: 9 })).toBe(false)
+    expect(printerWithoutModelNotice({ id: 3, name: 'A', printer_manufacturer: 'Prusa', printer_model: 'MK4' })).toBe('')
+    expect(printerWithoutModelNotice({ id: 3, name: 'A' })).toContain('/printers?edit=3')
+    expect(printerWithoutModelNotice(undefined)).toBe('')
   })
 })
 

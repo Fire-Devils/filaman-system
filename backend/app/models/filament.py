@@ -228,9 +228,14 @@ class FilamentPrinterProfile(Base, TimestampMixin):
     filament_id: Mapped[int] = mapped_column(
         Integer, ForeignKey("filaments.id", ondelete="CASCADE"), nullable=False
     )
-    printer_id: Mapped[int] = mapped_column(
-        Integer, ForeignKey("printers.id"), nullable=False
+    # Optional: Verknüpfung mit einem eigenen Drucker des Users. Das Profil gilt
+    # für das Druckermodell (ID der FilaMan-DB oder Hersteller + Modell).
+    printer_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("printers.id"), nullable=True
     )
+    filamentdb_printer_model_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    printer_manufacturer: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    printer_model: Mapped[str | None] = mapped_column(String(255), nullable=True)
     profile_name: Mapped[str] = mapped_column(String(255), nullable=False)
 
     is_default_for_printer: Mapped[bool] = mapped_column(default=False)
@@ -276,7 +281,7 @@ class FilamentPrinterProfile(Base, TimestampMixin):
     custom_fields: Mapped[dict[str, Any] | None] = mapped_column(nullable=True)
 
     filament: Mapped["Filament"] = relationship(back_populates="printer_profiles")
-    printer: Mapped["Printer"] = relationship(back_populates="filament_profiles")
+    printer: Mapped["Printer | None"] = relationship(back_populates="filament_profiles")
 
 
 from app.models.printer import Printer

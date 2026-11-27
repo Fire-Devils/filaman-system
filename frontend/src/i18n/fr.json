@@ -823,7 +823,14 @@
     "add": "Ajouter un profil d'impression",
     "addTitle": "Ajouter un profil d'impression",
     "editTitle": "Modifier le profil d'impression",
-    "printer": "Imprimante",
+    "printer": "Mon imprimante (facultatif)",
+    "noPrinter": "Aucune imprimante",
+    "modelGroup": "Modèle d'imprimante",
+    "modelHint": "Le profil s'applique à ce modèle d'imprimante, pas à une imprimante précise.",
+    "modelRequired": "Veuillez choisir un modèle d'imprimante ou saisir le fabricant et le modèle.",
+    "defaultNeedsPrinter": "Un profil par défaut nécessite une imprimante liée.",
+    "printerWithoutModel": "Aucun fabricant/modèle n'est enregistré pour cette imprimante.",
+    "editPrinterLink": "Modifier l'imprimante",
     "profileName": "Nom du profil",
     "isDefault": "Profil par défaut pour cette imprimante",
     "default": "Par défaut",
@@ -2801,9 +2808,13 @@
       "published": "Publié.",
       "linked": "Lié. Rien n'a été envoyé."
     },
+    "blockerLinks": {
+      "editProfile": "Modifier le profil d'impression",
+      "editPrinter": "Modifier l'imprimante"
+    },
     "blockers": {
       "already_linked": "Déjà lié à FilaMan-DB.",
-      "printer_model_missing": "L'imprimante a besoin d'un modèle (fabricant et modèle).",
+      "printer_model_missing": "Le profil d'impression a besoin d'un modèle d'imprimante (fabricant et modèle).",
       "material_unknown": "Ce matériau n'existe pas dans FilaMan-DB.",
       "nothing_to_send": "Aucune valeur de base à envoyer.",
       "nozzle_required": "Le diamètre de buse est manquant.",

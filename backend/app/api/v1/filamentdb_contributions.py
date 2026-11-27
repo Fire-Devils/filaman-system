@@ -147,7 +147,8 @@ async def contribution_status(db: DBSession, principal: PrincipalDep):
 
 class ContributionRef(BaseModel):
     type: EntityType
-    local_id: int = Field(..., gt=0)
+    # Negativ nur bei printer_model: Modell eines Druckprofils (-Profil-ID).
+    local_id: int = Field(..., ne=0)
 
 
 class SubmitRequest(ContributionRef):
@@ -169,7 +170,12 @@ async def submit_contribution(
 ):
     if data.action == "link":
         # Verknüpfen schreibt am lokalen Objekt: dessen Update-Recht ist zusätzlich nötig.
-        await ensure_any_permission(db, principal, _LINK_PERMISSION[data.type])
+        link_permission = (
+            "filaments:update"
+            if data.type == "printer_model" and data.local_id < 0
+            else _LINK_PERMISSION[data.type]
+        )
+        await ensure_any_permission(db, principal, link_permission)
     row = await _guard(
         svc.submit(
             db,
@@ -294,7 +300,7 @@ async def report_print_profile(
 
 class ImportProfileBody(BaseModel):
     filament_id: int = Field(..., gt=0)
-    printer_id: int = Field(..., gt=0)
+    printer_id: int | None = Field(None, gt=0)
 
 
 @router.post("/print-profiles/{profile_id}/import", status_code=201)

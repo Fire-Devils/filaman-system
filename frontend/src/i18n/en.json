@@ -823,7 +823,14 @@
     "add": "Add print profile",
     "addTitle": "Add print profile",
     "editTitle": "Edit print profile",
-    "printer": "Printer",
+    "printer": "My printer (optional)",
+    "noPrinter": "No printer",
+    "modelGroup": "Printer model",
+    "modelHint": "The profile applies to this printer model, not to a specific printer.",
+    "modelRequired": "Please choose a printer model or enter manufacturer and model.",
+    "defaultNeedsPrinter": "A default profile needs a linked printer.",
+    "printerWithoutModel": "No manufacturer/model is stored for this printer.",
+    "editPrinterLink": "Edit printer",
     "profileName": "Profile name",
     "isDefault": "Default profile for this printer",
     "default": "Default",
@@ -2801,9 +2808,13 @@
       "published": "Published.",
       "linked": "Linked. Nothing was sent."
     },
+    "blockerLinks": {
+      "editProfile": "Edit print profile",
+      "editPrinter": "Edit printer"
+    },
     "blockers": {
       "already_linked": "Already linked to the FilaMan-DB.",
-      "printer_model_missing": "The printer needs a printer model (manufacturer and model).",
+      "printer_model_missing": "The print profile needs a printer model (manufacturer and model).",
       "material_unknown": "This material does not exist in the FilaMan-DB.",
       "nothing_to_send": "There are no base values to send.",
       "nozzle_required": "The nozzle diameter is missing.",

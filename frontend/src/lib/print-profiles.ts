@@ -9,6 +9,7 @@ import { escapeHtml } from './extra-fields'
 import { bindFormDialog } from './form-dialog'
 import { mountContributeControl } from './filamentdb-contrib'
 import { t } from './i18n'
+import { createPrinterModelPicker, findPrinterModelElements, renderPrinterModelFields, type PrinterModelPicker, type PrinterModelValue } from './printer-model-picker'
 
 export type ProfileFieldKind = 'int' | 'float' | 'text' | 'textarea' | 'tristate'
 
@@ -79,9 +80,10 @@ export const ALL_PROFILE_FIELDS: ProfileField[] = PROFILE_GROUPS.flatMap(group =
 export interface PrintProfile {
   id: number
   filament_id: number
-  printer_id: number
+  printer_id: number | null
   profile_name: string
   printer_name?: string | null
+  filamentdb_printer_model_id?: number | null
   printer_manufacturer?: string | null
   printer_model?: string | null
   is_default_for_printer?: boolean
@@ -91,6 +93,7 @@ export interface PrintProfile {
 export interface PrinterOption {
   id: number
   name: string
+  filamentdb_printer_model_id?: number | null
   nozzle_diameter_mm?: number | null
   printer_manufacturer?: string | null
   printer_model?: string | null
@@ -135,10 +138,29 @@ export function profileCoreSummary(profile: PrintProfile): { label: string; valu
   return rows
 }
 
+/** "Hersteller Modell · Druckername"; ohne Modell nur der Druckername. */
 export function profilePrinterLabel(profile: { printer_name?: string | null; printer_manufacturer?: string | null; printer_model?: string | null }): string {
   const model = [profile.printer_manufacturer, profile.printer_model].filter(Boolean).join(' ')
   const name = profile.printer_name ?? ''
-  return model ? `${name} (${model})` : name
+  if (!model) return name
+  return name ? `${model} · ${name}` : model
+}
+
+/** Auswahlzeile eines eigenen Druckers: "Name (Hersteller Modell)". */
+export function printerOptionLabel(printer: PrinterOption): string {
+  const model = [printer.printer_manufacturer, printer.printer_model].filter(Boolean).join(' ')
+  return model ? `${printer.name} (${model})` : printer.name
+}
+
+/** Gültiges Modell: FilaMan-DB-ID oder Hersteller und Modell als Freitext. */
+export function hasProfileModel(value: { id?: number | null; manufacturer?: string | null; model?: string | null }): boolean {
+  return !!value.id || (!!value.manufacturer?.trim() && !!value.model?.trim())
+}
+
+/** Ein eigener Drucker ohne Hersteller/Modell (weder ID noch Freitext). */
+export function printerLacksModel(printer: PrinterOption | undefined): boolean {
+  if (!printer) return false
+  return !hasProfileModel({ id: printer.filamentdb_printer_model_id, manufacturer: printer.printer_manufacturer, model: printer.printer_model })
 }
 
 function renderField(field: ProfileField, value: unknown): string {
@@ -161,23 +183,37 @@ function renderField(field: ProfileField, value: unknown): string {
 }
 
 export function renderProfileForm(profile: PrintProfile | null, printers: PrinterOption[], defaults: { printerId?: number | null } = {}): string {
-  const printerId = profile?.printer_id ?? defaults.printerId ?? printers[0]?.id
-  const options = printers.map(p => `<option value="${p.id}"${p.id === printerId ? ' selected' : ''}>${escapeHtml(profilePrinterLabel({ printer_name: p.name, printer_manufacturer: p.printer_manufacturer, printer_model: p.printer_model }))}</option>`).join('')
+  const printerId = profile ? profile.printer_id : (defaults.printerId ?? null)
+  const options = [`<option value="">${escapeHtml(t('printProfiles.noPrinter'))}</option>`]
+    .concat(printers.map(p => `<option value="${p.id}"${p.id === printerId ? ' selected' : ''}>${escapeHtml(printerOptionLabel(p))}</option>`)).join('')
   const groups = PROFILE_GROUPS.map(group => `
     <fieldset class="pp-group">
       <legend>${escapeHtml(t(`printProfiles.groups.${group.id}`))}</legend>
       <div class="pp-grid">${group.fields.map(field => renderField(field, profile?.[field.key])).join('')}</div>
     </fieldset>`).join('')
   return `
+    <fieldset class="pp-group">
+      <legend>${escapeHtml(t('printProfiles.modelGroup'))} *</legend>
+      <p class="pp-muted" style="margin: 0 0 8px;">${escapeHtml(t('printProfiles.modelHint'))}</p>
+      ${renderPrinterModelFields('pp', { t, escapeHtml })}
+      <div id="pp-model-warning" class="fm-alert-error hidden" role="alert"></div>
+    </fieldset>
     <div class="pp-grid">
-      <div class="pp-field"><label for="pp-printer" class="fm-label">${escapeHtml(t('printProfiles.printer'))} *</label>
-        <select id="pp-printer" class="fm-select" required>${options}</select></div>
+      <div class="pp-field"><label for="pp-printer" class="fm-label">${escapeHtml(t('printProfiles.printer'))}</label>
+        <select id="pp-printer" class="fm-select">${options}</select></div>
       <div class="pp-field"><label for="pp-name" class="fm-label">${escapeHtml(t('printProfiles.profileName'))} *</label>
         <input type="text" id="pp-name" class="fm-input" required maxlength="255" value="${escapeHtml(profile?.profile_name ?? '')}" /></div>
     </div>
+    <div id="pp-printer-warning" class="fm-alert-error hidden" role="alert"></div>
     <label class="pp-check"><input type="checkbox" id="pp-default"${profile?.is_default_for_printer ? ' checked' : ''} /> ${escapeHtml(t('printProfiles.isDefault'))}</label>
     ${groups}
     <div id="pp-error" class="fm-alert-error hidden" role="alert"></div>`
+}
+
+/** Hinweis samt Link, wenn der gewählte eigene Drucker kein Modell hat. */
+export function printerWithoutModelNotice(printer: PrinterOption | undefined): string {
+  if (!printer || !printerLacksModel(printer)) return ''
+  return `${escapeHtml(t('printProfiles.printerWithoutModel'))} <a href="/printers?edit=${printer.id}">${escapeHtml(t('printProfiles.editPrinterLink'))}</a>`
 }
 
 export function profileErrorMessage(error: unknown): string {
@@ -189,6 +225,8 @@ export function profileErrorMessage(error: unknown): string {
       max: String(error.detail.max ?? ''),
     })
   }
+  if (error instanceof ApiError && error.code === 'printer_model_required') return t('printProfiles.modelRequired')
+  if (error instanceof ApiError && error.code === 'printer_required_for_default') return t('printProfiles.defaultNeedsPrinter')
   return error instanceof Error && error.message ? error.message : t('printProfiles.failedSave')
 }
 
@@ -238,16 +276,57 @@ export async function initPrintProfiles(options: PrintProfilesOptions): Promise<
         <div class="pp-contrib" data-pp-contrib="${profile.id}"></div></article>`
     }).join('')
     mount.querySelector('[data-pp-list]')!.innerHTML = cards || `<p class="pp-muted">${escapeHtml(t('printProfiles.empty'))}</p>`
-    mount.querySelector('[data-pp-add]')?.classList.toggle('hidden', !canEdit || printers.length === 0)
+    mount.querySelector('[data-pp-add]')?.classList.toggle('hidden', !canEdit)
     mount.querySelectorAll<HTMLElement>('[data-pp-contrib]').forEach(host => {
       void mountContributeControl(host, 'print_profile', Number(host.dataset.ppContrib))
     })
+  }
+
+  let picker: PrinterModelPicker | null = null
+
+  function setupFormBehavior(profile: PrintProfile | null) {
+    const els = findPrinterModelElements(formBody, 'pp')
+    const printerSelect = formBody.querySelector('#pp-printer') as HTMLSelectElement
+    const defaultBox = formBody.querySelector('#pp-default') as HTMLInputElement
+    const printerWarning = formBody.querySelector('#pp-printer-warning') as HTMLElement
+    const modelWarning = formBody.querySelector('#pp-model-warning') as HTMLElement
+    const selectedPrinter = () => printers.find(p => String(p.id) === printerSelect.value)
+
+    function refreshPrinterState() {
+      const printer = selectedPrinter()
+      defaultBox.disabled = !printer
+      if (!printer) defaultBox.checked = false
+      const notice = printerWithoutModelNotice(printer)
+      printerWarning.innerHTML = notice
+      printerWarning.classList.toggle('hidden', !notice)
+    }
+
+    picker = els
+      ? createPrinterModelPicker(els, { t, escapeHtml, onChange: () => modelWarning.classList.add('hidden') })
+      : null
+    picker?.setValue(profile
+      ? { id: profile.filamentdb_printer_model_id ?? null, manufacturer: profile.printer_manufacturer ?? '', model: profile.printer_model ?? '' }
+      : null)
+    // Neues Profil mit vorgewähltem Drucker: dessen Modell übernehmen.
+    if (!profile) fillModelFromPrinter(selectedPrinter())
+
+    function fillModelFromPrinter(printer: PrinterOption | undefined) {
+      if (!printer || printerLacksModel(printer)) return
+      picker?.setValue({ id: printer.filamentdb_printer_model_id ?? null, manufacturer: printer.printer_manufacturer ?? '', model: printer.printer_model ?? '' })
+    }
+
+    printerSelect.addEventListener('change', () => {
+      fillModelFromPrinter(selectedPrinter())
+      refreshPrinterState()
+    })
+    refreshPrinterState()
   }
 
   function openForm(profile: PrintProfile | null) {
     editingId = profile?.id ?? null
     if (title) title.textContent = t(profile ? 'printProfiles.editTitle' : 'printProfiles.addTitle')
     formBody.innerHTML = renderProfileForm(profile, printers)
+    setupFormBehavior(profile)
     dialog.showModal()
   }
 
@@ -276,11 +355,21 @@ export async function initPrintProfiles(options: PrintProfilesOptions): Promise<
     const errorBox = form.querySelector('#pp-error') as HTMLElement
     errorBox.classList.add('hidden')
     if (!form.reportValidity()) return
+    const model: PrinterModelValue = picker?.getValue() ?? { id: null, manufacturer: '', model: '' }
+    if (!hasProfileModel(model)) {
+      const warning = form.querySelector('#pp-model-warning') as HTMLElement
+      warning.textContent = t('printProfiles.modelRequired')
+      warning.classList.remove('hidden')
+      return
+    }
     const raw: Record<string, string | boolean> = {}
     form.querySelectorAll<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>('[data-pp-field]').forEach(el => { raw[el.dataset.ppField!] = el.value })
     const body = {
       ...buildProfilePayload(raw),
-      printer_id: Number((form.querySelector('#pp-printer') as HTMLSelectElement).value),
+      printer_id: Number((form.querySelector('#pp-printer') as HTMLSelectElement).value) || null,
+      filamentdb_printer_model_id: model.id,
+      printer_manufacturer: model.manufacturer || null,
+      printer_model: model.model || null,
       profile_name: (form.querySelector('#pp-name') as HTMLInputElement).value.trim(),
       is_default_for_printer: (form.querySelector('#pp-default') as HTMLInputElement).checked,
     }

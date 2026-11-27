@@ -196,6 +196,17 @@ async def _get_printer(db: AsyncSession, local_id: int) -> Printer:
     return obj
 
 
+async def _get_model_source(db: AsyncSession, local_id: int) -> Printer | FilamentPrinterProfile:
+    """Quelle eines printer_model-Beitrags.
+
+    local_id > 0: Drucker (wie bisher). local_id < 0: Druckprofil mit der ID -local_id,
+    denn ein Profil trägt sein Modell selbst und braucht keinen Drucker.
+    """
+    if local_id < 0:
+        return await _get_profile(db, -local_id)
+    return await _get_printer(db, local_id)
+
+
 async def _get_profile(db: AsyncSession, local_id: int) -> FilamentPrinterProfile:
     obj = await db.get(FilamentPrinterProfile, local_id)
     if obj is None:
@@ -326,7 +337,7 @@ async def local_fingerprint(db: AsyncSession, entity_type: str, local_id: int) -
         mfr = await _get_manufacturer(db, local_id)
         data: dict[str, Any] = {"name": mfr.name, "url": mfr.url}
     elif entity_type == "printer_model":
-        printer = await _get_printer(db, local_id)
+        printer = await _get_model_source(db, local_id)
         data = {
             "printer_manufacturer": printer.printer_manufacturer,
             "printer_model": printer.printer_model,
@@ -343,9 +354,23 @@ async def local_fingerprint(db: AsyncSession, entity_type: str, local_id: int) -
         profile = await _get_profile(db, local_id)
         data = {name: getattr(profile, name) for name in PROFILE_FIELDS}
         data["filament_id"] = profile.filament_id
-        data["printer_id"] = profile.printer_id
+        data["printer_model_id"] = profile.filamentdb_printer_model_id
+        data["printer_manufacturer"] = profile.printer_manufacturer
+        data["printer_model"] = profile.printer_model
     raw = json.dumps(data, sort_keys=True, default=str, ensure_ascii=False)
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+
+
+def _model_blocker_info(source: Printer | FilamentPrinterProfile) -> dict[str, Any]:
+    """Strukturierte Angaben, damit das Frontend zur richtigen Stelle verlinken kann."""
+    if isinstance(source, FilamentPrinterProfile):
+        info: dict[str, Any] = {
+            "profile_id": source.id,
+            "filament_id": source.filament_id,
+            "printer_id": source.printer_id,
+        }
+        return {k: v for k, v in info.items() if v is not None}
+    return {"printer_id": source.id}
 
 
 async def _stamp(db: AsyncSession, row: FilamentDBContribution) -> None:
@@ -369,7 +394,7 @@ async def build(db: AsyncSession, entity_type: str, local_id: int) -> Build:
         result.can_check = True
 
     elif entity_type == "printer_model":
-        printer = await _get_printer(db, local_id)
+        printer = await _get_model_source(db, local_id)
         if printer.filamentdb_printer_model_id:
             result.blockers.append(
                 {"code": "already_linked", "message": "Printer model is already linked"}
@@ -379,6 +404,7 @@ async def build(db: AsyncSession, entity_type: str, local_id: int) -> Build:
                 {
                     "code": "printer_model_missing",
                     "message": "Printer needs a manufacturer and a model name",
+                    **_model_blocker_info(printer),
                 }
             )
         result.payload = _clean(
@@ -436,7 +462,6 @@ async def build(db: AsyncSession, entity_type: str, local_id: int) -> Build:
     else:  # print_profile
         profile = await _get_profile(db, local_id)
         fil = await _get_filament(db, profile.filament_id)
-        printer = await _get_printer(db, profile.printer_id)
         payload = _clean({name: getattr(profile, name) for name in PROFILE_FIELDS})
         fil_remote = _cf_id(fil.custom_fields)
         if fil_remote:
@@ -444,20 +469,26 @@ async def build(db: AsyncSession, entity_type: str, local_id: int) -> Build:
             result.display["filament_id"] = fil.designation
         else:
             result.dependencies.append(("filament", fil.id, fil.designation))
-        if printer.filamentdb_printer_model_id:
-            payload["printer_model_id"] = printer.filamentdb_printer_model_id
+        if profile.filamentdb_printer_model_id:
+            payload["printer_model_id"] = profile.filamentdb_printer_model_id
             result.display["printer_model_id"] = " ".join(
-                x for x in (printer.printer_manufacturer, printer.printer_model) if x
-            ) or printer.name
-        elif printer.printer_manufacturer and printer.printer_model:
+                x for x in (profile.printer_manufacturer, profile.printer_model) if x
+            ) or str(profile.filamentdb_printer_model_id)
+        elif profile.printer_manufacturer and profile.printer_model:
+            # Freitext-Modell: erst als printer_model einreichen (local_id = -Profil-ID).
             result.dependencies.append(
-                ("printer_model", printer.id, f"{printer.printer_manufacturer} {printer.printer_model}")
+                (
+                    "printer_model",
+                    -profile.id,
+                    f"{profile.printer_manufacturer} {profile.printer_model}",
+                )
             )
         else:
             result.blockers.append(
                 {
                     "code": "printer_model_missing",
-                    "message": "Printer needs a printer model (manufacturer and model)",
+                    "message": "Print profile needs a printer model (manufacturer and model)",
+                    **_model_blocker_info(profile),
                 }
             )
         if payload.get("nozzle_diameter_mm") is None:
@@ -548,19 +579,22 @@ async def _apply_link(
         fil = await _get_filament(db, local_id)
         fil.custom_fields = _with_cf(fil.custom_fields, remote_id)
     elif entity_type == "printer_model":
-        printer = await _get_printer(db, local_id)
+        printer = await _get_model_source(db, local_id)
         printer.filamentdb_printer_model_id = remote_id
         if printer.printer_manufacturer and printer.printer_model:
-            same = await db.scalars(
-                select(Printer).where(
-                    func.lower(Printer.printer_manufacturer) == printer.printer_manufacturer.lower(),
-                    func.lower(Printer.printer_model) == printer.printer_model.lower(),
-                    Printer.filamentdb_printer_model_id.is_(None),
-                    Printer.deleted_at.is_(None),
+            # Profil-Quelle (local_id < 0) läuft unter filaments:update, darf also keine Drucker ändern.
+            tables = (FilamentPrinterProfile,) if local_id < 0 else (Printer, FilamentPrinterProfile)
+            for table in tables:
+                same = await db.scalars(
+                    select(table).where(
+                        func.lower(table.printer_manufacturer) == printer.printer_manufacturer.lower(),
+                        func.lower(table.printer_model) == printer.printer_model.lower(),
+                        table.filamentdb_printer_model_id.is_(None),
+                        *((table.deleted_at.is_(None),) if table is Printer else ()),
+                    )
                 )
-            )
-            for other in same:
-                other.filamentdb_printer_model_id = remote_id
+                for other in same:
+                    other.filamentdb_printer_model_id = remote_id
         from app.api.v1.filamentdb_proxy import clear_printer_models_cache
 
         clear_printer_models_cache()
@@ -921,10 +955,17 @@ async def _label(db: AsyncSession, entity_type: str, local_id: int) -> str | Non
         mfr = await db.get(Manufacturer, fil.manufacturer_id)
         return f"{mfr.name} {fil.designation}" if mfr else fil.designation
     if entity_type == "printer_model":
-        printer = await db.get(Printer, local_id)
-        if printer is None:
+        if local_id < 0:
+            source = await db.get(FilamentPrinterProfile, -local_id)
+        else:
+            source = await db.get(Printer, local_id)
+        if source is None:
             return None
-        return " ".join(filter(None, [printer.printer_manufacturer, printer.printer_model])) or printer.name
+        return (
+            " ".join(filter(None, [source.printer_manufacturer, source.printer_model]))
+            or getattr(source, "name", None)
+            or source.profile_name
+        )
     profile = await db.get(FilamentPrinterProfile, local_id)
     if profile is None:
         return None
@@ -993,13 +1034,22 @@ async def import_community_profile(
     user_id: int | None,
     remote_profile_id: int,
     filament_id: int,
-    printer_id: int,
+    printer_id: int | None = None,
 ) -> FilamentPrinterProfile:
     remote = await fdb_request("GET", f"/print-profiles/{remote_profile_id}")
     if not isinstance(remote, dict):
         raise _err(502, "filamentdb_error", "Unexpected answer from FilaMan-DB")
     await _get_filament(db, filament_id)
-    await _get_printer(db, printer_id)
+    printer = await _get_printer(db, printer_id) if printer_id else None
+    model_id = _int(remote.get("printer_model_id"))
+    if not model_id and printer is not None:
+        model_id = printer.filamentdb_printer_model_id
+    manufacturer = remote.get("printer_manufacturer") or (printer.printer_manufacturer if printer else None)
+    model_name = remote.get("printer_model") or (printer.printer_model if printer else None)
+    if not (model_id or (manufacturer and model_name)):
+        raise _err(
+            422, "printer_model_required", "The profile has no printer model; choose a printer with a model"
+        )
 
     integers = _integer_profile_columns()
     values: dict[str, Any] = {}
@@ -1021,6 +1071,9 @@ async def import_community_profile(
     profile = FilamentPrinterProfile(
         filament_id=filament_id,
         printer_id=printer_id,
+        filamentdb_printer_model_id=model_id,
+        printer_manufacturer=manufacturer,
+        printer_model=model_name,
         profile_name=f"{author} (FilaMan-DB)"[:255],
         **values,
     )

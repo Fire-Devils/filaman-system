@@ -181,6 +181,8 @@ async def entities(db_session):
         filament_id=fil.id,
         printer_id=printer.id,
         profile_name="Standard",
+        printer_manufacturer="Bambu Lab",
+        printer_model="X1C",
         nozzle_diameter_mm=0.4,
         nozzle_temp_c=215,
         bed_temp_c=60,
@@ -507,7 +509,7 @@ def test_db_validation_error_carries_field_and_limit():
 async def test_preview_reports_dependencies_and_blockers(auth_client, fake_db, entities, db_session):
     client, csrf = auth_client
     await _save_token(client, csrf)
-    entities["printer"].printer_model = None
+    entities["profile"].printer_model = None
     entities["profile"].nozzle_temp_c = 900
     await db_session.commit()
     resp = await client.post(
@@ -687,7 +689,7 @@ async def test_published_profile_is_updated_with_put_not_duplicated(auth_client,
     await _save_token(client, csrf)
     entities["mfr"].custom_fields = {"filamentdb_id": 7}
     entities["fil"].custom_fields = {"filamentdb_id": 9}
-    entities["printer"].filamentdb_printer_model_id = 3
+    entities["profile"].filamentdb_printer_model_id = 3
     await db_session.commit()
 
     first = await _submit(client, csrf, "print_profile", entities["profile"].id)
@@ -727,7 +729,7 @@ async def test_linked_filament_sends_base_values_as_edit(auth_client, fake_db, e
 async def test_rejected_dependency_turns_waiting_profile_into_error(auth_client, fake_db, entities, db_session):
     client, csrf = auth_client
     await _save_token(client, csrf)
-    entities["printer"].filamentdb_printer_model_id = 3
+    entities["profile"].filamentdb_printer_model_id = 3
     entities["mfr"].custom_fields = {"filamentdb_id": 7}
     await db_session.commit()
     await _submit(client, csrf, "print_profile", entities["profile"].id)
@@ -778,7 +780,7 @@ async def test_local_validation_stops_before_sending(auth_client, fake_db, entit
     await _save_token(client, csrf)
     entities["profile"].retraction_mm = 99
     entities["fil"].custom_fields = {"filamentdb_id": 9}
-    entities["printer"].filamentdb_printer_model_id = 3
+    entities["profile"].filamentdb_printer_model_id = 3
     await db_session.commit()
     resp = await _submit(client, csrf, "print_profile", entities["profile"].id)
     assert resp.status_code == 422
@@ -852,8 +854,9 @@ async def test_import_community_profile_creates_local_profile(auth_client, fake_
     assert row.status == "linked" and row.remote_entity_id == 5
 
     # Ein übernommenes Fremdprofil wird nicht per PUT überschrieben, sondern neu eingereicht.
+    assert (created.printer_manufacturer, created.printer_model) == ("Bambu Lab", "X1C")
     entities["fil"].custom_fields = {"filamentdb_id": 9}
-    entities["printer"].filamentdb_printer_model_id = 3
+    created.filamentdb_printer_model_id = 3
     await db_session.commit()
     await _save_token(client, csrf)
     sent = await _submit(client, csrf, "print_profile", created.id)
@@ -949,6 +952,40 @@ async def test_resolve_material_id_pages_with_max_page_size(monkeypatch):
     assert await svc._resolve_material_id("PETG") == 999
     assert [c["page"] for c in calls] == [1, 2]
     assert all(c["page_size"] <= 200 for c in calls)
+
+
+@pytest.mark.asyncio
+async def test_preview_blocker_carries_ids_for_links(auth_client, fake_db, entities, db_session):
+    client, csrf = auth_client
+    await _save_token(client, csrf)
+    entities["profile"].printer_manufacturer = None
+    entities["profile"].printer_model = None
+    await db_session.commit()
+    resp = await client.post(
+        f"{BASE}/contributions/preview",
+        json={"type": "print_profile", "local_id": entities["profile"].id},
+        headers=_h(csrf),
+    )
+    blocker = next(b for b in resp.json()["blockers"] if b["code"] == "printer_model_missing")
+    assert blocker["profile_id"] == entities["profile"].id
+    assert blocker["filament_id"] == entities["fil"].id
+    assert blocker["printer_id"] == entities["printer"].id
+
+
+@pytest.mark.asyncio
+async def test_profile_model_link_applies_to_profiles_not_printers(auth_client, fake_db, entities, db_session):
+    client, csrf = auth_client
+    await _save_token(client, csrf)
+    fake_db.matches = {"printer_model": [{"id": 13, "score": 0.8}]}
+    resp = await _submit(
+        client, csrf, "printer_model", -entities["profile"].id, action="link", match_id=13
+    )
+    assert resp.status_code == 200, resp.text
+    for obj in entities.values():
+        await db_session.refresh(obj)
+    assert entities["profile"].filamentdb_printer_model_id == 13
+    # Profil-Link läuft unter filaments:update und darf keine Drucker ändern
+    assert entities["printer"].filamentdb_printer_model_id is None
 
 
 @pytest.mark.parametrize("name", ["eeff00", "#EEFF00", "ffe100", "abc", "#ABC", "11223344", " eeff00 "])

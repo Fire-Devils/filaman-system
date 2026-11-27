@@ -57,5 +57,12 @@ import FormDialog from './FormDialog.astro'
   .pp-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr)); gap: 10px 12px; }
   .pp-unit { color: var(--text-muted); font-weight: 400; }
   .pp-check { display: flex; align-items: center; gap: 8px; margin-top: 10px; }
+  .printer-model-field { display: flex; flex-direction: column; gap: 10px; }
+  .printer-model-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .printer-model-results { list-style: none; margin: 4px 0 0; padding: 0; max-height: 200px; overflow-y: auto; border: 1px solid var(--border, #ccc); border-radius: 8px; background: var(--bg-soft, transparent); }
+  .printer-model-results li { padding: 8px 12px; cursor: pointer; }
+  .printer-model-results li:hover, .printer-model-results li:focus { background: var(--bg-soft, rgba(128,128,128,.15)); outline: none; }
+  .printer-model-suggest { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; font-size: 0.875rem; }
+  .printer-model-hint { margin: 4px 0 0; font-size: 0.8125rem; color: var(--text-muted); }
   .pp-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
 </style>
