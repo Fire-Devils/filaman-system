@@ -3,7 +3,7 @@ from typing import Annotated, Literal
 from fastapi import APIRouter, HTTPException, Request, status
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, Field, StringConstraints, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints, TypeAdapter, ValidationError
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -40,16 +40,30 @@ WidgetId = Annotated[str, StringConstraints(pattern=r"^[A-Za-z0-9_-]{1,64}$")]
 DashboardLayout = Literal["grid", "masonry"]
 
 
+class WidgetSize(BaseModel):
+    """Per-card size: width in columns (or the full row), height as a step."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    w: Literal[1, 2, 3, "full"] = 1
+    h: Literal["auto", "s", "m", "l"] = "auto"
+
+
+WidgetSizes = Annotated[dict[WidgetId, WidgetSize], Field(max_length=50)]
+
+
 class PreferencesResponse(BaseModel):
     dashboard_hidden_widgets: list[str] = []
     dashboard_widget_order: list[str] = []
     dashboard_layout: DashboardLayout = "grid"
+    dashboard_widget_sizes: dict[str, WidgetSize] = {}
 
 
 class PreferencesUpdate(BaseModel):
     dashboard_hidden_widgets: Annotated[list[WidgetId], Field(max_length=50)] | None = None
     dashboard_widget_order: Annotated[list[WidgetId], Field(max_length=50)] | None = None
     dashboard_layout: DashboardLayout | None = None
+    dashboard_widget_sizes: WidgetSizes | None = None
 
 
 class SidebarItemPreference(BaseModel):
@@ -168,6 +182,17 @@ async def update_me(
     )
 
 
+_WIDGET_SIZES_ADAPTER = TypeAdapter(WidgetSizes)
+
+
+def _stored_widget_sizes(raw: object) -> dict[str, WidgetSize]:
+    """Saved sizes that no longer validate are dropped instead of failing the whole response."""
+    try:
+        return _WIDGET_SIZES_ADAPTER.validate_python(raw or {})
+    except ValidationError:
+        return {}
+
+
 def _preferences_payload(user: User) -> PreferencesResponse:
     prefs = user.ui_preferences or {}
     layout = prefs.get("dashboard_layout")
@@ -175,6 +200,7 @@ def _preferences_payload(user: User) -> PreferencesResponse:
         dashboard_hidden_widgets=list(prefs.get("dashboard_hidden_widgets") or []),
         dashboard_widget_order=list(prefs.get("dashboard_widget_order") or []),
         dashboard_layout=layout if layout in ("grid", "masonry") else "grid",
+        dashboard_widget_sizes=_stored_widget_sizes(prefs.get("dashboard_widget_sizes")),
     )
 
 
@@ -218,6 +244,10 @@ async def update_preferences(
         prefs["dashboard_widget_order"] = list(dict.fromkeys(data.dashboard_widget_order))
     if data.dashboard_layout is not None:
         prefs["dashboard_layout"] = data.dashboard_layout
+    if data.dashboard_widget_sizes is not None:
+        prefs["dashboard_widget_sizes"] = {
+            widget: size.model_dump() for widget, size in data.dashboard_widget_sizes.items()
+        }
     user.ui_preferences = prefs
 
     await db.commit()
