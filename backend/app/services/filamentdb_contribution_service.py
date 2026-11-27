@@ -106,6 +106,8 @@ class Build:
     dependencies: list[tuple[str, int, str]] = field(default_factory=list)
     blockers: list[dict[str, Any]] = field(default_factory=list)
     can_check: bool = False
+    # Lesbare Namen zu IDs im Payload, nur für die Anzeige
+    display: dict[str, str] = field(default_factory=dict)
 
 
 def _err(status: int, code: str, message: str, **extra: Any) -> FilamentDBError:
@@ -394,6 +396,7 @@ async def build(db: AsyncSession, entity_type: str, local_id: int) -> Build:
             mfr_remote = _cf_id(mfr.custom_fields)
             if mfr_remote:
                 payload["manufacturer_id"] = mfr_remote
+                result.display["manufacturer_id"] = mfr.name
             else:
                 result.dependencies.append(("manufacturer", mfr.id, mfr.name))
             material_id = await _resolve_material_id(fil.material_type)
@@ -407,6 +410,7 @@ async def build(db: AsyncSession, entity_type: str, local_id: int) -> Build:
                 )
             else:
                 payload["material_id"] = material_id
+                result.display["material_id"] = fil.material_type
             result.payload = payload
             result.can_check = bool(mfr_remote)
         for problem in find_implausible_values(result.payload or {}, FILAMENT_PAYLOAD_RANGES):
@@ -426,10 +430,14 @@ async def build(db: AsyncSession, entity_type: str, local_id: int) -> Build:
         fil_remote = _cf_id(fil.custom_fields)
         if fil_remote:
             payload["filament_id"] = fil_remote
+            result.display["filament_id"] = fil.designation
         else:
             result.dependencies.append(("filament", fil.id, fil.designation))
         if printer.filamentdb_printer_model_id:
             payload["printer_model_id"] = printer.filamentdb_printer_model_id
+            result.display["printer_model_id"] = " ".join(
+                x for x in (printer.printer_manufacturer, printer.printer_model) if x
+            ) or printer.name
         elif printer.printer_manufacturer and printer.printer_model:
             result.dependencies.append(
                 ("printer_model", printer.id, f"{printer.printer_manufacturer} {printer.printer_model}")
@@ -501,6 +509,7 @@ async def preview(
         "local_id": local_id,
         "mode": b.mode,
         "payload": b.payload,
+        "display": b.display,
         "matches": matches,
         "blockers": b.blockers,
         "dependencies": [

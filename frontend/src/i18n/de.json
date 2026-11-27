@@ -2917,6 +2917,12 @@
       "build_plates": "Druckplatten",
       "filament_id": "Filament-ID (FilaMan-DB)",
       "printer_model_id": "Druckermodell-ID (FilaMan-DB)"
+    },
+    "displayFields": {
+      "manufacturer_id": "Hersteller",
+      "material_id": "Material",
+      "filament_id": "Filament",
+      "printer_model_id": "Druckermodell"
     }
   }
 }

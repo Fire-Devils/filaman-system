@@ -39,6 +39,7 @@ export interface ContribPreview {
   local_id: number
   mode: 'create' | 'edit' | 'update'
   payload: Record<string, unknown>
+  display?: Record<string, string>
   matches: ContribMatch[]
   blockers: { code: string; message: string; field?: string; min?: number; max?: number }[]
   dependencies: { type: ContribType; local_id: number; label: string }[]
@@ -223,7 +224,12 @@ export function renderPreviewBody(preview: ContribPreview): string {
   }
 
   const rows = Object.entries(preview.payload)
-    .map(([key, value]) => `<div><dt>${e(fieldLabel(key))}</dt><dd>${e(formatPayloadValue(value))}</dd></div>`).join('')
+    .map(([key, value]) => {
+      const name = preview.display?.[key]
+      const label = name && t(`fdbContrib.displayFields.${key}`) !== `fdbContrib.displayFields.${key}` ? t(`fdbContrib.displayFields.${key}`) : fieldLabel(key)
+      const shown = name ? name : formatPayloadValue(value)
+      return `<div><dt>${e(label)}</dt><dd>${e(shown)}</dd></div>`
+    }).join('')
   parts.push(rows ? `<dl class="fdb-payload">${rows}</dl>` : `<p class="fm-field-hint">${e(t('fdbContrib.noPayload'))}</p>`)
   return parts.join('')
 }

@@ -458,6 +458,8 @@ async def test_preview_contains_no_spool_or_private_data(auth_client, fake_db, e
     assert body["matches"][0]["id"] == 9
     payload = body["payload"]
     assert payload["manufacturer_id"] == 7 and payload["material_id"] == 5
+    assert body["display"]["manufacturer_id"] == entities["mfr"].name
+    assert body["display"]["material_id"] == entities["fil"].material_type
     assert payload["temp_nozzle_min"] == 190 and payload["temp_bed"] == 60
     assert payload["hex_color"] == "#ff0000" and payload["colors"][0]["color_name"] == "Rot"
     flat = json.dumps(payload).lower()

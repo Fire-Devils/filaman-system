@@ -86,6 +86,19 @@ describe('FilaMan-DB contribution rendering', () => {
     expect(html).toContain('Acme')
   })
 
+  it('shows names instead of ids when display values exist', () => {
+    const html = renderPreviewBody({
+      ...basePreview,
+      payload: { manufacturer_id: 994, material_id: 30 },
+      display: { manufacturer_id: 'Prusament', material_id: 'PLA' },
+    })
+    expect(html).toContain('Prusament')
+    expect(html).toContain('PLA')
+    expect(html).not.toContain('994')
+    expect(html).not.toContain('>30<')
+    expect(html).not.toContain('(FilaMan-DB)')
+  })
+
   it('maps status and waiting dependencies to text keys', () => {
     expect(statusText({ status: 'pending' })).toBe('In review')
     expect(statusText({ status: 'waiting', depends_on: { entity_type: 'filament', local_id: 1, label: null, status: 'pending' } }))
