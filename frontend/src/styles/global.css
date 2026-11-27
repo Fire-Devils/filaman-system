@@ -3585,3 +3585,30 @@ html.sidebar-collapsed #sidebar-color-mode { display: none; }
 .fdb-header-contrib:empty { display: none; }
 .fdb-header-contrib + .detail-page-actions { margin-left: 0; }
 .fdb-bulk-list { margin: 8px 0 0; padding-left: 18px; }
+
+/* FilaMan-DB: Hinweis-Banner über den Listen (lib/filamentdb-connect-banner.ts) */
+.fdb-banner {
+  position: relative; overflow: hidden; display: flex; align-items: center; gap: 20px;
+  margin-bottom: var(--section-gap, 16px); padding: 20px 24px; border-radius: var(--radius-lg);
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, transparent);
+  background: linear-gradient(115deg, color-mix(in srgb, var(--accent) 16%, transparent), color-mix(in srgb, var(--accent-2) 10%, transparent) 55%, var(--bg-elevated));
+}
+.fdb-banner::after {
+  content: ""; position: absolute; right: -60px; top: -60px; width: 220px; height: 220px; border-radius: 50%; pointer-events: none;
+  background: radial-gradient(circle, color-mix(in srgb, var(--accent-2) 25%, transparent), transparent 70%);
+}
+.fdb-banner-mark { width: 56px; height: 56px; flex: none; }
+.fdb-banner-text { flex: 1; min-width: 0; position: relative; z-index: 1; }
+.fdb-banner-tag { display: block; margin-bottom: 6px; font-size: .7rem; letter-spacing: .1em; text-transform: uppercase; color: var(--accent-3); }
+.fdb-banner-text strong { display: block; margin-bottom: 4px; font-size: 1.02rem; color: var(--text); }
+.fdb-banner-desc { color: var(--text-muted); font-size: .88rem; }
+.fdb-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.fdb-chip { display: inline-flex; align-items: center; gap: 5px; padding: 3px 9px; border-radius: 999px; font-size: .72rem; border: 1px solid var(--border); background: color-mix(in srgb, var(--text) 6%, transparent); color: var(--text); }
+.fdb-banner-cta { position: relative; z-index: 1; white-space: nowrap; text-decoration: none; }
+.fdb-banner-close { position: relative; z-index: 1; align-self: flex-start; background: none; border: 0; padding: 4px; color: var(--text-muted); font-size: 1.1rem; line-height: 1; cursor: pointer; }
+.fdb-banner-close:hover { color: var(--text); }
+@media (max-width: 640px) {
+  .fdb-banner { flex-wrap: wrap; padding: 16px; gap: 12px; }
+  .fdb-banner-text { flex-basis: calc(100% - 100px); }
+  .fdb-banner-cta { order: 3; }
+}

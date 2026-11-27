@@ -15,6 +15,8 @@ import InventoryFilterReset from '../../components/InventoryFilterReset.astro'
     </div>
   </div>
 
+  <div id="fdb-connect-banner"></div>
+
   <div class="filter-bar">
     <div class="fm-filter-search-wrap">
       <input
@@ -98,6 +100,7 @@ import InventoryFilterReset from '../../components/InventoryFilterReset.astro'
     import type { AppDialogs } from '../../lib/form-dialog'
     import { mountPanel } from '../../lib/panel-navigation'
     import { openBulkMatchDialog } from '../../lib/filamentdb-bulk-match'
+    import { mountConnectBanner } from '../../lib/filamentdb-connect-banner'
     import { fetchContributionsFresh, loadContribContext, openContributeDialog, sendButtonLabel, sendButtonMode, fdbLinkCell, fdbContribCell, fdbFilterValues, fdbContribFilterValues, type ContribRef } from '../../lib/filamentdb-contrib'
 
     mountPanel('manufacturers', async (panelSignal) => {
@@ -107,6 +110,7 @@ import InventoryFilterReset from '../../components/InventoryFilterReset.astro'
 
     const filamentDbActive = await checkFilamentDbActive()
     if (panelSignal.aborted) return
+    void mountConnectBanner(document.getElementById('fdb-connect-banner'), panelSignal)
     const fdbContext = await loadContribContext()
     const fdbStatuses = new Map<number, ContribRef>()
     async function loadFdbStatuses() {

@@ -49,6 +49,8 @@ const { compactPicker = false } = Astro.props
       </a>
     </div>
   </div>
+
+  {!compactPicker && <div id="fdb-connect-banner"></div>}
   
   <div class="filter-bar">
     <div class="fm-filter-search-wrap">
@@ -196,6 +198,7 @@ const { compactPicker = false } = Astro.props
     import { openBulkMatchDialog } from '../../lib/filamentdb-bulk-match'
     import { fetchContributionsFresh, loadContribContext, fdbLinkCell, fdbContribCell, fdbFilterValues, fdbContribFilterValues, type ContribRef } from '../../lib/filamentdb-contrib'
     import { openBulkSendDialog } from '../../lib/filamentdb-bulk'
+    import { mountConnectBanner } from '../../lib/filamentdb-connect-banner'
 
     mountPanel('filaments', async (panelSignal) => {
     const dialogWindow = window as unknown as AppDialogs
@@ -294,6 +297,7 @@ const { compactPicker = false } = Astro.props
     }
     const filterManufacturerId = urlParams.get('manufacturer_id')
     const selectForSpool = !compactPicker && urlParams.get('select_for_spool') === '1'
+    if (!selectForSpool) void mountConnectBanner(document.getElementById('fdb-connect-banner'), panelSignal)
     const createFilamentHref = selectForSpool ? '/filaments/new?create_spool=1' : '/filaments/new'
     if (selectForSpool) {
       const title = document.querySelector('h1')!

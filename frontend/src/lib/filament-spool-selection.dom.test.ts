@@ -18,7 +18,7 @@ it.each(['', '?select_for_spool=1', '?select_for_spool=0'])('keeps list navigati
   const render = listSource.slice(listSource.indexOf('    function renderColorDots'), listSource.indexOf('    function setupHeaderFilters'))
   const bulk = listSource.slice(listSource.indexOf('    const selectionLimit'), listSource.indexOf('  </script>'))
   const runtime = new Function('window', 'document', 't', 'escapeHtml', 'formatNumericRange', 'toColorSwatchBackground', 'formatPrice', `
-    const selectedFilamentIds = new Set(), filamentContribEntries = new Map(), fdbLinkCell = () => '', fdbContribCell = () => '', getCurrency = () => 'EUR', compactPicker = false;
+    const selectedFilamentIds = new Set(), filamentContribEntries = new Map(), fdbLinkCell = () => '', fdbContribCell = () => '', mountConnectBanner = async () => {}, panelSignal = undefined, getCurrency = () => 'EUR', compactPicker = false;
     const loadContribContext = async () => ({ canContribute: false }), openBulkSendDialog = async () => {};
     const selectedPickerFilaments = new Map(), filamentPlugins = undefined;
     const filamentList = new Map([17, 18].map(id => [id, {

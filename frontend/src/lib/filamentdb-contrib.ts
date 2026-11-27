@@ -47,6 +47,10 @@ export interface ContribPreview {
 }
 
 export interface ContribContext {
+  /** Nutzer hat das Recht filamentdb:contribute (unabhängig von Plugin und Token). */
+  hasPermission: boolean
+  /** ID des angemeldeten Nutzers (für nutzerbezogene Merker), sonst null. */
+  userId: number | null
   /** Plugin aktiv, Token gespeichert und Recht filamentdb:contribute. */
   canContribute: boolean
   pluginActive: boolean
@@ -69,12 +73,15 @@ if (typeof document !== 'undefined') {
 
 export function loadContribContext(): Promise<ContribContext> {
   contextPromise ??= (async () => {
-    const none: ContribContext = { canContribute: false, pluginActive: false, tokenSaved: false, needsToken: false }
+    const none: ContribContext = { hasPermission: false, userId: null, canContribute: false, pluginActive: false, tokenSaved: false, needsToken: false }
     try {
       const user = await getMe()
-      if (!user || !hasPermission(user, 'filamentdb:contribute')) return none
+      if (!user) return none
+      if (!hasPermission(user, 'filamentdb:contribute')) return { ...none, userId: user.id }
       const status = await api.get<{ plugin_active: boolean; token_saved: boolean }>('/filamentdb/contributions/status')
       return {
+        hasPermission: true,
+        userId: user.id,
         pluginActive: status.plugin_active,
         tokenSaved: status.token_saved,
         canContribute: status.plugin_active && status.token_saved,
@@ -197,7 +204,8 @@ export function sendButtonLabel(mode: Exclude<SendButtonMode, null>): string {
 
 export function noTokenNoticeHtml(): string {
   const link = `<a href="${FILAMENTDB_SITE_URL}" target="_blank" rel="noopener noreferrer">db.filaman.app</a>`
-  return `<p class="fm-field-hint fm-db-hint" data-fdb-no-token>${t('fdbContrib.noToken', { link })}</p>`
+  const more = `<a href="/filamentdb" data-fdb-learn-more>${t('fdbConnect.learnMore')}</a>`
+  return `<p class="fm-field-hint fm-db-hint" data-fdb-no-token>${t('fdbContrib.noToken', { link })} ${more}</p>`
 }
 
 export function contribErrorMessage(error: unknown): string {
