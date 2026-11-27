@@ -193,6 +193,31 @@ async def submit_contribution(
     return await svc.serialize(db, row)
 
 
+class BulkCheckRequest(BaseModel):
+    type: Literal["manufacturer", "filament"]
+    auto_link_exact: bool = False
+    limit: int = Field(200, ge=1, le=200)
+
+
+@router.post("/contributions/bulk-check")
+async def bulk_check_contributions(
+    data: BulkCheckRequest, db: DBSession, principal=_CONTRIBUTE
+):
+    """Alle unverknüpften Hersteller/Filamente gegen die DB abgleichen (sequenziell)."""
+    if data.auto_link_exact:
+        # Auto-Verknüpfen schreibt an lokalen Objekten: deren Update-Recht ist nötig.
+        await ensure_any_permission(db, principal, _LINK_PERMISSION[data.type])
+    return await _guard(
+        svc.bulk_check(
+            db,
+            principal.user_id,
+            data.type,
+            auto_link_exact=data.auto_link_exact,
+            limit=data.limit,
+        )
+    )
+
+
 async def _sees_all(db: DBSession, principal) -> bool:
     """Wer ``admin:system`` hat, sieht die Beiträge aller User."""
     if principal.is_superadmin:

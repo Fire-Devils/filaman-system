@@ -1125,3 +1125,148 @@ async def test_suggest_build_plate_needs_contribute_permission(viewer_auth_clien
     viewer, viewer_csrf = viewer_auth_client
     denied = await viewer.post(f"{BASE}/build-plates/suggest", json={"name": "A"}, headers=_h(viewer_csrf))
     assert denied.status_code == 403
+
+
+# ─── Massenabgleich ───────────────────────────────────────────────────────
+
+
+async def _bulk(client, csrf, type_="manufacturer", **extra):
+    return await client.post(
+        f"{BASE}/contributions/bulk-check",
+        json={"type": type_, **extra},
+        headers=_h(csrf),
+    )
+
+
+@pytest.mark.asyncio
+async def test_bulk_check_categories_and_sorting(auth_client, fake_db, entities, db_session):
+    client, csrf = auth_client
+    await _save_token(client, csrf)
+    linked_already = Manufacturer(name="Schon da", custom_fields={"filamentdb_id": 9})
+    broken = Manufacturer(name="Kaputt")
+    db_session.add_all([linked_already, broken])
+    await db_session.commit()
+    fake_db.matches["manufacturer"] = [
+        {"id": 1, "label": "Acme Low", "score": 0.7, "type": "manufacturer"},
+        {"id": 2, "label": "Acme", "score": 0.8, "type": "manufacturer"},
+    ]
+    resp = await _bulk(client, csrf, auto_link_exact=False)
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    ids = {i["local_id"] for i in body["items"]}
+    assert linked_already.id not in ids
+    acme = next(i for i in body["items"] if i["local_id"] == entities["mfr"].id)
+    assert acme["category"] == "suggested"
+    assert [m["id"] for m in acme["matches"]] == [2, 1]
+    assert acme["matches"][0]["label"] == "Acme"
+    assert body["counts"]["suggested"] == 2
+    assert body["truncated"] is False
+
+    fake_db.matches["manufacturer"] = []
+    body = (await _bulk(client, csrf, auto_link_exact=False)).json()
+    assert body["counts"]["none"] == 2
+
+
+@pytest.mark.asyncio
+async def test_bulk_check_auto_link_on_and_off(auth_client, fake_db, entities, db_session):
+    client, csrf = auth_client
+    await _save_token(client, csrf)
+    fake_db.matches["manufacturer"] = [
+        {"id": 7, "label": "Acme", "score": 1.0, "type": "manufacturer"},
+        {"id": 8, "label": "Acme X", "score": 0.7, "type": "manufacturer"},
+    ]
+    off = (await _bulk(client, csrf, auto_link_exact=False)).json()
+    assert off["items"][0]["category"] == "suggested"
+    await db_session.refresh(entities["mfr"])
+    assert not (entities["mfr"].custom_fields or {}).get("filamentdb_id")
+
+    on = (await _bulk(client, csrf, auto_link_exact=True)).json()
+    item = on["items"][0]
+    assert item["category"] == "linked" and item["linked_remote_id"] == 7
+    await db_session.refresh(entities["mfr"])
+    assert entities["mfr"].custom_fields["filamentdb_id"] == 7
+    row = (await db_session.scalars(select(FilamentDBContribution))).one()
+    assert row.status == "linked"
+
+    # zweiter Lauf: schon verknüpft, wird übersprungen
+    again = (await _bulk(client, csrf, auto_link_exact=True)).json()
+    assert again["total"] == 0
+
+
+@pytest.mark.asyncio
+async def test_bulk_check_skips_active_submissions_and_marks_blocked(
+    auth_client, fake_db, entities, db_session
+):
+    client, csrf = auth_client
+    await _save_token(client, csrf)
+    other = Manufacturer(name="Zweiter")
+    db_session.add(other)
+    await db_session.flush()
+    db_session.add(
+        FilamentDBContribution(
+            entity_type="manufacturer", local_id=other.id, status="pending", created_by=1
+        )
+    )
+    await db_session.commit()
+    fake_db.materials = []
+    body = (await _bulk(client, csrf, "filament", auto_link_exact=False)).json()
+    assert body["counts"]["blocked"] == 1
+    item = body["items"][0]
+    assert item["category"] == "blocked"
+    assert item["blockers"][0]["code"] == "material_unknown"
+
+    mfr_body = (await _bulk(client, csrf, auto_link_exact=False)).json()
+    assert [i["local_id"] for i in mfr_body["items"]] == [entities["mfr"].id]
+
+
+@pytest.mark.asyncio
+async def test_bulk_check_filament_with_linked_manufacturer(auth_client, fake_db, entities, db_session):
+    client, csrf = auth_client
+    await _save_token(client, csrf)
+    entities["mfr"].custom_fields = {"filamentdb_id": 3}
+    await db_session.commit()
+    fake_db.matches["filament"] = [
+        {"id": 11, "label": "Acme PLA Rot", "score": 0.995, "type": "filament"}
+    ]
+    body = (await _bulk(client, csrf, "filament", auto_link_exact=True)).json()
+    assert body["items"][0]["category"] == "linked"
+    await db_session.refresh(entities["fil"])
+    assert entities["fil"].custom_fields["filamentdb_id"] == 11
+
+
+@pytest.mark.asyncio
+async def test_bulk_check_limit_truncates_and_single_error_does_not_abort(
+    auth_client, fake_db, entities, db_session
+):
+    client, csrf = auth_client
+    await _save_token(client, csrf)
+    db_session.add(Manufacturer(name="Noch einer"))
+    await db_session.commit()
+    body = (await _bulk(client, csrf, auto_link_exact=False, limit=1)).json()
+    assert body["total"] == 1 and body["truncated"] is True
+
+    fake_db.fail["POST /contribute/check"] = (500, {"code": "boom", "message": "kaputt"})
+    body = (await _bulk(client, csrf, auto_link_exact=False)).json()
+    assert body["counts"]["blocked"] == 2
+    assert body["items"][0]["blockers"][0]["code"]
+
+
+@pytest.mark.asyncio
+async def test_bulk_check_invalid_token_aborts(auth_client, fake_db, entities):
+    client, csrf = auth_client
+    await _save_token(client, csrf)
+    fake_db.fail["POST /contribute/check"] = (
+        401,
+        {"code": "invalid_token", "message": "no"},
+    )
+    resp = await _bulk(client, csrf, auto_link_exact=False)
+    assert resp.status_code == 400
+    assert resp.json()["detail"]["code"] == "filamentdb_token_invalid"
+
+
+@pytest.mark.asyncio
+async def test_bulk_check_needs_contribute_permission(viewer_auth_client, fake_db, entities):  # noqa: F811
+    client, csrf = viewer_auth_client
+    resp = await _bulk(client, csrf, auto_link_exact=True)
+    assert resp.status_code == 403
+    assert fake_db.requests == []
