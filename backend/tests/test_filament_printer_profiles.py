@@ -282,3 +282,80 @@ async def test_printer_models_unreachable_returns_defined_answer(auth_client, pl
     response = await client.get("/api/v1/filamentdb/printer-models")
     assert response.status_code == 200
     assert response.json() == {"available": False, "items": []}
+
+
+@pytest.mark.asyncio
+async def test_profile_without_printer_needs_model(auth_client, entities):
+    client, csrf = auth_client
+    filament, _ = entities
+    base = f"/api/v1/filaments/{filament.id}/printer-profiles"
+
+    missing = await client.post(base, json={"profile_name": "x"}, headers=_h(csrf))
+    assert missing.status_code == 422
+    assert missing.json()["detail"]["code"] == "printer_model_required"
+
+    only_maker = await client.post(
+        base, json={"profile_name": "x", "printer_manufacturer": "Prusa"}, headers=_h(csrf)
+    )
+    assert only_maker.status_code == 422
+
+    ok = await client.post(
+        base,
+        json={"profile_name": "free", "printer_manufacturer": "Prusa", "printer_model": "MK4"},
+        headers=_h(csrf),
+    )
+    assert ok.status_code == 201, ok.text
+    body = ok.json()
+    assert body["printer_id"] is None
+    assert (body["printer_manufacturer"], body["printer_model"]) == ("Prusa", "MK4")
+
+    by_id = await client.post(
+        base,
+        json={"profile_name": "db", "filamentdb_printer_model_id": 12},
+        headers=_h(csrf),
+    )
+    assert by_id.status_code == 201, by_id.text
+
+
+@pytest.mark.asyncio
+async def test_default_needs_linked_printer(auth_client, entities):
+    client, csrf = auth_client
+    filament, _ = entities
+    base = f"/api/v1/filaments/{filament.id}/printer-profiles"
+    response = await client.post(
+        base,
+        json={
+            "profile_name": "d",
+            "printer_manufacturer": "Prusa",
+            "printer_model": "MK4",
+            "is_default_for_printer": True,
+        },
+        headers=_h(csrf),
+    )
+    assert response.status_code == 422
+    assert response.json()["detail"]["code"] == "printer_required_for_default"
+
+
+@pytest.mark.asyncio
+async def test_update_cannot_remove_model(auth_client, entities):
+    client, csrf = auth_client
+    filament, printer = entities
+    base = f"/api/v1/filaments/{filament.id}/printer-profiles"
+    created = (
+        await client.post(
+            base, json={"printer_id": printer.id, "profile_name": "p"}, headers=_h(csrf)
+        )
+    ).json()
+    assert created["printer_model"] == "X1C"  # vom Drucker übernommen
+    response = await client.put(
+        f"{base}/{created['id']}",
+        json={"printer_manufacturer": None, "printer_model": None},
+        headers=_h(csrf),
+    )
+    assert response.status_code == 422
+    unlink = await client.put(
+        f"{base}/{created['id']}", json={"printer_id": None}, headers=_h(csrf)
+    )
+    assert unlink.status_code == 200
+    assert unlink.json()["printer_id"] is None
+    assert unlink.json()["printer_model"] == "X1C"

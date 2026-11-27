@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from 'vitest'
 
 vi.mock('./api', () => ({
   api: {
-    get: vi.fn(async (path: string) => (path.startsWith('/printers') ? { items: [{ id: 3, name: 'MK4' }] } : [])),
+    get: vi.fn(async (path: string) => (path.startsWith('/printers') ? { items: [{ id: 3, name: 'MK4', printer_manufacturer: 'Prusa', printer_model: 'MK4' }, { id: 4, name: 'Unbekannt' }] } : [])),
   },
 }))
 vi.mock('./auth', async importOriginal => ({
@@ -35,5 +35,22 @@ describe('initPrintProfiles', () => {
     add.click()
     expect(showModal).toHaveBeenCalledOnce()
     expect(dialog.querySelector('#pp-printer')).not.toBeNull()
+
+    // Drucker mit Modell füllt das Modell vor, Drucker ohne Modell zeigt den Hinweis mit Link.
+    const select = dialog.querySelector('#pp-printer') as HTMLSelectElement
+    const manufacturer = dialog.querySelector('#pp-manufacturer') as HTMLInputElement
+    const warning = dialog.querySelector('#pp-printer-warning') as HTMLElement
+    const defaultBox = dialog.querySelector('#pp-default') as HTMLInputElement
+    expect(defaultBox.disabled).toBe(true)
+    select.value = '3'
+    select.dispatchEvent(new Event('change'))
+    expect(manufacturer.value).toBe('Prusa')
+    expect((dialog.querySelector('#pp-model') as HTMLInputElement).value).toBe('MK4')
+    expect(warning.classList.contains('hidden')).toBe(true)
+    expect(defaultBox.disabled).toBe(false)
+    select.value = '4'
+    select.dispatchEvent(new Event('change'))
+    expect(warning.classList.contains('hidden')).toBe(false)
+    expect(warning.innerHTML).toContain('/printers?edit=4')
   })
 })

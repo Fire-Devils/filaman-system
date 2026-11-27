@@ -14,6 +14,15 @@ from app.services.print_profile_validation import find_implausible_values
 router_filament_profiles = APIRouter()
 
 _FILAMENT_UPDATE = RequirePermission("filaments:update")
+MODEL_KEYS = ("filamentdb_printer_model_id", "printer_manufacturer", "printer_model")
+
+
+class PrintProfileModelFields(BaseModel):
+    """Druckermodell, für das das Profil gilt: FilaMan-DB-ID oder Freitext."""
+
+    filamentdb_printer_model_id: int | None = Field(None, gt=0)
+    printer_manufacturer: str | None = Field(None, max_length=255)
+    printer_model: str | None = Field(None, max_length=255)
 
 
 class PrintProfileFields(BaseModel):
@@ -55,12 +64,12 @@ class PrintProfileFields(BaseModel):
     material_notes: str | None = Field(None, max_length=2000)
 
 
-class PrintProfileCreate(PrintProfileFields):
-    printer_id: int
+class PrintProfileCreate(PrintProfileFields, PrintProfileModelFields):
+    printer_id: int | None = None
     profile_name: str = Field(..., min_length=1, max_length=255)
 
 
-class PrintProfileUpdate(PrintProfileFields):
+class PrintProfileUpdate(PrintProfileFields, PrintProfileModelFields):
     """Teilweise Änderung: nur gesendete Felder werden übernommen."""
 
     printer_id: int | None = None
@@ -68,16 +77,14 @@ class PrintProfileUpdate(PrintProfileFields):
     is_default_for_printer: bool | None = None
 
 
-class PrintProfileResponse(PrintProfileFields):
+class PrintProfileResponse(PrintProfileFields, PrintProfileModelFields):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
     filament_id: int
-    printer_id: int
+    printer_id: int | None = None
     profile_name: str
     printer_name: str | None = None
-    printer_manufacturer: str | None = None
-    printer_model: str | None = None
     created_at: datetime | None = None
     updated_at: datetime | None = None
 
@@ -126,6 +133,48 @@ async def _require_printer(db: DBSession, printer_id: int) -> Printer:
     return printer
 
 
+def _blank_to_none(values: dict[str, Any]) -> None:
+    for key in ("printer_manufacturer", "printer_model"):
+        if key in values and isinstance(values[key], str):
+            values[key] = values[key].strip() or None
+
+
+def has_printer_model(values: dict[str, Any]) -> bool:
+    """Gültig: FilaMan-DB-Modell-ID oder Hersteller und Modell als Freitext."""
+    if values.get("filamentdb_printer_model_id"):
+        return True
+    return bool(values.get("printer_manufacturer") and values.get("printer_model"))
+
+
+def _fill_model_from_printer(values: dict[str, Any], printer: Printer | None) -> None:
+    """Ohne eigene Modellangabe das Modell des gewählten Druckers übernehmen."""
+    if printer is None:
+        return
+    if any(values.get(k) for k in MODEL_KEYS):
+        return
+    for key in MODEL_KEYS:
+        values[key] = getattr(printer, key)
+
+
+def _check_model_and_default(values: dict[str, Any]) -> None:
+    if not has_printer_model(values):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail={
+                "code": "printer_model_required",
+                "message": "A printer model (FilaMan-DB model or manufacturer and model) is required",
+            },
+        )
+    if values.get("is_default_for_printer") and values.get("printer_id") is None:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail={
+                "code": "printer_required_for_default",
+                "message": "A default profile needs a linked printer",
+            },
+        )
+
+
 async def _get_profile(
     db: DBSession, filament_id: int, profile_id: int
 ) -> FilamentPrinterProfile:
@@ -141,12 +190,11 @@ async def _get_profile(
 
 
 async def _to_response(db: DBSession, profile: FilamentPrinterProfile) -> PrintProfileResponse:
-    printer = await db.get(Printer, profile.printer_id)
     out = PrintProfileResponse.model_validate(profile)
-    if printer is not None:
-        out.printer_name = printer.name
-        out.printer_manufacturer = printer.printer_manufacturer
-        out.printer_model = printer.printer_model
+    if profile.printer_id is not None:
+        printer = await db.get(Printer, profile.printer_id)
+        if printer is not None:
+            out.printer_name = printer.name
     return out
 
 
@@ -176,7 +224,11 @@ async def list_printer_profiles(
         await db.scalars(
             select(FilamentPrinterProfile)
             .where(FilamentPrinterProfile.filament_id == filament_id)
-            .order_by(FilamentPrinterProfile.printer_id, FilamentPrinterProfile.id)
+            .order_by(
+                FilamentPrinterProfile.printer_manufacturer,
+                FilamentPrinterProfile.printer_model,
+                FilamentPrinterProfile.id,
+            )
         )
     ).all()
     return [await _to_response(db, row) for row in rows]
@@ -194,14 +246,19 @@ async def create_printer_profile(
     principal=_FILAMENT_UPDATE,
 ):
     await _require_filament(db, filament_id)
-    await _require_printer(db, data.printer_id)
     values = data.model_dump()
+    _blank_to_none(values)
+    printer = None
+    if data.printer_id is not None:
+        printer = await _require_printer(db, data.printer_id)
+    _fill_model_from_printer(values, printer)
+    _check_model_and_default(values)
     _check_plausible(values)
 
     profile = FilamentPrinterProfile(filament_id=filament_id, **values)
     db.add(profile)
     await db.flush()
-    if profile.is_default_for_printer:
+    if profile.is_default_for_printer and profile.printer_id is not None:
         await _clear_other_defaults(db, filament_id, profile.printer_id, profile.id)
     await db.commit()
     await db.refresh(profile)
@@ -222,7 +279,7 @@ async def update_printer_profile(
     profile = await _get_profile(db, filament_id, profile_id)
     updates = data.model_dump(exclude_unset=True)
     # Pflichtfelder dürfen nicht auf null gesetzt werden.
-    for required in ("printer_id", "profile_name", "is_default_for_printer"):
+    for required in ("profile_name", "is_default_for_printer"):
         if required in updates and updates[required] is None:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -231,19 +288,25 @@ async def update_printer_profile(
                     "message": f"{required} must not be null",
                 },
             )
-    if "printer_id" in updates:
-        await _require_printer(db, updates["printer_id"])
+    _blank_to_none(updates)
+    printer = None
+    if updates.get("printer_id") is not None:
+        printer = await _require_printer(db, updates["printer_id"])
+        current = {k: getattr(profile, k) for k in MODEL_KEYS}
+        if not any(k in updates for k in MODEL_KEYS) and not has_printer_model(current):
+            _fill_model_from_printer(updates, printer)
 
     merged = {
         field: getattr(profile, field)
-        for field in PrintProfileFields.model_fields
+        for field in (*PrintProfileFields.model_fields, *MODEL_KEYS, "printer_id")
     }
     merged.update(updates)
+    _check_model_and_default(merged)
     _check_plausible(merged)
 
     for key, value in updates.items():
         setattr(profile, key, value)
-    if profile.is_default_for_printer:
+    if profile.is_default_for_printer and profile.printer_id is not None:
         await _clear_other_defaults(db, filament_id, profile.printer_id, profile.id)
     await db.commit()
     await db.refresh(profile)

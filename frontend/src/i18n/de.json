@@ -824,7 +824,14 @@
     "add": "Druckprofil hinzufügen",
     "addTitle": "Druckprofil hinzufügen",
     "editTitle": "Druckprofil bearbeiten",
-    "printer": "Drucker",
+    "printer": "Mein Drucker (optional)",
+    "noPrinter": "Kein Drucker",
+    "modelGroup": "Druckermodell",
+    "modelHint": "Das Profil gilt für dieses Druckermodell, nicht für einen einzelnen Drucker.",
+    "modelRequired": "Bitte ein Druckermodell wählen oder Hersteller und Modell eintragen.",
+    "defaultNeedsPrinter": "Ein Standardprofil braucht einen verknüpften Drucker.",
+    "printerWithoutModel": "Für diesen Drucker ist kein Hersteller/Modell hinterlegt.",
+    "editPrinterLink": "Drucker bearbeiten",
     "profileName": "Profilname",
     "isDefault": "Standardprofil für diesen Drucker",
     "default": "Standard",
@@ -2802,9 +2809,13 @@
       "published": "Veröffentlicht.",
       "linked": "Verknüpft. Es wurde nichts gesendet."
     },
+    "blockerLinks": {
+      "editProfile": "Druckprofil bearbeiten",
+      "editPrinter": "Drucker bearbeiten"
+    },
     "blockers": {
       "already_linked": "Ist bereits mit der FilaMan-DB verknüpft.",
-      "printer_model_missing": "Der Drucker braucht ein Druckermodell (Hersteller und Modell).",
+      "printer_model_missing": "Das Druckprofil braucht ein Druckermodell (Hersteller und Modell).",
       "material_unknown": "Dieses Material gibt es in der FilaMan-DB nicht.",
       "nothing_to_send": "Es gibt keine Basiswerte zum Senden.",
       "nozzle_required": "Der Düsendurchmesser fehlt.",
