@@ -136,7 +136,7 @@ import FormDialog from '../components/FormDialog.astro'
   </FormDialog>
 
   <style>
-    .dashboard-page { --dashboard-columns: repeat(2, minmax(0, 1.2fr)) minmax(0, 1fr) minmax(0, 1.1fr); width: 100%; max-width: var(--content-max-width); }
+    .dashboard-page { --dash-grid-cols: 4; --dashboard-columns: repeat(2, minmax(0, 1.2fr)) minmax(0, 1fr) minmax(0, 1.1fr); width: 100%; max-width: var(--content-max-width); }
     .dashboard-header { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin: 0 0 20px; }
     .dashboard-title { font: 700 var(--page-title-size) var(--font-serif); margin: 0; }
     .dashboard-widget-menu { position: relative; }
@@ -161,9 +161,28 @@ import FormDialog from '../components/FormDialog.astro'
     .dashboard-widgets { display: grid; grid-template-columns: var(--dashboard-columns); gap: var(--section-gap); column-gap: 12px; align-items: start; margin-top: var(--section-gap); }
     .dashboard-widgets > :global(.dashboard-wide) { grid-column: span 2; }
     .dashboard-widgets :global(.fm-section-body:has(> .dashboard-list)) { padding-inline-end: calc(var(--section-padding) / 2); }
-    .dashboard-widgets.is-masonry { display: flex; align-items: flex-start; }
-    .dashboard-widgets :global(.dashboard-masonry-col) { flex: 1 1 0; min-width: 0; display: grid; align-content: start; gap: var(--section-gap); }
-    .dashboard-widgets :global(.dashboard-masonry-col > .dashboard-wide) { grid-column: auto; }
+    /* Masonry: the same grid with fine rows; cards get "grid-row: span N" from their height (script), dense flow fills the gaps. */
+    .dashboard-widgets.is-masonry { grid-template-columns: repeat(var(--dash-cols, 3), minmax(0, 1fr)); grid-auto-rows: 4px; grid-auto-flow: dense; row-gap: 0; margin-bottom: calc(-1 * var(--section-gap)); }
+    .dashboard-widgets.is-masonry > :global(*) { margin-bottom: var(--section-gap); }
+    .dashboard-widgets.is-masonry > :global(.dashboard-wide) { grid-column: auto; }
+    /* Fixed card heights (keep in sync with HEIGHT_PX): the body scrolls, charts fill it. */
+    .dashboard-widgets > :global([data-h="s"]) { height: 240px; }
+    .dashboard-widgets > :global([data-h="m"]) { height: 360px; }
+    .dashboard-widgets > :global([data-h="l"]) { height: 520px; }
+    .dashboard-widgets > :global([data-h="s"]), .dashboard-widgets > :global([data-h="m"]), .dashboard-widgets > :global([data-h="l"]) { display: flex; flex-direction: column; }
+    .dashboard-widgets > :global([data-h="s"] > .fm-section-header), .dashboard-widgets > :global([data-h="m"] > .fm-section-header), .dashboard-widgets > :global([data-h="l"] > .fm-section-header) { flex: none; }
+    .dashboard-widgets > :global([data-h="s"] > .fm-section-body), .dashboard-widgets > :global([data-h="m"] > .fm-section-body), .dashboard-widgets > :global([data-h="l"] > .fm-section-body) { flex: 1 1 auto; min-height: 0; overflow: auto; align-content: start; }
+    .dashboard-widgets > :global([data-h="s"] .dashboard-list), .dashboard-widgets > :global([data-h="m"] .dashboard-list), .dashboard-widgets > :global([data-h="l"] .dashboard-list) { max-height: none; }
+    .dashboard-widgets :global(.dashboard-size-controls) { display: none; flex: none; flex-wrap: wrap; gap: 8px 12px; padding: 6px var(--section-padding); border-bottom: 1px solid var(--border); background: var(--bg-elevated); }
+    .dashboard-widgets.is-editing :global(.dashboard-size-controls) { display: flex; }
+    .dashboard-widgets.is-editing :global(.is-widget-hidden .dashboard-size-controls) { display: none; }
+    .dashboard-widgets :global(.dashboard-size-field) { display: flex; align-items: center; gap: 6px; font-size: .75rem; color: var(--text-muted); }
+    .dashboard-widgets :global(.dashboard-size-field select) { width: auto; min-width: 0; padding: 2px 24px 2px 8px; font-size: .8rem; }
+    .dashboard-widgets :global(.dashboard-resize-handle) { display: none; position: absolute; right: 2px; bottom: 2px; z-index: 2; width: 22px; height: 22px; padding: 0; border: 0; border-radius: var(--radius-sm); background: linear-gradient(135deg, transparent 50%, var(--accent) 50%, var(--accent) 58%, transparent 58%, transparent 70%, var(--accent) 70%, var(--accent) 78%, transparent 78%); cursor: nwse-resize; touch-action: none; }
+    .dashboard-widgets :global(.dashboard-resize-handle:focus-visible) { outline: 2px solid var(--accent); outline-offset: 1px; }
+    .dashboard-widgets.is-editing :global([data-widget]:not(.dashboard-dragging)) { position: relative; }
+    .dashboard-widgets.is-editing :global([data-widget]:not(.is-widget-hidden) .dashboard-resize-handle) { display: block; }
+    .dashboard-hidden-area :global(.dashboard-resize-handle), .dashboard-hidden-area :global(.dashboard-size-controls) { display: none; }
     .dashboard-edit-hint { margin: 0 0 12px; color: var(--text-muted); font-size: .85rem; }
     .dashboard-widgets :global(.dashboard-drag-handle) { display: none; flex-shrink: 0; align-items: center; justify-content: center; width: 28px; height: 28px; margin-inline-end: 6px; padding: 0; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--bg-elevated); color: var(--text-muted); font-size: 1rem; line-height: 1; cursor: grab; touch-action: none; user-select: none; }
     .dashboard-widgets :global(.dashboard-drag-handle:focus-visible) { outline: 2px solid var(--accent); outline-offset: 2px; }
@@ -276,11 +295,11 @@ import FormDialog from '../components/FormDialog.astro'
     .dashboard-changelog-version { margin: 0; color: var(--text-muted); font-size: .85rem; }
     @container detail-page (max-width: 65rem) {
       .dashboard-metrics { grid-template-columns: repeat(4, minmax(0, 1fr)); }
-      .dashboard-widgets { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .dashboard-widgets { grid-template-columns: repeat(2, minmax(0, 1fr)); --dash-grid-cols: 2; }
     }
     @container detail-page (max-width: 52rem) { .dashboard-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
     @container detail-page (max-width: 43rem) {
-      .dashboard-widgets { grid-template-columns: minmax(0, 1fr); }
+      .dashboard-widgets { grid-template-columns: minmax(0, 1fr); --dash-grid-cols: 1; }
       .dashboard-widgets > :global(.dashboard-wide) { grid-column: auto; }
       .dashboard-list { max-height: 22rem; }
       .dashboard-locations :global(ul) { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -300,7 +319,11 @@ import FormDialog from '../components/FormDialog.astro'
     import { isMoistureLevel, moistureBadgeClass, moistureLabelKey } from '../lib/moisture'
     import { mountPanel } from '../lib/panel-navigation'
     import { mountSpoolLinkBanner } from '../lib/spool-link-banner'
-    import { applyWidgetOrder, layoutGrid, layoutMasonry, masonryColumnCount, startWidgetDrag, type DashboardLayout } from '../lib/dashboard-layout'
+    import {
+      applyCardSizes, applyWidgetOrder, gridColumnCount, isWidgetHeight, isWidgetWidth, layoutItems, normalizeWidgetSizes,
+      startWidgetDrag, startWidgetResize, WIDGET_HEIGHTS, WIDGET_WIDTHS,
+      type DashboardLayout, type WidgetSize,
+    } from '../lib/dashboard-layout'
     import { renderPrinterSlots, renderRecentActivity, renderStaleSpools, renderStockRange, renderTopConsumers, type WidgetContext } from '../lib/dashboard-widgets'
     import { buildDonutSlices, hasChartData, renderChartSvg, renderDonutSvg, type ChartPoint } from '../lib/dashboard-charts'
 
@@ -385,6 +408,9 @@ import FormDialog from '../components/FormDialog.astro'
     let hiddenWidgets = new Set<string>()
     let widgetOrder: string[] = []
     let dashboardLayout: DashboardLayout = 'grid'
+    // Per-card width/height; cards without an entry use their default (see defaultWidth).
+    let widgetSizes: Record<string, WidgetSize> = {}
+    let sizePreview: { id: string; size: WidgetSize } | null = null
     let arranging = false
     let dragging = false
 
@@ -421,28 +447,66 @@ import FormDialog from '../components/FormDialog.astro'
       const grid = document.getElementById('dashboard-hidden-grid')
       if (!area || !grid) return
       const cards = arranging ? hiddenCards() : []
-      cards.forEach(card => grid.append(card))
+      cards.forEach(card => {
+        grid.append(card)
+        card.style.gridColumn = card.style.gridRow = ''
+        delete card.dataset.h
+      })
       area.classList.toggle('hidden', cards.length === 0)
+    }
+
+    // Cards that used to span two of four columns keep doing so in the grid view.
+    function defaultWidth(card: HTMLElement): 1 | 2 {
+      return dashboardLayout === 'grid' && card.classList.contains('dashboard-wide') ? 2 : 1
+    }
+
+    function sizeOf(id: string): WidgetSize | undefined {
+      return sizePreview?.id === id ? sizePreview.size : widgetSizes[id]
+    }
+
+    function currentSize(id: string): WidgetSize {
+      const saved = sizeOf(id)
+      return { w: saved?.w ?? defaultWidth(widgetCards.get(id)!), h: saved?.h ?? 'auto' }
+    }
+
+    function columnCount() {
+      return gridColumnCount(widgetsContainer, dashboardLayout)
+    }
+
+    function syncSizeControls() {
+      const columns = columnCount()
+      widgetCards.forEach((card, id) => {
+        const size = currentSize(id)
+        const width = card.querySelector<HTMLSelectElement>('select[data-size="w"]')
+        const height = card.querySelector<HTMLSelectElement>('select[data-size="h"]')
+        if (width) { width.value = String(size.w); width.disabled = columns === 1 }
+        if (height) height.value = size.h
+      })
     }
 
     function renderLayout(visibleItems: HTMLElement[] = visibleCards()) {
       syncHiddenArea()
       const items = arranging ? visibleItems : orderedIds().map(id => widgetCards.get(id)!)
       widgetsContainer.classList.toggle('is-masonry', dashboardLayout === 'masonry')
-      if (dashboardLayout === 'masonry') layoutMasonry(widgetsContainer, items, masonryColumnCount(widgetsContainer.clientWidth))
-      else layoutGrid(widgetsContainer, items)
+      layoutItems(widgetsContainer, items)
+      applyCardSizes(widgetsContainer, items, { layout: dashboardLayout, columns: columnCount(), sizeOf, defaultSpan: defaultWidth })
+      syncSizeControls()
     }
 
-    // Masonry heights change with data, visibility and width: re-distribute once per frame.
+    // Row spans (masonry), column counts and chart sizes follow data, visibility and width: once per frame.
     let layoutFrame = 0
     function scheduleLayout() {
-      if (dashboardLayout !== 'masonry' || dragging || panelSignal.aborted) return
+      if (dragging || panelSignal.aborted) return
       cancelAnimationFrame(layoutFrame)
       layoutFrame = requestAnimationFrame(() => { if (!dragging && !panelSignal.aborted) renderLayout() })
     }
     if (typeof ResizeObserver !== 'undefined') {
-      const observer = new ResizeObserver(() => { scheduleLayout(); renderCharts() })
+      const observer = new ResizeObserver(entries => {
+        if (dashboardLayout === 'masonry' || entries.some(entry => entry.target === widgetsContainer)) scheduleLayout()
+        renderCharts()
+      })
       observer.observe(widgetsContainer)
+      widgetCards.forEach(card => observer.observe(card))
       panelSignal.addEventListener('abort', () => observer.disconnect(), { once: true })
     }
     panelSignal.addEventListener('abort', () => cancelAnimationFrame(layoutFrame), { once: true })
@@ -529,6 +593,23 @@ import FormDialog from '../components/FormDialog.astro'
       })
     }
 
+    function setWidgetSize(id: string, size: WidgetSize) {
+      const previous = widgetSizes
+      const next = { ...widgetSizes }
+      if (size.h === 'auto' && size.w === defaultWidth(widgetCards.get(id)!)) delete next[id]
+      else next[id] = size
+      const unchanged = JSON.stringify(next) === JSON.stringify(previous)
+      widgetSizes = next
+      renderLayout()
+      renderCharts()
+      if (unchanged) return
+      void savePreferences({ dashboard_widget_sizes: next }, () => {
+        widgetSizes = previous
+        renderLayout()
+        renderCharts()
+      })
+    }
+
     function setArranging(on: boolean) {
       arranging = on
       applyWidgetVisibility()
@@ -587,6 +668,69 @@ import FormDialog from '../components/FormDialog.astro'
       return label
     }
 
+    function sizeSelect(card: HTMLElement, kind: 'w' | 'h'): HTMLLabelElement {
+      const id = card.dataset.widget!
+      const label = document.createElement('label')
+      label.className = 'dashboard-size-field'
+      const select = document.createElement('select')
+      select.className = 'fm-select'
+      select.dataset.size = kind
+      const labelText = t(kind === 'w' ? 'dashboard.sizeWidth' : 'dashboard.sizeHeight')
+      select.setAttribute('aria-label', `${widgetTitle(card)}: ${labelText}`)
+      const options: [string, string][] = kind === 'w'
+        ? WIDGET_WIDTHS.map(value => [String(value), t(value === 'full' ? 'dashboard.widthFull' : `dashboard.width${value}`)])
+        : WIDGET_HEIGHTS.map(value => [value, t(`dashboard.height${value === 'auto' ? 'Auto' : value.toUpperCase()}`)])
+      for (const [value, text] of options) {
+        const option = document.createElement('option')
+        option.value = value
+        option.textContent = text
+        select.append(option)
+      }
+      select.addEventListener('change', () => {
+        if (!arranging) return
+        const size = currentSize(id)
+        if (kind === 'w') {
+          const value = select.value === 'full' ? 'full' : Number(select.value)
+          if (isWidgetWidth(value)) setWidgetSize(id, { ...size, w: value })
+        } else if (isWidgetHeight(select.value)) {
+          setWidgetSize(id, { ...size, h: select.value })
+        }
+      })
+      label.append(labelText, select)
+      return label
+    }
+
+    // Arrange mode only: two selects below the header and a resize handle in the bottom right corner.
+    function addSizeControls(card: HTMLElement, header: Element) {
+      const controls = document.createElement('div')
+      controls.className = 'dashboard-size-controls'
+      controls.append(sizeSelect(card, 'w'), sizeSelect(card, 'h'))
+      header.after(controls)
+      const grip = document.createElement('button')
+      grip.type = 'button'
+      grip.className = 'dashboard-resize-handle'
+      grip.title = t('dashboard.resizeHandle')
+      grip.setAttribute('aria-label', grip.title)
+      grip.addEventListener('pointerdown', event => {
+        if (!arranging || dragging) return
+        const id = card.dataset.widget!
+        dragging = true
+        startWidgetResize(event, card, currentSize(id), {
+          container: widgetsContainer,
+          columns: columnCount,
+          gap: parseFloat(getComputedStyle(widgetsContainer).columnGap) || 12,
+          preview: size => { sizePreview = { id, size }; renderLayout(); renderCharts() },
+          commit: (size, cancelled) => {
+            dragging = false
+            sizePreview = null
+            if (cancelled) { renderLayout(); renderCharts() } else setWidgetSize(id, size)
+          },
+          signal: panelSignal,
+        })
+      })
+      card.append(grip)
+    }
+
     function addDragHandle(card: HTMLElement) {
       const header = card.querySelector('.fm-section-header')
       if (!header) return
@@ -621,6 +765,7 @@ import FormDialog from '../components/FormDialog.astro'
         handle.focus()
       })
       header.prepend(handle)
+      addSizeControls(card, header)
       const eye = document.createElement('button')
       eye.type = 'button'
       eye.className = 'dashboard-eye-btn'
@@ -682,10 +827,11 @@ import FormDialog from '../components/FormDialog.astro'
       resetBtn.style.cssText = 'width: 100%; font-size: 0.8rem; padding: 4px 8px;'
       resetBtn.textContent = t('dashboard.resetWidgets')
       resetBtn.addEventListener('click', () => {
-        const previous = { hidden: hiddenWidgets, order: widgetOrder, layout: dashboardLayout }
+        const previous = { hidden: hiddenWidgets, order: widgetOrder, layout: dashboardLayout, sizes: widgetSizes }
         hiddenWidgets = new Set<string>()
         widgetOrder = []
         dashboardLayout = 'grid'
+        widgetSizes = {}
         setArranging(false)
         applyWidgetVisibility()
         syncLayoutMenu()
@@ -693,10 +839,11 @@ import FormDialog from '../components/FormDialog.astro'
         renderCharts()
         void loadHistory()
         loadWidgets()
-        void savePreferences({ dashboard_hidden_widgets: [], dashboard_widget_order: [], dashboard_layout: 'grid' }, () => {
+        void savePreferences({ dashboard_hidden_widgets: [], dashboard_widget_order: [], dashboard_layout: 'grid', dashboard_widget_sizes: {} }, () => {
           hiddenWidgets = previous.hidden
           widgetOrder = previous.order
           dashboardLayout = previous.layout
+          widgetSizes = previous.sizes
           applyWidgetVisibility()
           syncLayoutMenu()
           renderLayout()
@@ -721,10 +868,12 @@ import FormDialog from '../components/FormDialog.astro'
           dashboard_hidden_widgets: string[]
           dashboard_widget_order?: string[]
           dashboard_layout?: DashboardLayout
+          dashboard_widget_sizes?: unknown
         }>('/me/preferences')
         hiddenWidgets = new Set(prefs.dashboard_hidden_widgets)
         widgetOrder = prefs.dashboard_widget_order ?? []
         dashboardLayout = prefs.dashboard_layout === 'masonry' ? 'masonry' : 'grid'
+        widgetSizes = normalizeWidgetSizes(prefs.dashboard_widget_sizes)
       } catch (error) {
         if (!isAbortError(error)) console.error('Failed to load dashboard preferences:', error)
       }
@@ -1160,6 +1309,16 @@ import FormDialog from '../components/FormDialog.astro'
       return month === 1 ? `${short} ’${String(year).slice(2)}` : short
     }
 
+    // A card with a fixed height lets its chart fill the card body; otherwise the chart keeps its own height.
+    function fixedChartHeight(id: string): number | undefined {
+      const card = widgetCards.get(id)
+      const body = card?.querySelector<HTMLElement>('.fm-section-body')
+      if (!card || !body || !card.dataset.h || card.dataset.h === 'auto') return undefined
+      const style = getComputedStyle(body)
+      const room = body.clientHeight - (parseFloat(style.paddingTop) || 0) - (parseFloat(style.paddingBottom) || 0)
+      return room > 0 ? Math.max(120, Math.round(room)) : undefined
+    }
+
     function renderCharts() {
       if (historyData === null) return
       for (const chart of chartSpecs) {
@@ -1167,7 +1326,8 @@ import FormDialog from '../components/FormDialog.astro'
         const mount = document.getElementById(chart.mount)
         if (!mount) continue
         const width = Math.round(mount.clientWidth) || 480
-        const key = `${historyVersion}:${width}`
+        const height = fixedChartHeight(chart.id)
+        const key = `${historyVersion}:${width}:${height ?? 0}`
         if (mount.dataset.chartKey === key) continue
         mount.dataset.chartKey = key
         const points: ChartPoint[] = historyData.map(month => {
@@ -1180,7 +1340,7 @@ import FormDialog from '../components/FormDialog.astro'
         })
         mount.innerHTML = hasChartData(points)
           ? renderChartSvg(points, {
-            kind: chart.kind, width, color: chart.color, integer: chart.integer,
+            kind: chart.kind, width, height, color: chart.color, integer: chart.integer,
             formatAxis: chart.axis, ariaLabel: widgetTitle(widgetCards.get(chart.id)!),
           })
           : `<p>${t(chart.kind === 'area' && points.every(p => p.value === null) ? 'dashboard.chartNoSnapshots' : 'dashboard.chartNoData')}</p>`
