@@ -3530,6 +3530,7 @@ html.sidebar-collapsed #sidebar-color-mode { display: none; }
 .fdb-status-warning { color: var(--warning-text); background: var(--warning-bg); border-color: var(--warning-border); }
 .fdb-status-error { color: var(--error-text); background: var(--error-bg); border-color: var(--error-border); }
 .fdb-status-inline { margin-left: 8px; padding: 0 8px; font-size: 0.7rem; }
+.fdb-status.fdb-status-icon { display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; padding: 0; border-radius: 50%; font-size: 0.75rem; font-weight: 700; line-height: 1; vertical-align: middle; cursor: help; }
 .fdb-header-contrib { margin-left: auto; margin-top: 12px; flex: 0 0 auto; }
 .fdb-header-contrib:empty { display: none; }
 .fdb-header-contrib + .detail-page-actions { margin-left: 0; }

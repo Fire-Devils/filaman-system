@@ -88,11 +88,18 @@ export function statusText(entry: Pick<ContribRef, 'status' | 'depends_on'>): st
   return t(`fdbContrib.status.${entry.status}`)
 }
 
-export function statusBadge(entry: Pick<ContribRef, 'status' | 'depends_on'>): string {
+const STATUS_ICONS = { success: '✓', error: '✕', warning: '…' } as const
+
+/** Statuspille; mit `compact` nur ein Symbol (Text als Tooltip und für Screenreader). */
+export function statusBadge(entry: Pick<ContribRef, 'status' | 'depends_on'>, options: { compact?: boolean } = {}): string {
   const tone = ['approved', 'published', 'linked'].includes(entry.status)
     ? 'success'
     : ['rejected', 'error'].includes(entry.status) ? 'error' : 'warning'
-  return `<span class="fdb-status fdb-status-${tone}" data-fdb-status="${escapeHtml(entry.status)}">${escapeHtml(statusText(entry))}</span>`
+  const text = escapeHtml(statusText(entry))
+  if (options.compact) {
+    return `<span class="fdb-status fdb-status-icon fdb-status-${tone}" data-fdb-status="${escapeHtml(entry.status)}" title="${text}" aria-label="${text}" role="img">${STATUS_ICONS[tone]}</span>`
+  }
+  return `<span class="fdb-status fdb-status-${tone}" data-fdb-status="${escapeHtml(entry.status)}">${text}</span>`
 }
 
 export type SendButtonMode = 'send' | 'update' | null

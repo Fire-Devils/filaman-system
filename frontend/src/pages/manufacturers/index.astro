@@ -327,7 +327,7 @@ import InventoryFilterReset from '../../components/InventoryFilterReset.astro'
         const website = safeExternalUrl(mf.url)
         return `
         <tr style="cursor: pointer;" class="manufacturer-row" data-manufacturer-id="${mf.id}">
-          <td class="col-name" style="font-weight: 500;">${escapeHtml(mf.name)}${fdbStatuses.has(mf.id) ? ` ${statusBadge(fdbStatuses.get(mf.id)!)}` : ''}</td>
+          <td class="col-name" style="font-weight: 500;">${escapeHtml(mf.name)}${fdbStatuses.has(mf.id) ? ` ${statusBadge(fdbStatuses.get(mf.id)!, { compact: true })}` : ''}</td>
           <td class="col-logo" style="padding: 12px; text-align: center;">${mf.logo_url ? `<span style="color: var(--text-muted);" hidden>-</span><img src="${escapeHtml(mf.logo_url)}" alt="" style="height: 24px; width: auto; max-width: 72px; object-fit: contain; background: color-mix(in srgb, white 30%, var(--bg-soft) 70%); border: 1px solid color-mix(in srgb, white 22%, var(--border) 78%); border-radius: 8px; padding: 4px 8px; vertical-align: middle;" onerror="this.style.display='none'; this.previousElementSibling?.removeAttribute('hidden')" />` : '<span style="color: var(--text-muted);">-</span>'}</td>
           <td class="col-url">${website ? `<a href="${website}" target="_blank" rel="noopener" style="color: var(--accent); text-decoration: none;">${escapeHtml(mf.url)}</a>` : `<span style="color: var(--text-muted);">${escapeHtml(mf.url) || '-'}</span>`}</td>
           <td class="col-filaments"><a href="/filaments?manufacturer_id=${mf.id}" style="color: var(--accent); text-decoration: none; font-weight: 500;">${mf.filament_count || 0}</a></td>

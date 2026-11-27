@@ -1288,7 +1288,7 @@ const { compactPicker = false } = Astro.props
         if (!context.pluginActive) return
         const items = await fetchContributions('filament')
         for (const entry of items) {
-          if (!filamentContribBadges.has(entry.local_id)) filamentContribBadges.set(entry.local_id, statusBadge(entry).replace('class="fdb-status ', 'class="fdb-status fdb-status-inline '))
+          if (!filamentContribBadges.has(entry.local_id)) filamentContribBadges.set(entry.local_id, statusBadge(entry, { compact: true }).replace('class="fdb-status ', 'class="fdb-status fdb-status-inline '))
         }
         document.querySelectorAll<HTMLElement>('tr[data-filament-row]').forEach(row => {
           const badge = filamentContribBadges.get(Number(row.dataset.filamentRow))

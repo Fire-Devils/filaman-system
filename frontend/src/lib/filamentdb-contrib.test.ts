@@ -106,6 +106,10 @@ describe('FilaMan-DB contribution rendering', () => {
     expect(statusBadge({ status: 'published' })).toContain('fdb-status-success')
     expect(statusBadge({ status: 'rejected' })).toContain('fdb-status-error')
     expect(statusBadge({ status: 'pending' })).toContain('fdb-status-warning')
+    const compact = statusBadge({ status: 'approved' }, { compact: true })
+    expect(compact).toContain('fdb-status-icon')
+    expect(compact).toContain('>✓</span>')
+    expect(compact).toMatch(/title="[^"]+"/)
   })
 
   it('shows the registration hint with a link to db.filaman.app', () => {
