@@ -101,7 +101,7 @@ describe('FilaMan-DB contribution rendering', () => {
     expect(html).toContain('role="status"')
     expect(html).toContain('fdb-score-strong')
     expect(html).toContain('fdb-score-weak')
-    expect(html).toContain('fm-btn fm-btn-primary')
+    expect(html).toContain('fm-btn fm-btn-fdb')
   })
 
   it('shows "already linked" as an info note, not as a missing item', () => {

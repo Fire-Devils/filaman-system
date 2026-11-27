@@ -240,7 +240,7 @@ export function createManufacturerDialog(options: {
     for (const source of sources) {
       const host = document.createElement('section')
       host.className = 'manufacturer-section manufacturer-source'
-      host.innerHTML = `<h3><span class="manufacturer-source-summary"></span><span class="manufacturer-source-actions"><small>${links[source.key] ? label('manufacturers.linked') : label('manufacturers.notLinked')}</small><button type="button" class="fm-btn fm-btn-outline" data-catalog-compare hidden>${label('manufacturers.compareValues')}</button></span></h3><div class="manufacturer-section-body">
+      host.innerHTML = `<h3><span class="manufacturer-source-summary"></span><span class="manufacturer-source-actions"><small>${links[source.key] ? label('manufacturers.linked') : label('manufacturers.notLinked')}</small><button type="button" class="fm-btn fm-btn-fdb" data-catalog-compare hidden>${label('manufacturers.compareValues')}</button></span></h3><div class="manufacturer-section-body">
       <div data-catalog-record></div>
       <details class="manufacturer-lookup-details"><summary>${label('manufacturers.findCatalog')}</summary><div data-catalog-lookup></div></details><div data-catalog-comparison hidden></div><p class="manufacturer-source-error" role="status"></p></div>`
       sourceContainer.append(host)

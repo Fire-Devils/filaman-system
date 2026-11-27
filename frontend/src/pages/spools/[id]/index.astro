@@ -796,7 +796,7 @@ const { id } = Astro.params
       })
       const spoolProfileLookupHtml = editing ? `<div id="spool-profile-lookup-section" class="spool-profile-lookup hidden"><div id="spool-profile-lookup-container"></div><div id="spool-profile-lookup-toast" class="fdb-toast" style="display: none;"></div></div>` : ''
       const spoolSectionsHtml = spoolSections.map((section) => `<section class="fm-card filament-spec-card${section.key === 'spool' ? ' spool-profile-card' : ''}">
-        <h2 class="filament-spec-title spool-section-heading"><span>${t(section.titleKey)}</span>${editing && section.key === 'spool' ? `<button id="btn-spool-profile-lookup" type="button" class="fm-btn fm-btn-outline" style="font-size: .72rem; padding: 3px 8px;">${t('filamentdbLookup.loadFromDb')}</button>` : ''}</h2>
+        <h2 class="filament-spec-title spool-section-heading"><span>${t(section.titleKey)}</span>${editing && section.key === 'spool' ? `<button id="btn-spool-profile-lookup" type="button" class="fm-btn fm-btn-fdb" style="font-size: .72rem; padding: 3px 8px;">${t('filamentdbLookup.loadFromDb')}</button>` : ''}</h2>
         <div class="filament-spec-rows">${section.rows.map((row) => {
           const core = editing && row.key === 'spool_core_weight_g'
           const tag = core ? 'div' : 'label'

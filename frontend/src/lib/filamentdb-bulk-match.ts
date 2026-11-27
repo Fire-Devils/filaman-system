@@ -204,7 +204,7 @@ const e = escapeHtml
 
 function sectionHeader(category: BulkCategory, count: number, selectable: boolean): string {
   const tools = selectable
-    ? `<span class="fdb-bm-tools"><button type="button" class="fm-btn fm-btn-outline fm-btn-sm" data-bm-all="${category}">${e(t('fdbContrib.bulkMatchSelectAll'))}</button> <button type="button" class="fm-btn fm-btn-outline fm-btn-sm" data-bm-nothing="${category}">${e(t('fdbContrib.bulkMatchSelectNone'))}</button></span>`
+    ? `<span class="fdb-bm-tools"><button type="button" class="fm-btn fm-btn-fdb fm-btn-sm" data-bm-all="${category}">${e(t('fdbContrib.bulkMatchSelectAll'))}</button> <button type="button" class="fm-btn fm-btn-fdb fm-btn-sm" data-bm-nothing="${category}">${e(t('fdbContrib.bulkMatchSelectNone'))}</button></span>`
     : ''
   return `<div class="fdb-bm-head"><h3>${e(t(`fdbContrib.bulkMatch.${category}`, { count }))}</h3>${tools}</div><p class="fm-field-hint">${e(t(`fdbContrib.bulkMatch.${category}Hint`))}</p>`
 }

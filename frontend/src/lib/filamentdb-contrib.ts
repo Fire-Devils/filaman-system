@@ -321,7 +321,7 @@ export function matchScoreBadge(score: number | undefined): string {
 function renderMatchesBlock(matches: ContribMatch[]): string {
   const e = escapeHtml
   const items = matches.map(m => `<li class="fdb-match"><span class="fdb-match-label">${e(m.label ?? `#${m.id}`)} ${matchScoreBadge(m.score)}</span>
-      <button type="button" class="fm-btn fm-btn-primary fm-btn-sm" data-fdb-link="${Number(m.id)}">${e(t('fdbContrib.thisIsIt'))}</button></li>`).join('')
+      <button type="button" class="fm-btn fm-btn-fdb fm-btn-sm" data-fdb-link="${Number(m.id)}">${e(t('fdbContrib.thisIsIt'))}</button></li>`).join('')
   return `<div class="fdb-matches fdb-matches-alert" role="status"><div class="fdb-matches-head"><span class="fdb-matches-icon" aria-hidden="true">⚠</span><strong class="fdb-matches-title">${e(t('fdbContrib.matchesTitle'))}</strong></div><p class="fdb-matches-hint">${e(t('fdbContrib.matchesHint'))}</p><ul>${items}</ul></div>`
 }
 
@@ -374,7 +374,7 @@ export function createDialog(): HTMLDialogElement {
       <div data-fdb-body></div>
       <div class="fdb-actions">
         <button type="button" class="fm-btn fm-btn-outline" data-dialog-close></button>
-        <button type="button" class="fm-btn fm-btn-primary hidden" data-fdb-submit></button>
+        <button type="button" class="fm-btn fm-btn-fdb hidden" data-fdb-submit></button>
       </div>
     </div>`
   document.body.appendChild(dialog)
@@ -466,7 +466,7 @@ export async function mountContributeControl(host: HTMLElement, type: ContribTyp
   try { entries = await fetchContributionsFresh(type, localId) } catch { /* Status ist optional */ }
   const entry = entries[0]
   const mode = sendButtonMode(entry)
-  host.innerHTML = `${entry ? statusBadge(entry) : ''}${mode ? `<button type="button" class="fm-btn fm-btn-outline fm-btn-sm" data-fdb-send>${escapeHtml(sendButtonLabel(mode))}</button>` : ''}`
+  host.innerHTML = `${entry ? statusBadge(entry) : ''}${mode ? `<button type="button" class="fm-btn fm-btn-fdb fm-btn-sm" data-fdb-send>${escapeHtml(sendButtonLabel(mode))}</button>` : ''}`
   host.querySelector('[data-fdb-send]')?.addEventListener('click', () => {
     void openContributeDialog({ type, localId, onDone: () => void mountContributeControl(host, type, localId, options) })
   })

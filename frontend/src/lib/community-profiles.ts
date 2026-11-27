@@ -88,12 +88,12 @@ export function renderCommunityCard(profile: CommunityProfile, options: { canRat
   let actions = ''
   if (options.canAdopt) {
     const dup = Boolean(profile.is_own || options.duplicate)
-    actions += `<button type="button" class="fm-btn fm-btn-primary fm-btn-sm" data-cp-adopt="${Number(profile.id)}" data-cp-duplicate="${dup ? '1' : '0'}" title="${e(t(dup ? 'fdbContrib.community.duplicateHint' : 'fdbContrib.community.adoptHint'))}">${e(t(dup ? 'fdbContrib.community.duplicate' : 'fdbContrib.community.adopt'))}</button> `
+    actions += `<button type="button" class="fm-btn fm-btn-fdb fm-btn-sm" data-cp-adopt="${Number(profile.id)}" data-cp-duplicate="${dup ? '1' : '0'}" title="${e(t(dup ? 'fdbContrib.community.duplicateHint' : 'fdbContrib.community.adoptHint'))}">${e(t(dup ? 'fdbContrib.community.duplicate' : 'fdbContrib.community.adopt'))}</button> `
   }
   if (options.canRate && !profile.is_own) {
     const stars = [1, 2, 3, 4, 5].map(n => `<button type="button" class="fdb-star${profile.my_rating && n <= profile.my_rating ? ' fdb-star-on' : ''}" data-cp-rate="${Number(profile.id)}" data-stars="${n}" aria-label="${e(t('fdbContrib.community.stars', { n }))}">★</button>`).join('')
     actions += `<span class="fdb-rate" role="group" aria-label="${e(t('fdbContrib.community.rate'))}">${stars}</span> `
-    actions += `<button type="button" class="fm-btn fm-btn-outline fm-btn-sm" data-cp-report="${Number(profile.id)}">${e(t('fdbContrib.community.report'))}</button>`
+    actions += `<button type="button" class="fm-btn fm-btn-fdb fm-btn-sm" data-cp-report="${Number(profile.id)}">${e(t('fdbContrib.community.report'))}</button>`
   }
   const origin = options.showOrigin ? profileOriginText(profile) : ''
   return `<article class="fm-card pp-card" data-cp-card="${Number(profile.id)}">
@@ -265,11 +265,11 @@ function renderSearchDialog(models: PrinterModelOption[]): string {
         <select id="cs-model" class="fm-select" data-cs-model>${options}</select></div>
       <div class="pp-field"><label for="cs-nozzle" class="fm-label">${e(t('fdbContrib.community.searchNozzle'))} <span class="pp-unit">mm</span></label>
         <input type="number" id="cs-nozzle" class="fm-input" step="0.05" min="0.1" max="2" data-cs-nozzle /></div>
-      <div class="pp-field cp-search-submit"><button type="submit" class="fm-btn fm-btn-primary">${e(t('fdbContrib.community.searchRun'))}</button></div>
+      <div class="pp-field cp-search-submit"><button type="submit" class="fm-btn fm-btn-fdb">${e(t('fdbContrib.community.searchRun'))}</button></div>
     </form>
     <div class="pp-cards" data-cs-results></div>
     <p class="pp-muted" data-cs-status role="status"></p>
-    <div class="cp-search-more hidden" data-cs-more><button type="button" class="fm-btn fm-btn-outline fm-btn-sm" data-cs-load-more>${e(t('fdbContrib.community.loadMore'))}</button></div>
+    <div class="cp-search-more hidden" data-cs-more><button type="button" class="fm-btn fm-btn-fdb fm-btn-sm" data-cs-load-more>${e(t('fdbContrib.community.loadMore'))}</button></div>
     <div class="cp-adopt-panel hidden" data-cs-adopt></div>`
 }
 
@@ -358,7 +358,7 @@ function setupCommunitySearch(setup: SearchSetup): void {
         <p class="fm-alert-error hidden" data-cs-adopt-error role="alert"></p>
         <p class="pp-muted" data-cs-adopt-ok role="status"></p>
         <div class="pp-actions"><button type="button" class="fm-btn fm-btn-outline" data-cs-adopt-cancel>${e(t('common.cancel'))}</button>
-          <button type="button" class="fm-btn fm-btn-primary" data-cs-adopt-confirm>${e(t(profile.is_own ? 'fdbContrib.community.duplicate' : 'fdbContrib.community.adopt'))}</button></div>`
+          <button type="button" class="fm-btn fm-btn-fdb" data-cs-adopt-confirm>${e(t(profile.is_own ? 'fdbContrib.community.duplicate' : 'fdbContrib.community.adopt'))}</button></div>`
       panel.classList.remove('hidden')
       const select = panel.querySelector('[data-cs-printer]') as HTMLSelectElement
       const warning = panel.querySelector('[data-cs-warning]') as HTMLElement

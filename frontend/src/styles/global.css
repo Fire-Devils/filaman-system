@@ -6,6 +6,7 @@
 
 /* Shared design tokens */
 :root {
+  --fdb: #a78bfa;
   --content-max-width: 1110px;
   --reading-max-width: 48rem;
   --section-gap: 16px;
@@ -80,6 +81,7 @@ html[data-theme="brand"] {
 
 /* ── Light theme ───────────────────────────────────────────────────── */
 html[data-theme="light"] {
+  --fdb: #7c3aed;
   color-scheme: light;
   --bg: #f8f6f1;
   --bg-elevated: #ffffff;
@@ -256,6 +258,16 @@ body {
 .fm-btn-warning:hover {
   background: rgba(234, 179, 8, 0.25);
 }
+
+/* FilamentDB actions: one colour for every button that talks to the FilaMan DB */
+.fm-btn-fdb {
+  background: color-mix(in srgb, var(--fdb, #a78bfa) 16%, transparent);
+  border-color: color-mix(in srgb, var(--fdb, #a78bfa) 45%, transparent);
+  color: var(--fdb, #a78bfa);
+}
+.fm-btn-fdb:hover { background: color-mix(in srgb, var(--fdb, #a78bfa) 26%, transparent); }
+.fm-btn-fdb:focus-visible { outline: 2px solid var(--fdb, #a78bfa); outline-offset: 2px; }
+.fm-btn-fdb:disabled { opacity: .55; cursor: not-allowed; }
 
 /* Form fields */
 .fm-input {
@@ -1416,7 +1428,8 @@ body:has(.fm-header-filter-panel.open)::after {
 #fdb-contrib-dialog .fdb-matches-hint { margin: 6px 0 8px; font-size: 0.875rem; color: var(--text); }
 #fdb-contrib-dialog .fdb-matches-alert ul { margin: 0; padding: 0; }
 #fdb-contrib-dialog .fdb-matches-alert .fdb-match { margin-left: 0; padding: 8px 0; border-top: 1px solid var(--warning-border); }
-#fdb-contrib-dialog .fdb-match-label { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-weight: 600; }
+#fdb-contrib-dialog .fdb-match-label { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-weight: 600; flex: 1 1 auto; min-width: 0; }
+#fdb-contrib-dialog .fdb-match > [data-fdb-link] { flex: 0 0 auto; align-self: center; white-space: nowrap; }
 .fdb-score { display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: 0.75rem; font-weight: 700; border: 1px solid var(--border); background: var(--bg-elevated); color: var(--text-muted); white-space: nowrap; }
 .fdb-score-strong { background: var(--success-bg); border-color: var(--success-border); color: var(--success-text); }
 #fdb-contrib-dialog .fdb-submit-hint { margin: 12px 0 -4px; font-size: 0.85rem; font-weight: 600; color: var(--warning-text); }

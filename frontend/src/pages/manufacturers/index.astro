@@ -8,7 +8,7 @@ import InventoryFilterReset from '../../components/InventoryFilterReset.astro'
   <div class="fm-list-toolbar">
     <h1 data-i18n="manufacturers.title">Manufacturers</h1>
     <div class="fm-list-controls" data-help-slot>
-      <button id="btn-fdb-match" class="fm-btn fm-btn-outline hidden" data-i18n="fdbContrib.bulkMatchButton">Match with FilaMan-DB</button>
+      <button id="btn-fdb-match" class="fm-btn fm-btn-fdb hidden" data-i18n="fdbContrib.bulkMatchButton">Match with FilaMan-DB</button>
       <button id="btn-new" class="fm-btn fm-btn-primary" data-i18n="manufacturers.addManufacturer">
         Add Manufacturer
       </button>
@@ -362,7 +362,7 @@ import InventoryFilterReset from '../../components/InventoryFilterReset.astro'
           <td class="col-fdb_link">${fdbLinkCell(mf.custom_fields)}</td>
           <td class="col-fdb_contrib">${fdbContribCell(fdbStatuses.get(mf.id))}</td>
           <td style="text-align: right;">
-            <span class="fm-row-actions">${fdbContext.canContribute && sendButtonMode(fdbStatuses.get(mf.id)) ? `<button type="button" class="fm-btn fm-btn-outline fm-btn-sm btn-fdb-send" data-id="${mf.id}">${escapeHtml(sendButtonLabel(sendButtonMode(fdbStatuses.get(mf.id))!))}</button>` : ''}${tableAction('edit', { id: mf.id })}${tableAction('delete', { id: mf.id })}</span>
+            <span class="fm-row-actions">${fdbContext.canContribute && sendButtonMode(fdbStatuses.get(mf.id)) ? `<button type="button" class="fm-btn fm-btn-fdb fm-btn-sm btn-fdb-send" data-id="${mf.id}">${escapeHtml(sendButtonLabel(sendButtonMode(fdbStatuses.get(mf.id))!))}</button>` : ''}${tableAction('edit', { id: mf.id })}${tableAction('delete', { id: mf.id })}</span>
           </td>
         </tr>
       `

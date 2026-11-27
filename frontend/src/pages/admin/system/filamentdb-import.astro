@@ -16,7 +16,7 @@ import FormSection from '../../../components/FormSection.astro'
   <div id="step-sync-linked">
     <FormSection titleKey="filamentdb.syncLinkedTitle" title="Sync local filaments">
     <p class="fm-field-hint" data-i18n="filamentdb.syncLinkedDesc">Checks all local filaments linked to the FilamentDB for updates. No new filaments or manufacturers are created.</p>
-    <button style="justify-self: start;" id="btn-sync-linked" class="fm-btn fm-btn-primary" data-i18n="filamentdb.syncLinkedCheck">Check for updates</button>
+    <button style="justify-self: start;" id="btn-sync-linked" class="fm-btn fm-btn-fdb" data-i18n="filamentdb.syncLinkedCheck">Check for updates</button>
     <div id="sync-linked-result" style="display: none;"></div>
     <div id="unlinked-area" style="display: none;"></div>
     </FormSection>
@@ -33,7 +33,7 @@ import FormSection from '../../../components/FormSection.astro'
     <FormSection titleKey="filamentdb.stepManufacturers" title="Manufacturers">
       <Fragment slot="actions"><span style="color: var(--text-muted); font-size: 0.85rem;" aria-hidden="true">1</span></Fragment>
     <p class="fm-field-hint" data-i18n="filamentdb.previewDesc">Load the data from FilamentDB and select which manufacturers to import.</p>
-    <button style="justify-self: start;" id="btn-preview" class="fm-btn fm-btn-outline" data-i18n="filamentdb.loadPreview">Load Preview</button>
+    <button style="justify-self: start;" id="btn-preview" class="fm-btn fm-btn-fdb" data-i18n="filamentdb.loadPreview">Load Preview</button>
     <div id="preview-result" style="display: none;"></div>
     </FormSection>
   </div>
@@ -99,7 +99,7 @@ import FormSection from '../../../components/FormSection.astro'
       <div id="diff-content"></div>
     </div>
 
-    <button style="justify-self: start;" id="btn-import" class="fm-btn fm-btn-primary" data-i18n="filamentdb.checkImport">Check</button>
+    <button style="justify-self: start;" id="btn-import" class="fm-btn fm-btn-fdb" data-i18n="filamentdb.checkImport">Check</button>
     <div id="import-progress" style="display: none;">
       <div style="background: var(--bg-soft); border-radius: 999px; overflow: hidden; height: 8px;">
         <div id="import-bar" style="background: var(--accent); height: 100%; width: 0%; transition: width 0.5s;"></div>
@@ -399,9 +399,9 @@ import FormSection from '../../../components/FormSection.astro'
             <input type="search" id="mfr-search" placeholder="${escapeHtml(t('filamentdb.searchManufacturers'))}" value="${escapeHtml(mfrSearchTerm)}" style="width: 100%; padding: 8px 12px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--bg-soft); color: var(--text); font-size: 0.9rem; outline: none;" />
           </div>
           <div style="display: flex; gap: 8px; margin-bottom: 10px;">
-            <button class="fm-btn fm-btn-outline" style="font-size: 0.8rem; padding: 4px 12px;" id="btn-sel-all">${escapeHtml(t('filamentdb.selectAll'))}</button>
-            <button class="fm-btn fm-btn-outline" style="font-size: 0.8rem; padding: 4px 12px;" id="btn-sel-new">${escapeHtml(t('filamentdb.selectAllNew'))}</button>
-            <button class="fm-btn fm-btn-outline" style="font-size: 0.8rem; padding: 4px 12px;" id="btn-sel-none">${escapeHtml(t('filamentdb.deselectAll'))}</button>
+            <button class="fm-btn fm-btn-fdb" style="font-size: 0.8rem; padding: 4px 12px;" id="btn-sel-all">${escapeHtml(t('filamentdb.selectAll'))}</button>
+            <button class="fm-btn fm-btn-fdb" style="font-size: 0.8rem; padding: 4px 12px;" id="btn-sel-new">${escapeHtml(t('filamentdb.selectAllNew'))}</button>
+            <button class="fm-btn fm-btn-fdb" style="font-size: 0.8rem; padding: 4px 12px;" id="btn-sel-none">${escapeHtml(t('filamentdb.deselectAll'))}</button>
             <span style="font-size: 0.85rem; color: var(--text-muted); align-self: center; margin-left: auto;" id="mfr-count"></span>
           </div>
           <div id="mfr-list" style="border: 1px solid var(--border); border-radius: var(--radius-sm);"></div>
@@ -637,8 +637,8 @@ import FormSection from '../../../components/FormSection.astro'
               <strong style="font-size: 0.9rem;">${escapeHtml(mfr?.name || '?')}</strong>
               <div style="display: flex; gap: 6px; align-items: center;">
                 <span style="font-size: 0.8rem; color: var(--text-muted);">${selectedInGroup}/${fils.length}</span>
-                <button class="fm-btn fm-btn-outline fil-sel-all" data-mfr="${mfrId}" style="font-size: 0.7rem; padding: 2px 8px;">${escapeHtml(t('filamentdb.selectAll'))}</button>
-                <button class="fm-btn fm-btn-outline fil-sel-none" data-mfr="${mfrId}" style="font-size: 0.7rem; padding: 2px 8px;">${escapeHtml(t('filamentdb.deselectAll'))}</button>
+                <button class="fm-btn fm-btn-fdb fil-sel-all" data-mfr="${mfrId}" style="font-size: 0.7rem; padding: 2px 8px;">${escapeHtml(t('filamentdb.selectAll'))}</button>
+                <button class="fm-btn fm-btn-fdb fil-sel-none" data-mfr="${mfrId}" style="font-size: 0.7rem; padding: 2px 8px;">${escapeHtml(t('filamentdb.deselectAll'))}</button>
               </div>
             </div>
             <div>
@@ -860,8 +860,8 @@ import FormSection from '../../../components/FormSection.astro'
               <span style="font-size: 0.8rem; font-weight: 400; color: var(--text-muted); margin-left: 6px;">(${withChanges.length} ${escapeHtml(t('filamentdb.differences'))}, ${identical.length} ${escapeHtml(t('filamentdb.identical'))})</span>
             </strong>
             <div style="display: flex; gap: 6px;">
-              <button class="fm-btn fm-btn-outline" id="diff-sel-all" style="font-size: 0.7rem; padding: 2px 8px;">${escapeHtml(t('filamentdb.selectAll'))}</button>
-              <button class="fm-btn fm-btn-outline" id="diff-sel-none" style="font-size: 0.7rem; padding: 2px 8px;">${escapeHtml(t('filamentdb.deselectAll'))}</button>
+              <button class="fm-btn fm-btn-fdb" id="diff-sel-all" style="font-size: 0.7rem; padding: 2px 8px;">${escapeHtml(t('filamentdb.selectAll'))}</button>
+              <button class="fm-btn fm-btn-fdb" id="diff-sel-none" style="font-size: 0.7rem; padding: 2px 8px;">${escapeHtml(t('filamentdb.deselectAll'))}</button>
             </div>
           </div>
           <div>
@@ -1157,7 +1157,7 @@ import FormSection from '../../../components/FormSection.astro'
             <button class="fdb-mini-btn" id="linked-sel-all">${escapeHtml(t('filamentdb.selectAll'))}</button>
             <button class="fdb-mini-btn" id="linked-sel-none">${escapeHtml(t('filamentdb.deselectAll'))}</button>
           </div><div id="sync-linked-tree">${renderLinkedGroups(data.manufacturers)}</div>
-          <button id="btn-sync-linked-apply" class="fm-btn fm-btn-primary" style="margin-top: 12px;">${escapeHtml(t('filamentdb.syncLinkedUpdateSelected'))}</button>
+          <button id="btn-sync-linked-apply" class="fm-btn fm-btn-fdb" style="margin-top: 12px;">${escapeHtml(t('filamentdb.syncLinkedUpdateSelected'))}</button>
           <div id="sync-linked-done" style="margin-top: 12px;"></div>`
         }
         if (data.missing_in_db.length > 0) {
@@ -1260,7 +1260,7 @@ import FormSection from '../../../components/FormSection.astro'
               <span style="font-size: 0.75rem; color: var(--text-muted);">(${items.length})</span></summary>
             <div style="padding: 4px 14px;">${items.map(renderUnlinkedItem).join('')}</div></details>`
         }
-        html += `</div><button id="btn-unlinked-apply" class="fm-btn fm-btn-primary" style="margin-top: 8px;">${escapeHtml(t('filamentdb.unlinkedLinkSelected'))}</button>
+        html += `</div><button id="btn-unlinked-apply" class="fm-btn fm-btn-fdb" style="margin-top: 8px;">${escapeHtml(t('filamentdb.unlinkedLinkSelected'))}</button>
           <div id="unlinked-done" style="margin-top: 12px;"></div>`
         area.innerHTML = html
         const boxes = () => [...area.querySelectorAll<HTMLInputElement>('.unl-cb')]
@@ -1499,14 +1499,14 @@ import FormSection from '../../../components/FormSection.astro'
     .fdb-mini-btn {
       display: inline-flex; align-items: center; gap: 4px;
       padding: 4px 12px; margin: 2px 4px 2px 0;
-      border-radius: 999px; border: 1px solid var(--accent);
-      background: color-mix(in srgb, var(--accent) 10%, transparent);
-      color: var(--accent); font: 600 0.75rem/1.3 var(--font-sans);
+      border-radius: 999px; border: 1px solid color-mix(in srgb, var(--fdb, #a78bfa) 45%, transparent);
+      background: color-mix(in srgb, var(--fdb, #a78bfa) 16%, transparent);
+      color: var(--fdb, #a78bfa); font: 600 0.75rem/1.3 var(--font-sans);
       text-decoration: none; cursor: pointer; white-space: nowrap;
       transition: background var(--transition);
     }
-    .fdb-mini-btn:hover { background: color-mix(in srgb, var(--accent) 22%, transparent); }
-    .fdb-mini-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+    .fdb-mini-btn:hover { background: color-mix(in srgb, var(--fdb, #a78bfa) 26%, transparent); }
+    .fdb-mini-btn:focus-visible { outline: 2px solid var(--fdb, #a78bfa); outline-offset: 2px; }
   </style>
   <style>
     @keyframes spin {

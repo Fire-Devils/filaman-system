@@ -64,7 +64,7 @@ export function connectBannerHtml(variant: ConnectBannerVariant): string {
       <span class="fdb-banner-desc">${e(variant === 'noToken' ? 'descNoToken' : 'descNoPlugin')}</span>
       <div class="fdb-chips">${chip('match', 'chipMatch')}${chip('submit', 'chipSubmit')}${chip('profiles', 'chipProfiles')}</div>
     </div>
-    <a class="fm-btn fm-btn-primary fdb-banner-cta" href="/filamentdb" data-fdb-banner-cta>${e(variant === 'noToken' ? 'ctaNoToken' : 'ctaNoPlugin')}</a>
+    <a class="fm-btn fm-btn-fdb fdb-banner-cta" href="/filamentdb" data-fdb-banner-cta>${e(variant === 'noToken' ? 'ctaNoToken' : 'ctaNoPlugin')}</a>
     <button type="button" class="fdb-banner-close" data-fdb-banner-close title="${t('fdbConnect.dismiss')}" aria-label="${t('fdbConnect.dismiss')}">&#10005;</button>
   </div>`
 }

@@ -43,7 +43,7 @@ const { compactPicker = false } = Astro.props
         <span data-i18n="colors.title">Color Library</span>
       </a>
       <a id="spool-selection-import" href="/spools/new?from_tag=1" class="fm-btn fm-btn-outline spool-selection-only" hidden data-i18n="spools.importFromTag">Import from Tag</a>
-      <button id="btn-fdb-match" type="button" class="fm-btn fm-btn-outline hidden" data-i18n="fdbContrib.bulkMatchButton">Match with FilaMan-DB</button>
+      <button id="btn-fdb-match" type="button" class="fm-btn fm-btn-fdb hidden" data-i18n="fdbContrib.bulkMatchButton">Match with FilaMan-DB</button>
       <a id="add-filament" href="/filaments/new" class="fm-btn fm-btn-primary" data-i18n="filaments.addFilament">
         Add Filament
       </a>
@@ -148,7 +148,7 @@ const { compactPicker = false } = Astro.props
       <button class="fm-btn fm-btn-outline" id="bulk-btn-spool-weight" data-i18n="filaments.bulkSetSpoolWeight">Set Spool Weight</button>
       <button class="fm-btn fm-btn-outline" id="bulk-btn-density" data-i18n="filaments.bulkSetDensity">Set Density</button>
       <button class="fm-btn fm-btn-outline" id="bulk-btn-low-stock" data-i18n="filaments.bulkSetLowStock">Set Minimum Stock</button>
-      <button class="fm-btn fm-btn-outline hidden" id="bulk-btn-fdb" data-i18n="fdbContrib.bulkSend">Send to FilaMan-DB</button>
+      <button class="fm-btn fm-btn-fdb hidden" id="bulk-btn-fdb" data-i18n="fdbContrib.bulkSend">Send to FilaMan-DB</button>
       <button class="fm-btn fm-btn-outline" id="bulk-btn-print" data-i18n="filaments.bulkLabel">Print Labels</button>
       <button class="fm-btn fm-btn-danger bulk-btn-danger" id="bulk-btn-delete" data-i18n="filaments.bulkDelete">Delete</button>
     </div>
