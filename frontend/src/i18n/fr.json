@@ -2834,7 +2834,7 @@
       "adminTitle": "Administrateur",
       "adminRole": "une seule fois",
       "admin1": "Ouvre <b>Admin → Plugins</b>",
-      "admin2": "Installe et active <b>« Import FilamentDB »</b>",
+      "admin2": "Active <b>« Import FilamentDB »</b>",
       "admin3": "C’est fait. Dès maintenant, tous les utilisateurs voient la comparaison.",
       "toPlugins": "Vers les plugins",
       "userTitle": "Chaque utilisateur",

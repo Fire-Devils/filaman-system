@@ -2835,7 +2835,7 @@
       "adminTitle": "Admin",
       "adminRole": "einmalig",
       "admin1": "Öffne <b>Admin → Plugins</b>",
-      "admin2": "Installiere und aktiviere <b>„FilamentDB Import“</b>",
+      "admin2": "Schalte <b>„FilamentDB Import“</b> ein",
       "admin3": "Fertig. Ab jetzt sehen alle Nutzer den Abgleich.",
       "toPlugins": "Zu den Plugins",
       "userTitle": "Jeder Nutzer",

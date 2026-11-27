@@ -2834,7 +2834,7 @@
       "adminTitle": "Admin",
       "adminRole": "once",
       "admin1": "Open <b>Admin → Plugins</b>",
-      "admin2": "Install and activate <b>“FilamentDB Import”</b>",
+      "admin2": "Switch on <b>“FilamentDB Import”</b>",
       "admin3": "Done. From now on all users see the sync.",
       "toPlugins": "Go to plugins",
       "userTitle": "Every user",
