@@ -7,5 +7,5 @@ const { titleKey, title, back = true } = Astro.props
     {back && <a href="/admin" class="fm-admin-back">&larr; <span data-i18n="admin.backToAdmin">Back to Admin</span></a>}
     <h1 data-i18n={titleKey}>{title}</h1>
   </div>
-  <div class="fm-list-controls"><slot /></div>
+  <div class="fm-list-controls" data-help-slot><slot /></div>
 </header>

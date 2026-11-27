@@ -217,7 +217,7 @@ import FormDialog from '../../components/FormDialog.astro'
   </div>
   
   <!-- Install Modal -->
-  <FormDialog id="install-modal" titleId="install-title" titleKey="admin.installPlugin" title="Install Plugin" wide>
+  <FormDialog id="install-modal" handbook="adminPluginInstall" titleId="install-title" titleKey="admin.installPlugin" title="Install Plugin" wide>
     <Fragment slot="actions">
       <div class="plugin-install-actions">
         <button type="submit" form="install-form" id="install-submit" class="fm-btn fm-btn-primary" disabled>
@@ -273,7 +273,7 @@ import FormDialog from '../../components/FormDialog.astro'
       </form>
   </FormDialog>
   
-  <FormDialog id="detail-modal" titleId="detail-title" titleKey="admin.pluginDetails" title="Plugin Details">
+  <FormDialog id="detail-modal" handbook="adminPluginDetails" titleId="detail-title" titleKey="admin.pluginDetails" title="Plugin Details">
     <Fragment slot="actions"><button type="button" id="detail-close" data-dialog-close class="fm-btn fm-btn-outline" data-i18n="common.close">Close</button></Fragment>
     <div id="detail-content" class="fm-compact-form"></div>
   </FormDialog>

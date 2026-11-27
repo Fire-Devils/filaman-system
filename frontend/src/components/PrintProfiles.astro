@@ -25,14 +25,14 @@ import FormDialog from './FormDialog.astro'
   </details>
 </section>
 
-<FormDialog id="community-search-dialog" titleId="community-search-dialog-title" titleKey="fdbContrib.community.searchTitle" title="Search community profiles" wide>
+<FormDialog id="community-search-dialog" handbook="communityProfiles" titleId="community-search-dialog-title" titleKey="fdbContrib.community.searchTitle" title="Search community profiles" wide>
   <div data-cs-body></div>
   <div class="pp-actions">
     <button type="button" class="fm-btn fm-btn-outline" data-dialog-close data-i18n="common.close">Close</button>
   </div>
 </FormDialog>
 
-<FormDialog id="print-profile-dialog" titleId="print-profile-dialog-title" titleKey="printProfiles.addTitle" title="Add print profile" wide>
+<FormDialog id="print-profile-dialog" handbook="printProfiles" titleId="print-profile-dialog-title" titleKey="printProfiles.addTitle" title="Add print profile" wide>
   <form id="print-profile-form" novalidate={false}>
     <div data-pp-body></div>
     <div class="pp-actions">

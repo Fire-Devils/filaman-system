@@ -416,7 +416,7 @@ export function getStaticPaths() {
             <a href="/printers" class="fm-admin-back">&larr; ${t('printers.backToPrinters')}</a>
             <h1>${escapeHtml(printer.name)}</h1>
           </div>
-          <div class="fm-list-controls">
+          <div class="fm-list-controls" data-help-slot>
             <button id="btn-toggle-active" class="${printer.is_active ? 'fm-btn fm-btn-outline' : 'fm-btn fm-btn-primary'}">
               ${printer.is_active ? t('printers.deactivate') : t('printers.activate')}
             </button>

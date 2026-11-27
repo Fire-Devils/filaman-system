@@ -9,9 +9,11 @@ import FormDialog from '../components/FormDialog.astro'
     <div id="spool-link-banner"></div>
     <div class="dashboard-header">
       <h1 class="dashboard-title" data-i18n="dashboard.title">Dashboard</h1>
-      <div id="widget-menu" class="dashboard-widget-menu">
-        <button id="widget-menu-btn" class="fm-btn fm-btn-outline" type="button" data-i18n="dashboard.customize">Customize</button>
-        <div id="widget-menu-list" class="dashboard-widget-list"></div>
+      <div class="fm-list-controls" data-help-slot>
+        <div id="widget-menu" class="dashboard-widget-menu">
+          <button id="widget-menu-btn" class="fm-btn fm-btn-outline" type="button" data-i18n="dashboard.customize">Customize</button>
+          <div id="widget-menu-list" class="dashboard-widget-list"></div>
+        </div>
       </div>
     </div>
     <div class="dashboard-metrics">

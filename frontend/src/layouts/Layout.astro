@@ -233,17 +233,18 @@ const panel = pagePanel ?? (Astro.url.pathname.replace(/\/$/, '') === '/settings
 
       {!embedded && (
         <a
+          id="fm-handbook-proto"
           href="https://docu.filaman.app"
           target="_blank"
           rel="noopener"
-          class="fm-btn fm-btn-outline fm-handbook-link"
+          class="fm-btn fm-btn-outline"
+          hidden
           aria-label="Manual"
           title="Manual"
           data-i18n-aria-label="nav.handbook"
           data-i18n-title="nav.handbook"
         >
-          <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 7v14"/><path d="M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z"/></svg>
-          <span class="fm-handbook-label" data-i18n="nav.handbook">Manual</span>
+          <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/></svg>
         </a>
       )}
       <main class:list={['fm-main', { 'fm-main--flush': noPadding }]} data-panel={panel} tabindex={panel ? -1 : undefined}>
@@ -309,6 +310,7 @@ const panel = pagePanel ?? (Astro.url.pathname.replace(/\/$/, '') === '/settings
       import { clearLabelPresetBrowserStorage, ensureLabelPresetBrowserMigration } from '../lib/label-preset-storage'
       import { setupPcPrintPrompt } from '../lib/label-pc-print-prompt'
       import { setupSidebar } from '../lib/sidebar'
+      import { setupHandbookButton } from '../lib/handbook-button'
       import { pluginNavChangedEvent, type PluginNavChange } from '../lib/plugin-nav'
       import { loginUrlWithNext } from '../lib/login-redirect'
       import {
@@ -324,6 +326,7 @@ const panel = pagePanel ?? (Astro.url.pathname.replace(/\/$/, '') === '/settings
       await initI18n()
 
       const sidebar = setupSidebar(highlightActiveNav)
+      setupHandbookButton()
 
       const inventoryBack = document.querySelector<HTMLAnchorElement>('[data-inventory-back]')
       if (inventoryBack && document.referrer && history.length > 1) {

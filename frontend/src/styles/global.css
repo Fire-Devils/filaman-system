@@ -2401,10 +2401,6 @@ html.sidebar-collapsed .fm-page {
 
 .fm-main { --page-gutter: clamp(10px, 3vw, 32px); min-width: 0; container: detail-page / inline-size; padding: var(--page-block-gutter, var(--page-gutter)) var(--page-gutter) var(--page-gutter); overflow-y: auto; }
 .fm-main--flush { padding: 0; overflow: hidden; display: flex; flex-direction: column; height: 100dvh; }
-.fm-main { --page-block-gutter: 52px; }
-.fm-main--flush { padding-block-start: var(--page-block-gutter); }
-.fm-handbook-link { position: fixed; top: 10px; right: 14px; z-index: 30; display: inline-flex; align-items: center; gap: 6px; padding: 6px 10px; line-height: 1; border-radius: 8px; font-size: 0.85rem; background: var(--bg-elevated); text-decoration: none; }
-.fm-handbook-link svg { flex-shrink: 0; }
 
 .fm-sidebar {
   border-right: 1px solid var(--border);
@@ -2572,8 +2568,6 @@ html.sidebar-collapsed .fm-logo-text {
   html:not(.sidebar-collapsed) .fm-sidebar { left: 0; box-shadow: var(--shadow-lg); }
   html.sidebar-collapsed .fm-sidebar-content { visibility: hidden; }
   .fm-sidebar-toggle { top: 12px; right: 12px; width: 40px; height: 40px; }
-  .fm-handbook-link { top: 12px; right: 12px; width: 40px; height: 40px; padding: 0; justify-content: center; border-radius: 50%; }
-  .fm-handbook-link .fm-handbook-label { display: none; }
   .fm-sidebar-toggle .sidebar-chevron-icon { display: none; }
   .fm-sidebar-toggle .sidebar-menu-icon { display: block; }
   html.sidebar-collapsed .fm-sidebar-toggle { right: -48px; }
@@ -3630,10 +3624,6 @@ html.sidebar-collapsed #sidebar-color-mode { display: none; }
   .fdb-banner-cta { order: 3; }
 }
 
-/* Leave room for the fixed manual link inside sticky toolbars */
-.detail-page-toolbar { padding-right: max(var(--page-gutter), calc(100% - var(--detail-content-width) + var(--page-gutter)), calc(var(--page-gutter) + 130px)); }
-@media (max-width: 599px) { .detail-page-toolbar { padding-right: max(var(--page-gutter), calc(100% - var(--detail-content-width) + var(--page-gutter)), calc(var(--page-gutter) + 52px)); } }
-
 /* Progress bar (bulk dialogs) */
 .fm-progress { display: flex; flex-direction: column; gap: .35rem; }
 .fm-progress-track { height: 6px; border-radius: 999px; background: var(--bg-soft); overflow: hidden; position: relative; }
@@ -3647,3 +3637,13 @@ html.sidebar-collapsed #sidebar-color-mode { display: none; }
   .fm-progress-indeterminate .fm-progress-fill { animation: none; left: 0; width: 100%; opacity: .5; }
   .fm-progress-fill { transition: none; }
 }
+
+/* Help button: question mark at the far right of the page header, opens the matching manual section */
+.fm-help-btn { display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto; box-sizing: border-box; min-width: 36px; min-height: 36px; padding: 6px; line-height: 0; border-radius: 8px; text-decoration: none; }
+.fm-list-controls .fm-help-btn { padding: 6px; }
+.fm-help-btn svg { flex-shrink: 0; }
+.fm-help-row { display: flex; align-items: center; gap: var(--control-gap, 8px); }
+.fm-help-row > .fm-help-btn { margin-left: auto; }
+.fm-list-toolbar > .fm-help-btn, .fm-admin-toolbar > .fm-help-btn, .dashboard-header > .fm-help-btn { margin-left: auto; }
+.detail-page-toolbar > .fm-help-btn { margin-left: 4px; }
+@media (max-width: 599px) { .detail-page-toolbar > .fm-help-btn { min-width: 40px; min-height: 40px; } }

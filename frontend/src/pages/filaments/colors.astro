@@ -12,7 +12,7 @@ import Layout from '../../layouts/Layout.astro'
   <div class="fm-colors-library">
   <div class="fm-list-toolbar">
     <h1 data-i18n="colors.title">Color Library</h1>
-    <div class="fm-list-controls">
+    <div class="fm-list-controls" data-help-slot>
       <PluginUiLaunchers surface="colors.library" />
       <span data-inventory-count></span>
       <InventoryFilterReset scope="columns" />
@@ -51,7 +51,7 @@ import Layout from '../../layouts/Layout.astro'
   <InventoryLoadMore />
   </div>
 
-  <FormDialog id="color-cleanup-dialog" titleId="color-cleanup-title" titleKey="colors.cleanup.title" title="Color cleanup" wide>
+  <FormDialog id="color-cleanup-dialog" handbook="colorCleanup" titleId="color-cleanup-title" titleKey="colors.cleanup.title" title="Color cleanup" wide>
     <button slot="actions" type="button" data-dialog-close class="fm-btn fm-btn-outline" data-i18n="common.close">Close</button>
     <div id="color-cleanup-content"></div>
     <form data-cleanup-merge-form class="fm-compact-form" hidden>
@@ -66,7 +66,7 @@ import Layout from '../../layouts/Layout.astro'
     </form>
   </FormDialog>
 
-  <FormDialog id="modal-container" titleId="modal-title" titleKey="colors.addColor" title="Add Color" wide>
+  <FormDialog id="modal-container" handbook="colorAdd" titleId="modal-title" titleKey="colors.addColor" title="Add Color" wide>
     <Fragment slot="actions">
       <ColorPluginHooks />
       <button type="submit" form="modal-form" id="modal-submit" disabled class="fm-btn fm-btn-primary" data-i18n="common.save">Save</button>

@@ -69,7 +69,7 @@ export function getStaticPaths() {
         ${back}
         <header class="fm-section-header" style="flex-wrap: wrap; gap: 12px;">
           <h1 style="margin: 0;">${escapeHtml(job.name)} <span class="fm-pill" style="${statusPillStyle(job.status)}">${t(`printJobs.status.${job.status}`)}</span></h1>
-          <div class="fm-header-actions">
+          <div class="fm-header-actions" data-help-slot>
             <button id="btn-delete" type="button" class="fm-btn fm-btn-outline">${t('common.delete')}</button>
           </div>
         </header>
