@@ -1,6 +1,22 @@
 {
   "versions": [
     {
+      "version": "UNRELEASED",
+      "date": "",
+      "changes": {
+        "de": [
+          { "type": "feature", "text": "Dashboard: Unter \"Anpassen\" → \"Anordnen\" verschiebst Du die Karten per Ziehen am Griff (Maus, Touch oder Pfeiltasten). Die Reihenfolge wird pro Benutzer gespeichert. Außerdem wählst Du dort zwischen \"Raster\" und \"Kacheln (Masonry)\", bei dem sich die Karten lückenlos untereinander stapeln." },
+          { "type": "feature", "text": "Dashboard: Neue Diagramme für Ausgaben pro Monat, Verbrauch pro Monat, Bestandswert, Anzahl Spulen und Gesamtgewicht (wahlweise 6, 12 oder 24 Monate) sowie ein Ringdiagramm der Filamentarten nach Restgewicht. Alle lassen sich unter \"Anpassen\" ein- und ausblenden." },
+          { "type": "improvement", "text": "Statistik: Bestand, Anzahl und Gewicht werden jetzt täglich gespeichert; die Diagramme zeigen nur diese tatsächlichen Werte, Monate ohne Aufzeichnung bleiben leer. Beim dauerhaften Löschen einer Spule bleiben ihr Verbrauch, ihre Ereignisse und ihr Kaufpreis für Analyse und Dashboard erhalten; im Spulen-Protokoll erscheinen sie als \"Gelöschte Spule\"." }
+        ],
+        "en": [
+          { "type": "feature", "text": "Dashboard: Under \"Customize\" → \"Arrange\" you can move the cards by dragging their handle (mouse, touch or arrow keys). The order is saved per user. You can also switch between \"Grid\" and \"Tiles (masonry)\", where cards stack without gaps." },
+          { "type": "feature", "text": "Dashboard: New charts for spending per month, consumption per month, stock value, spool count and total weight (6, 12 or 24 months), plus a donut chart of filament types by remaining weight. All of them can be shown or hidden under \"Customize\"." },
+          { "type": "improvement", "text": "Statistics: Stock, spool count and weight are now recorded daily; the charts only show these actual values, months without a record stay empty. When a spool is deleted permanently, its consumption, events and purchase price are kept for analytics and the dashboard; the spool log lists them as \"Deleted spool\"." }
+        ]
+      }
+    },
+    {
       "version": "2.12.1",
       "date": "",
       "changes": {

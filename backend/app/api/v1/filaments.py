@@ -36,6 +36,7 @@ from app.api.v1.schemas_filament import (
     ResolveFilamentFromTagRequest,
     ResolveFilamentFromTagResponse,
 )
+from app.services.spool_deletion import preserve_spool_statistics
 from app.services.spool_metrics import remaining_value_expression
 from app.services.bambu_idx import clear_bambu_idx_for_filament
 from app.core.config import MANUFACTURER_LOGO_DIR, settings
@@ -460,6 +461,7 @@ async def delete_manufacturer(
                     select(Spool).where(Spool.filament_id == f.id)
                 )
                 spools_to_delete = spools_result.scalars().all()
+                await preserve_spool_statistics(db, [s.id for s in spools_to_delete])
                 for s in spools_to_delete:
                     await db.delete(s)
                 await db.delete(f)
@@ -1326,6 +1328,10 @@ async def delete_filaments_bulk(
     if data.force:
         # Force: delete spools for all filaments that have them, then delete all filaments
         if filament_ids_with_spools:
+            doomed = await db.execute(
+                select(Spool.id).where(Spool.filament_id.in_(filament_ids_with_spools))
+            )
+            await preserve_spool_statistics(db, doomed.scalars().all())
             await db.execute(
                 delete(Spool).where(Spool.filament_id.in_(filament_ids_with_spools))
             )
@@ -1478,7 +1484,9 @@ async def delete_filament(
             spools_result = await db.execute(
                 select(Spool).where(Spool.filament_id == filament_id)
             )
-            for s in spools_result.scalars().all():
+            doomed_spools = spools_result.scalars().all()
+            await preserve_spool_statistics(db, [s.id for s in doomed_spools])
+            for s in doomed_spools:
                 await db.delete(s)
 
     await db.delete(filament)

@@ -25,6 +25,7 @@ from app.models.printer import (
     PrinterSlotAssignment,
     PrinterSlotEvent,
 )
+from app.models.inventory_snapshot import InventorySnapshot
 from app.models.printer_params import (
     FilamentPrinterInitialization,
     FilamentPrinterParam,
@@ -67,6 +68,7 @@ __all__ = [
     "PrintProject",
     "Printer",
     "PrinterSlot",
+    "InventorySnapshot",
     "PrinterSlotAssignment",
     "PrinterSlotEvent",
     "Role",

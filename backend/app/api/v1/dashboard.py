@@ -5,8 +5,10 @@ from pydantic import BaseModel, Field
 from sqlalchemy import case, func, or_, select
 
 from app.api.deps import DBSession, PrincipalDep
+from app.api.v1.analytics import _add_months, _month_key, _month_start, get_analytics_summary
 from app.api.v1.schemas import InventoryValuation
-from app.models import Filament, Location, Manufacturer, Spool, SpoolStatus
+from app.models import Filament, InventorySnapshot, Location, Manufacturer, Spool, SpoolStatus
+from app.services.inventory_snapshots import current_inventory
 from app.services.material_presets import load_presets, match_preset
 from app.services.spool_metrics import remaining_value_expression
 from app.services.spool_moisture import EXCLUDED_STATUS_KEYS, compute_moisture
@@ -494,19 +496,11 @@ async def get_dashboard_stats(
         }
 
     if include_valuation:
-        value = remaining_value_expression(db.get_bind().dialect.name, known_only=True).label("remaining_value")
-        valued = (
-            select(value).select_from(Spool)
-            .outerjoin(Filament, Spool.filament_id == Filament.id)
-            .join(SpoolStatus, Spool.status_id == SpoolStatus.id)
-            .where(SpoolStatus.key != "archived")
-            .subquery()
+        inventory = await current_inventory(db)
+        totals["valuation"] = InventoryValuation(
+            remaining_value=inventory.remaining_value,
+            unknown_spool_count=inventory.unknown_value_count,
         )
-        total, unknown = (await db.execute(select(
-            func.sum(valued.c.remaining_value),
-            func.count() - func.count(valued.c.remaining_value),
-        ).select_from(valued))).one()
-        totals["valuation"] = InventoryValuation(remaining_value=0 if spool_count_total == 0 else total, unknown_spool_count=unknown)
 
     return DashboardStatsResponse(
         spool_distribution=spool_distribution,
@@ -524,3 +518,75 @@ async def get_dashboard_stats(
         filament_types=filament_types,
         **totals,
     )
+
+
+class HistoryMonth(BaseModel):
+    month: str
+    spend: float
+    consumption_g: float
+    # Stock figures come from daily snapshots; None = nothing recorded that month.
+    spool_count: int | None = None
+    total_weight_g: float | None = None
+    stock_value: float | None = None
+
+
+class DashboardHistoryResponse(BaseModel):
+    months: list[HistoryMonth]
+
+
+@router.get("/history", response_model=DashboardHistoryResponse)
+async def get_dashboard_history(
+    db: DBSession,
+    principal: PrincipalDep,
+    months: int = Query(12, ge=1, le=36),
+):
+    """Monthly series for the dashboard charts, oldest month first.
+
+    spend and consumption_g come from the analytics summary. The stock figures
+    (spool_count, total_weight_g, stock_value) are real data only: the last daily
+    snapshot of each month, the live tile values for the current month and None
+    for months without a snapshot (no estimates, no interpolation).
+    """
+    today = datetime.now(timezone.utc).date()
+    first = _add_months(_month_start(today), -(months - 1))
+    summary = await get_analytics_summary(db, principal, date_from=first, date_to=today)
+    spend = {m.month: m.total for m in summary.purchases.by_month}
+    consumed = {m.month: m.weight_g for m in summary.consumption_by_month}
+
+    snapshots = (
+        (
+            await db.execute(
+                select(InventorySnapshot)
+                .where(InventorySnapshot.snapshot_date >= first)
+                .order_by(InventorySnapshot.snapshot_date)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    last_snapshot = {_month_key(s.snapshot_date): s for s in snapshots}  # later days win
+
+    live = await current_inventory(db)
+    current_key = _month_key(today)
+
+    result = []
+    for i in range(months):
+        key = _month_key(_add_months(first, i))
+        if key == current_key:
+            count, weight, value = live.spool_count, live.total_weight_g, live.remaining_value
+        elif key in last_snapshot:
+            snap = last_snapshot[key]
+            count, weight, value = snap.spool_count, snap.total_weight_g, snap.stock_value
+        else:
+            count = weight = value = None
+        result.append(
+            HistoryMonth(
+                month=key,
+                spend=spend.get(key, 0.0),
+                consumption_g=consumed.get(key, 0.0),
+                spool_count=count,
+                total_weight_g=None if weight is None else round(weight, 2),
+                stock_value=None if value is None else round(value, 2),
+            )
+        )
+    return DashboardHistoryResponse(months=result)

@@ -37,12 +37,19 @@ class MeUpdate(BaseModel):
 WidgetId = Annotated[str, StringConstraints(pattern=r"^[A-Za-z0-9_-]{1,64}$")]
 
 
+DashboardLayout = Literal["grid", "masonry"]
+
+
 class PreferencesResponse(BaseModel):
     dashboard_hidden_widgets: list[str] = []
+    dashboard_widget_order: list[str] = []
+    dashboard_layout: DashboardLayout = "grid"
 
 
 class PreferencesUpdate(BaseModel):
     dashboard_hidden_widgets: Annotated[list[WidgetId], Field(max_length=50)] | None = None
+    dashboard_widget_order: Annotated[list[WidgetId], Field(max_length=50)] | None = None
+    dashboard_layout: DashboardLayout | None = None
 
 
 class SidebarItemPreference(BaseModel):
@@ -163,8 +170,11 @@ async def update_me(
 
 def _preferences_payload(user: User) -> PreferencesResponse:
     prefs = user.ui_preferences or {}
+    layout = prefs.get("dashboard_layout")
     return PreferencesResponse(
-        dashboard_hidden_widgets=list(prefs.get("dashboard_hidden_widgets") or [])
+        dashboard_hidden_widgets=list(prefs.get("dashboard_hidden_widgets") or []),
+        dashboard_widget_order=list(prefs.get("dashboard_widget_order") or []),
+        dashboard_layout=layout if layout in ("grid", "masonry") else "grid",
     )
 
 
@@ -203,6 +213,11 @@ async def update_preferences(
     prefs = dict(user.ui_preferences or {})
     if data.dashboard_hidden_widgets is not None:
         prefs["dashboard_hidden_widgets"] = sorted(set(data.dashboard_hidden_widgets))
+    if data.dashboard_widget_order is not None:
+        # Order matters, so de-duplicate while keeping the first occurrence.
+        prefs["dashboard_widget_order"] = list(dict.fromkeys(data.dashboard_widget_order))
+    if data.dashboard_layout is not None:
+        prefs["dashboard_layout"] = data.dashboard_layout
     user.ui_preferences = prefs
 
     await db.commit()
