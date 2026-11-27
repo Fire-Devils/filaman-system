@@ -9,14 +9,16 @@
           { "type": "fix", "text": "FilaMan-DB-Infoseite: Die Einrichtungsanleitung für Admins sagt jetzt \"Schalte FilamentDB Import ein\" statt \"Installiere und aktiviere\". Das Plugin ist ein Systemplugin und muss nicht installiert werden." },
           { "type": "feature", "text": "FilaMan-DB: Filamente mit einem Material, das es in der FilaMan-DB noch nicht gibt, lassen sich jetzt trotzdem senden. Das Material wird als neu vorgeschlagen und bei der Freigabe angelegt." },
           { "type": "improvement", "text": "FilaMan-DB: Beim Abgleichen, Prüfen und Senden mehrerer Einträge zeigt ein Fortschrittsbalken mit Prozentangabe, wie weit es ist." },
-          { "type": "improvement", "text": "Auswahlleiste bei Filamenten, Spulen und Standorten: Neuer Knopf ✕ hebt die Auswahl auf. Die Knöpfe sind kompakter und brechen sauber um." }
+          { "type": "improvement", "text": "Auswahlleiste bei Filamenten, Spulen und Standorten: Neuer Knopf ✕ hebt die Auswahl auf. Die Knöpfe sind kompakter und brechen sauber um." },
+          { "type": "improvement", "text": "FilaMan-DB: Alle Knöpfe rund um die FilaMan-DB (Senden, Abgleichen, Import, Community-Druckprofile, Einrichtung) sind jetzt einheitlich violett und so auf einen Blick erkennbar. Im Sende-Dialog steht \"Das ist es\" bei ähnlichen Einträgen wieder einzeilig und bündig rechts." }
         ],
         "en": [
           { "type": "feature", "text": "The page header now has a question mark button on the far right. It opens the manual section for the current view (docu.filaman.app) in a new tab, in the matching language." },
           { "type": "fix", "text": "FilaMan-DB info page: The admin setup steps now say \"Switch on FilamentDB Import\" instead of \"Install and activate\". The plugin is a system plugin and does not need to be installed." },
           { "type": "feature", "text": "FilaMan-DB: Filaments whose material does not exist in the FilaMan-DB yet can now be sent anyway. The material is proposed as new and created on approval." },
           { "type": "improvement", "text": "FilaMan-DB: Matching, checking and sending several entries now shows a progress bar with a percentage." },
-          { "type": "improvement", "text": "Selection bar for filaments, spools and locations: a new ✕ button clears the selection. The buttons are more compact and wrap cleanly." }
+          { "type": "improvement", "text": "Selection bar for filaments, spools and locations: a new ✕ button clears the selection. The buttons are more compact and wrap cleanly." },
+          { "type": "improvement", "text": "FilaMan-DB: All buttons related to the FilaMan-DB (sending, matching, import, community print profiles, setup) are now consistently violet, so they are easy to spot. In the send dialog, the \"That's it\" button next to similar entries stays on one line and aligned to the right again." }
         ]
       }
     },
