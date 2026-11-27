@@ -25,7 +25,7 @@ const features = ['match', 'import', 'submit', 'profiles', 'rate', 'sync'] as co
             <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3H3v10h10v-3M9 3h4v4M13 3 7 9"/></svg></a>
         </div>
       </div>
-      <svg viewBox="0 0 420 260" role="img" data-i18n-aria-label="fdbConnect.page.heroAlt" aria-label="FilaMan exchanges data with the FilaMan-DB and the community">
+      <svg class="fdbp-hero-art" viewBox="0 0 420 275" role="img" data-i18n-aria-label="fdbConnect.page.heroAlt" aria-label="FilaMan exchanges data with the FilaMan-DB and the community">
         <defs>
           <linearGradient id="fdbp-hg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" style="stop-color:var(--accent)"></stop><stop offset="1" style="stop-color:var(--accent-2)"></stop></linearGradient>
           <radialGradient id="fdbp-glow"><stop offset="0" style="stop-color:var(--accent-2);stop-opacity:.35"></stop><stop offset="1" style="stop-color:var(--accent-2);stop-opacity:0"></stop></radialGradient>
@@ -57,7 +57,7 @@ const features = ['match', 'import', 'submit', 'profiles', 'rate', 'sync'] as co
         </g>
         <g class="fdbp-svg-avatar-dot"><circle cx="270" cy="228" r="4"></circle><circle cx="310" cy="236" r="4"></circle><circle cx="350" cy="228" r="4"></circle><circle cx="390" cy="217" r="3.5"></circle></g>
         <path d="M310 226 L310 196" class="fdbp-svg-line" stroke-width="1.5" stroke-dasharray="3 4"></path>
-        <text x="340" y="258" text-anchor="middle" class="fdbp-svg-muted" font-size="10" data-i18n="fdbConnect.page.heroCommunity">Community reviews &amp; shares</text>
+        <text x="330" y="270" text-anchor="middle" class="fdbp-svg-muted" font-size="10" data-i18n="fdbConnect.page.heroCommunity">Community reviews &amp; shares</text>
       </svg>
     </section>
 
@@ -149,9 +149,9 @@ const features = ['match', 'import', 'submit', 'profiles', 'rate', 'sync'] as co
       background: linear-gradient(120deg, color-mix(in srgb, var(--accent) 14%, var(--bg-elevated)), color-mix(in srgb, var(--accent-2) 8%, var(--bg-elevated))) !important; }
     .fdbp-hero h1 { margin: 0 0 12px; font-size: 2rem; line-height: 1.15; font-family: var(--font-serif); }
     .fdbp-hero p { margin: 0 0 20px; color: var(--text-muted); }
-    .fdbp-hero svg { width: 100%; height: auto; }
+    .fdbp-hero-art { width: 100%; height: auto; }
     .fdbp-tag { display: block; margin-bottom: 8px; font-size: .7rem; letter-spacing: .1em; text-transform: uppercase; color: var(--accent-3); }
-    .fdbp-cta, .fdbp-actions { display: flex; flex-wrap: wrap; gap: 10px; }
+    .fdbp-cta, .fdbp-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
     .fdbp-sec { padding: 28px 32px; }
     .fdbp-sec h2 { margin: 0 0 6px; font-size: 1.2rem; }
     .fdbp-sub { margin: 0 0 20px; max-width: 70ch; color: var(--text-muted); font-size: .9rem; }
