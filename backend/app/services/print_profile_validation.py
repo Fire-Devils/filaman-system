@@ -34,10 +34,33 @@ PRINT_PROFILE_RANGES: dict[str, tuple[float, float]] = {
 }
 
 
-def find_implausible_values(data: dict[str, Any]) -> list[dict[str, Any]]:
+# Grenzen der FilaMan-DB für Filament-Stammwerte (FilamentCreate/-Update dort).
+# Werte außerhalb lehnt die DB mit 422 ab, darum prüft FilaMan schon vorher.
+FILAMENT_PAYLOAD_RANGES: dict[str, tuple[float, float]] = {
+    "diameter_mm": (0.01, 10),
+    "density_g_cm3": (0.01, 50),
+    "temp_nozzle_min": (0, 500),
+    "temp_nozzle_max": (0, 500),
+    "temp_bed": (0, 200),
+    "fan_speed_min": (0, 100),
+    "fan_speed_max": (0, 100),
+    "chamber_temp": (0, 200),
+    "max_volumetric_speed": (0, 100),
+    "flow_ratio": (0.01, 5),
+    "k_value": (0, 1),
+    "softening_temp": (0, 500),
+    "dry_temp": (0, 200),
+    "dry_time_hours": (0, 168),
+    "nominal_weight_g": (0, 100_000),
+}
+
+
+def find_implausible_values(
+    data: dict[str, Any], ranges: dict[str, tuple[float, float]] | None = None
+) -> list[dict[str, Any]]:
     """Liefert je unplausiblem Feld ``{field, min, max}``; leer, wenn alles passt."""
     problems: list[dict[str, Any]] = []
-    for field, (low, high) in PRINT_PROFILE_RANGES.items():
+    for field, (low, high) in (ranges or PRINT_PROFILE_RANGES).items():
         value = data.get(field)
         if value is None or isinstance(value, bool):
             continue

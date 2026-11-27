@@ -2808,6 +2808,8 @@
       "filamentdb_insufficient_scope": "Dem Token fehlt die nötige Berechtigung.",
       "daily_limit_reached": "Das Tageslimit der FilaMan-DB ist erreicht. Bitte morgen erneut versuchen.",
       "implausible_value": "Unplausibler Wert bei {field} (erlaubt: {min} bis {max}).",
+      "validation_error": "Die FilaMan-DB lehnt den Wert bei {field} ab{range}.",
+      "validation_range": " (erlaubt: {min} bis {max})",
       "filamentdb_unreachable": "Die FilaMan-DB ist nicht erreichbar.",
       "filamentdb_timeout": "Die FilaMan-DB antwortet nicht.",
       "own_profile": "Eigene Profile lassen sich nicht bewerten.",

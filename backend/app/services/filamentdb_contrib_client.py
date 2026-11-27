@@ -101,5 +101,9 @@ def _error_from_response(resp: httpx.Response) -> FilamentDBError:
         if isinstance(loc, list) and loc:
             extra["field"] = str(loc[-1])
         message = str(first.get("msg") or message)
+        ctx = first.get("ctx") if isinstance(first.get("ctx"), dict) else {}
+        for key, target in (("ge", "min"), ("gt", "min"), ("le", "max"), ("lt", "max")):
+            if isinstance(ctx.get(key), (int, float)):
+                extra[target] = ctx[key]
         code = "validation_error"
     return FilamentDBError(resp.status_code, code, message, extra)

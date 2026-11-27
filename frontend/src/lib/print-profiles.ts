@@ -205,7 +205,7 @@ export async function initPrintProfiles(options: PrintProfilesOptions): Promise<
   const canEdit = !!user && hasPermission(user, 'filaments:update')
   const form = dialog.querySelector('form') as HTMLFormElement
   const formBody = dialog.querySelector('[data-pp-body]') as HTMLElement
-  const title = dialog.querySelector('[data-pp-title]') as HTMLElement
+  const title = dialog.querySelector('#print-profile-dialog-title, h2') as HTMLElement | null
   bindFormDialog(dialog)
   let profiles: PrintProfile[] = []
   let printers: PrinterOption[] = []
@@ -246,7 +246,7 @@ export async function initPrintProfiles(options: PrintProfilesOptions): Promise<
 
   function openForm(profile: PrintProfile | null) {
     editingId = profile?.id ?? null
-    title.textContent = t(profile ? 'printProfiles.editTitle' : 'printProfiles.addTitle')
+    if (title) title.textContent = t(profile ? 'printProfiles.editTitle' : 'printProfiles.addTitle')
     formBody.innerHTML = renderProfileForm(profile, printers)
     dialog.showModal()
   }

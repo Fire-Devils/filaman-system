@@ -103,6 +103,9 @@ describe('FilaMan-DB contribution rendering', () => {
     expect(limit).toContain('daily limit')
     expect(contribErrorMessage(new ApiError(400, 'something_else', 'Backend text'))).toBe('Backend text')
     expect(contribErrorMessage(new Error('boom'))).toBe('boom')
+    const invalid = contribErrorMessage(new ApiError(422, 'validation_error', 'Input should be less than or equal to 200', { field: 'temp_bed', max: 200 }))
+    expect(invalid).not.toContain('Input should')
+    expect(invalid).toContain('200')
   })
 
   it('describes token status', () => {

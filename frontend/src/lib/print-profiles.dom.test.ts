@@ -1,0 +1,39 @@
+// @vitest-environment happy-dom
+import { describe, expect, it, vi } from 'vitest'
+
+vi.mock('./api', () => ({
+  api: {
+    get: vi.fn(async (path: string) => (path.startsWith('/printers') ? { items: [{ id: 3, name: 'MK4' }] } : [])),
+  },
+}))
+vi.mock('./auth', async importOriginal => ({
+  ...await importOriginal<typeof import('./auth')>(),
+  getMe: vi.fn(async () => ({ is_superadmin: true, permissions: [] })),
+}))
+vi.mock('./filamentdb-contrib', () => ({ mountContributeControl: vi.fn(async () => undefined) }))
+
+import { initPrintProfiles } from './print-profiles'
+
+describe('initPrintProfiles', () => {
+  it('opens the dialog when "Add print profile" is clicked', async () => {
+    // Same markup as PrintProfiles.astro + FormDialog.astro (heading without data-pp-title).
+    document.body.innerHTML = `
+      <section id="print-profiles"><button type="button" class="hidden" data-pp-add>Add</button>
+        <div data-fdb-filament-contrib></div><div data-pp-list></div></section>
+      <dialog id="print-profile-dialog"><header><h2 id="print-profile-dialog-title">Add</h2></header>
+        <form><div data-pp-body></div><button type="button" data-pp-cancel>Cancel</button></form></dialog>`
+    const mount = document.getElementById('print-profiles') as HTMLElement
+    const dialog = document.getElementById('print-profile-dialog') as HTMLDialogElement
+    const showModal = vi.fn(() => dialog.setAttribute('open', ''))
+    dialog.showModal = showModal
+
+    const handle = await initPrintProfiles({ mount, dialog, filamentId: 7 })
+    await handle.reload()
+    const add = mount.querySelector('[data-pp-add]') as HTMLButtonElement
+    expect(add.classList.contains('hidden')).toBe(false)
+
+    add.click()
+    expect(showModal).toHaveBeenCalledOnce()
+    expect(dialog.querySelector('#pp-printer')).not.toBeNull()
+  })
+})

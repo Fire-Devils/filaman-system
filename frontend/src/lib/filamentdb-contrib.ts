@@ -101,11 +101,13 @@ export function noTokenNoticeHtml(): string {
 export function contribErrorMessage(error: unknown): string {
   if (error instanceof ApiError) {
     const key = `fdbContrib.errors.${error.code}`
-    const text = t(key, {
-      field: String(error.detail?.field ?? ''),
-      min: String(error.detail?.min ?? ''),
-      max: String(error.detail?.max ?? ''),
-    })
+    const field = error.detail?.field ? fieldLabel(String(error.detail.field)) : ''
+    const min = error.detail?.min ?? ''
+    const max = error.detail?.max ?? ''
+    const range = error.code === 'validation_error' && max !== ''
+      ? t('fdbContrib.errors.validation_range', { min: String(min === '' ? 0 : min), max: String(max) })
+      : ''
+    const text = t(key, { field, min: String(min), max: String(max), range })
     if (text !== key) return text
     const blocker = `fdbContrib.blockers.${error.code}`
     const blockerText = t(blocker)

@@ -469,6 +469,39 @@ async def test_preview_contains_no_spool_or_private_data(auth_client, fake_db, e
 
 
 @pytest.mark.asyncio
+async def test_preview_blocks_filament_values_outside_db_limits(auth_client, fake_db, entities, db_session):
+    client, csrf = auth_client
+    await _save_token(client, csrf)
+    entities["mfr"].custom_fields = {"filamentdb_id": 7}
+    entities["fil"].bed_temp_range_c = {"min": 250, "max": 250}
+    await db_session.commit()
+    resp = await client.post(
+        f"{BASE}/contributions/preview",
+        json={"type": "filament", "local_id": entities["fil"].id},
+        headers=_h(csrf),
+    )
+    assert resp.status_code == 200, resp.text
+    blockers = [b for b in resp.json()["blockers"] if b["code"] == "implausible_value"]
+    assert blockers == [
+        {"code": "implausible_value", "message": "temp_bed must be between 0 and 200", "field": "temp_bed", "min": 0, "max": 200}
+    ]
+
+
+def test_db_validation_error_carries_field_and_limit():
+    import httpx
+
+    from app.services.filamentdb_contrib_client import _error_from_response
+
+    resp = httpx.Response(
+        422,
+        json={"detail": [{"type": "less_than_equal", "loc": ["body", "data", "temp_bed"], "msg": "Input should be less than or equal to 200", "ctx": {"le": 200}}]},
+    )
+    err = _error_from_response(resp)
+    assert err.code == "validation_error"
+    assert err.extra == {"field": "temp_bed", "max": 200}
+
+
+@pytest.mark.asyncio
 async def test_preview_reports_dependencies_and_blockers(auth_client, fake_db, entities, db_session):
     client, csrf = auth_client
     await _save_token(client, csrf)

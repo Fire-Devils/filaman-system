@@ -2807,6 +2807,8 @@
       "filamentdb_insufficient_scope": "The token lacks the required permission.",
       "daily_limit_reached": "The FilaMan-DB daily limit is reached. Please try again tomorrow.",
       "implausible_value": "Implausible value for {field} (allowed: {min} to {max}).",
+      "validation_error": "The FilaMan-DB rejects the value for {field}{range}.",
+      "validation_range": " (allowed: {min} to {max})",
       "filamentdb_unreachable": "The FilaMan-DB is not reachable.",
       "filamentdb_timeout": "The FilaMan-DB is not responding.",
       "own_profile": "You cannot rate your own profiles.",

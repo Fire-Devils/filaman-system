@@ -34,7 +34,10 @@ from app.models import (
     User,
 )
 from app.services.filamentdb_contrib_client import FilamentDBError, fdb_request
-from app.services.print_profile_validation import find_implausible_values
+from app.services.print_profile_validation import (
+    FILAMENT_PAYLOAD_RANGES,
+    find_implausible_values,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -350,6 +353,14 @@ async def build(db: AsyncSession, entity_type: str, local_id: int) -> Build:
                 payload["material_id"] = material_id
             result.payload = payload
             result.can_check = bool(mfr_remote)
+        for problem in find_implausible_values(result.payload or {}, FILAMENT_PAYLOAD_RANGES):
+            result.blockers.append(
+                {
+                    "code": "implausible_value",
+                    "message": f"{problem['field']} must be between {problem['min']} and {problem['max']}",
+                    **problem,
+                }
+            )
 
     else:  # print_profile
         profile = await _get_profile(db, local_id)

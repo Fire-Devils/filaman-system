@@ -2807,6 +2807,8 @@
       "filamentdb_insufficient_scope": "Le jeton n'a pas l'autorisation requise.",
       "daily_limit_reached": "La limite quotidienne de FilaMan-DB est atteinte. Réessayez demain.",
       "implausible_value": "Valeur peu plausible pour {field} (autorisé : {min} à {max}).",
+      "validation_error": "La FilaMan-DB refuse la valeur de {field}{range}.",
+      "validation_range": " (autorisé : {min} à {max})",
       "filamentdb_unreachable": "FilaMan-DB est injoignable.",
       "filamentdb_timeout": "FilaMan-DB ne répond pas.",
       "own_profile": "Vous ne pouvez pas noter vos propres profils.",
