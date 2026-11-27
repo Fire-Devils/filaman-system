@@ -99,6 +99,10 @@ import FormDialog from '../components/FormDialog.astro'
         <div id="chart-materials" class="dashboard-chart"><p data-i18n="common.loading">Loading...</p></div>
       </FormSection>
     </div>
+    <div id="dashboard-hidden-widgets" class="dashboard-hidden-area hidden">
+      <h3 class="dashboard-hidden-title" data-i18n="dashboard.hiddenWidgets">Hidden</h3>
+      <div id="dashboard-hidden-grid" class="dashboard-hidden-grid"></div>
+    </div>
   </div>
 
   <FormDialog id="spool-modal" handbook="dashboardLowStock" titleId="modal-title" titleKey="dashboard.lowAndEmptySpools" title="Low & Empty Spools" wide>
@@ -147,6 +151,24 @@ import FormDialog from '../components/FormDialog.astro'
     .dashboard-widgets :global(.dashboard-drag-handle) { display: none; flex-shrink: 0; align-items: center; justify-content: center; width: 28px; height: 28px; margin-inline-end: 6px; padding: 0; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--bg-elevated); color: var(--text-muted); font-size: 1rem; line-height: 1; cursor: grab; touch-action: none; user-select: none; }
     .dashboard-widgets :global(.dashboard-drag-handle:focus-visible) { outline: 2px solid var(--accent); outline-offset: 2px; }
     .dashboard-widgets.is-editing :global(.dashboard-drag-handle) { display: inline-flex; }
+    .dashboard-hidden-area { margin-top: var(--section-gap); }
+    .dashboard-hidden-title { margin: 0 0 8px; font-size: 0.8rem; letter-spacing: 0.04em; text-transform: uppercase; color: var(--text-muted); }
+    .dashboard-hidden-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px; align-items: start; }
+    .dashboard-hidden-area :global([data-widget]) { outline: 2px dashed var(--accent); outline-offset: -2px; }
+    .dashboard-hidden-area :global(.fm-section-header:has(> .dashboard-eye-btn)) { justify-content: flex-start; }
+    .dashboard-hidden-area :global(.dashboard-eye-btn) { display: inline-flex; flex-shrink: 0; align-items: center; justify-content: center; width: 28px; height: 28px; margin-inline-start: auto; padding: 0; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--bg-elevated); color: var(--text-muted); cursor: pointer; }
+    .dashboard-hidden-area :global(.dashboard-eye-btn svg) { width: 16px; height: 16px; }
+    .dashboard-hidden-area :global(.is-widget-hidden) { opacity: 0.5; }
+    .dashboard-hidden-area :global(.is-widget-hidden .fm-section-body) { display: none; }
+    .dashboard-hidden-area :global(.dashboard-drag-handle), .dashboard-hidden-area :global(.dashboard-chart-range) { display: none; }
+    .dashboard-widgets.is-editing :global(.dashboard-chart-range) { display: none; }
+    .dashboard-widgets :global(.dashboard-eye-btn) { display: none; flex-shrink: 0; align-items: center; justify-content: center; width: 28px; height: 28px; margin-inline-start: auto; padding: 0; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--bg-elevated); color: var(--text-muted); cursor: pointer; }
+    .dashboard-widgets :global(.dashboard-eye-btn:focus-visible) { outline: 2px solid var(--accent); outline-offset: 2px; }
+    .dashboard-widgets.is-editing :global(.dashboard-eye-btn) { display: inline-flex; }
+    .dashboard-widgets :global(.dashboard-eye-btn svg) { width: 16px; height: 16px; }
+    .dashboard-widgets :global(.is-widget-hidden) { opacity: 0.5; }
+    .dashboard-widgets :global(.is-widget-hidden .fm-section-body) { display: none; }
+    .dashboard-widgets.is-editing :global(.is-widget-hidden .dashboard-drag-handle) { display: none; }
     .dashboard-widgets.is-editing :global([data-widget]) { outline: 2px dashed var(--accent); outline-offset: -2px; }
     .dashboard-widgets :global(.fm-section-header:has(> .dashboard-drag-handle)) { justify-content: flex-start; }
     .dashboard-widgets :global(.fm-section-header > .dashboard-chart-range) { margin-inline-start: auto; }
@@ -316,15 +338,41 @@ import FormDialog from '../components/FormDialog.astro'
       .map(card => [card.dataset.widget!, card] as const))
     const baseWidgetIds = [...widgetCards.keys()]
 
+    const EYE_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>'
+    const EYE_OFF_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/><path d="M3 3l18 18"/></svg>'
+
     function widgetTitle(card: HTMLElement): string {
       return card.querySelector('h2')?.textContent?.trim() || card.dataset.widget || ''
     }
 
-    function orderedCards(): HTMLElement[] {
-      return applyWidgetOrder(baseWidgetIds, widgetOrder).map(id => widgetCards.get(id)!)
+    // While arranging, hidden cards are shown too and sorted after all visible ones.
+    function orderedIds(): string[] {
+      const ids = applyWidgetOrder(baseWidgetIds, widgetOrder)
+      if (!arranging) return ids
+      return [...ids.filter(id => !hiddenWidgets.has(id)), ...ids.filter(id => hiddenWidgets.has(id))]
     }
 
-    function renderLayout(items: HTMLElement[] = orderedCards()) {
+    function visibleCards(): HTMLElement[] {
+      return orderedIds().filter(id => !hiddenWidgets.has(id)).map(id => widgetCards.get(id)!)
+    }
+
+    function hiddenCards(): HTMLElement[] {
+      return orderedIds().filter(id => hiddenWidgets.has(id)).map(id => widgetCards.get(id)!)
+    }
+
+    // While arranging, hidden cards live in their own area below the dashboard, never in the layout.
+    function syncHiddenArea() {
+      const area = document.getElementById('dashboard-hidden-widgets')
+      const grid = document.getElementById('dashboard-hidden-grid')
+      if (!area || !grid) return
+      const cards = arranging ? hiddenCards() : []
+      cards.forEach(card => grid.append(card))
+      area.classList.toggle('hidden', cards.length === 0)
+    }
+
+    function renderLayout(visibleItems: HTMLElement[] = visibleCards()) {
+      syncHiddenArea()
+      const items = arranging ? visibleItems : orderedIds().map(id => widgetCards.get(id)!)
       widgetsContainer.classList.toggle('is-masonry', dashboardLayout === 'masonry')
       if (dashboardLayout === 'masonry') layoutMasonry(widgetsContainer, items, masonryColumnCount(widgetsContainer.clientWidth))
       else layoutGrid(widgetsContainer, items)
@@ -347,7 +395,15 @@ import FormDialog from '../components/FormDialog.astro'
     function applyWidgetVisibility() {
       const cards = document.querySelectorAll<HTMLElement>('[data-widget]')
       cards.forEach(card => {
-        card.style.display = hiddenWidgets.has(card.dataset.widget!) ? 'none' : ''
+        const hidden = hiddenWidgets.has(card.dataset.widget!)
+        card.style.display = hidden && !arranging ? 'none' : ''
+        card.classList.toggle('is-widget-hidden', hidden)
+        const eye = card.querySelector<HTMLButtonElement>('.dashboard-eye-btn')
+        if (eye) {
+          eye.innerHTML = hidden ? EYE_OFF_SVG : EYE_SVG
+          eye.title = t(hidden ? 'dashboard.showWidget' : 'dashboard.hideWidget')
+          eye.setAttribute('aria-label', eye.title)
+        }
       })
       document.querySelectorAll<HTMLInputElement>('#widget-menu-list input[data-widget-id]').forEach(box => {
         box.checked = !hiddenWidgets.has(box.dataset.widgetId!)
@@ -364,7 +420,11 @@ import FormDialog from '../components/FormDialog.astro'
           (col as HTMLElement).style.display = visible.includes(col) ? '' : 'none'
         })
       }
-      scheduleLayout()
+      syncHiddenArea()
+      if (!dragging) {
+        if (dashboardLayout === 'masonry') scheduleLayout()
+        else renderLayout()
+      }
     }
 
     async function savePreferences(patch: Record<string, unknown>, rollback: () => void) {
@@ -415,13 +475,14 @@ import FormDialog from '../components/FormDialog.astro'
 
     function setArranging(on: boolean) {
       arranging = on
+      applyWidgetVisibility()
       widgetsContainer.classList.toggle('is-editing', on)
       document.getElementById('widget-edit-done')!.classList.toggle('hidden', !on)
       document.getElementById('widget-edit-hint')!.classList.toggle('hidden', !on)
     }
 
     function sameOrder(ids: string[]) {
-      const current = applyWidgetOrder(baseWidgetIds, widgetOrder)
+      const current = orderedIds()
       return ids.length === current.length && ids.every((id, i) => id === current[i])
     }
 
@@ -437,13 +498,23 @@ import FormDialog from '../components/FormDialog.astro'
     }
 
     function moveWidget(id: string, direction: -1 | 1) {
-      const ids = applyWidgetOrder(baseWidgetIds, widgetOrder)
+      const ids = orderedIds()
       const visible = ids.filter(widget => !hiddenWidgets.has(widget))
       const neighbour = visible[visible.indexOf(id) + direction]
       if (neighbour === undefined || !ids.includes(id)) return
       ids.splice(ids.indexOf(id), 1)
       ids.splice(ids.indexOf(neighbour) + (direction > 0 ? 1 : 0), 0, id)
       commitOrder(ids)
+    }
+
+    // Eye button in arrange mode: hides a card, or shows it again at the end of the visible ones.
+    function toggleWidgetFromEye(id: string) {
+      if (!hiddenWidgets.has(id)) { void setWidgetVisible(id, false); return }
+      const rest = orderedIds().filter(widget => widget !== id)
+      const visibleCount = rest.filter(widget => !hiddenWidgets.has(widget)).length
+      rest.splice(visibleCount, 0, id)
+      void setWidgetVisible(id, true)
+      commitOrder(rest)
     }
 
     function menuHeading(text: string): HTMLElement {
@@ -473,12 +544,13 @@ import FormDialog from '../components/FormDialog.astro'
         if (!arranging || dragging) return
         dragging = true
         startWidgetDrag(event, card, {
-          getItems: orderedCards,
+          getItems: visibleCards,
           relayout: items => renderLayout(items),
           commit: (ids, cancelled) => {
             dragging = false
             if (cancelled) renderLayout()
-            else commitOrder(ids)
+            else if (ids.every((id, i) => id === visibleCards()[i]?.dataset.widget)) renderLayout()
+            else commitOrder([...ids, ...hiddenCards().map(c => c.dataset.widget!)])
             renderCharts()
           },
           signal: panelSignal,
@@ -493,6 +565,14 @@ import FormDialog from '../components/FormDialog.astro'
         handle.focus()
       })
       header.prepend(handle)
+      const eye = document.createElement('button')
+      eye.type = 'button'
+      eye.className = 'dashboard-eye-btn'
+      eye.innerHTML = EYE_SVG
+      eye.title = t('dashboard.hideWidget')
+      eye.setAttribute('aria-label', eye.title)
+      eye.addEventListener('click', () => { if (arranging) toggleWidgetFromEye(card.dataset.widget!) })
+      header.append(eye)
     }
 
     function buildWidgetControls() {
