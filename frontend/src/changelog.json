@@ -5,9 +5,11 @@
       "date": "",
       "changes": {
         "de": [
+          { "type": "feature", "text": "Oben rechts gibt es jetzt auf jeder Seite einen Link zum Handbuch (docu.filaman.app). Er öffnet sich in einem neuen Tab." },
           { "type": "fix", "text": "FilaMan-DB-Infoseite: Die Einrichtungsanleitung für Admins sagt jetzt \"Schalte FilamentDB Import ein\" statt \"Installiere und aktiviere\". Das Plugin ist ein Systemplugin und muss nicht installiert werden." }
         ],
         "en": [
+          { "type": "feature", "text": "Every page now has a link to the manual (docu.filaman.app) in the top right corner. It opens in a new tab." },
           { "type": "fix", "text": "FilaMan-DB info page: The admin setup steps now say \"Switch on FilamentDB Import\" instead of \"Install and activate\". The plugin is a system plugin and does not need to be installed." }
         ]
       }

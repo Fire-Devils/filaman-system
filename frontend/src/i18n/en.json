@@ -9,6 +9,7 @@
     "loading": "Loading..."
   },
   "nav": {
+    "handbook": "Manual",
     "dashboard": "Dashboard",
     "filaments": "Filaments",
     "manufacturers": "Manufacturers",
