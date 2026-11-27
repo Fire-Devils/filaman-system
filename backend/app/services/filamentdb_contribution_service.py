@@ -1041,6 +1041,33 @@ async def import_community_profile(
         raise _err(502, "filamentdb_error", "Unexpected answer from FilaMan-DB")
     await _get_filament(db, filament_id)
     printer = await _get_printer(db, printer_id) if printer_id else None
+    existing = (
+        await db.execute(
+            select(FilamentDBContribution.id)
+            .join(
+                FilamentPrinterProfile,
+                FilamentPrinterProfile.id == FilamentDBContribution.local_id,
+            )
+            .where(
+                FilamentDBContribution.entity_type == "print_profile",
+                FilamentDBContribution.status == "linked",
+                FilamentDBContribution.remote_entity_id == remote_profile_id,
+                FilamentPrinterProfile.filament_id == filament_id,
+                (
+                    FilamentPrinterProfile.printer_id.is_(None)
+                    if printer_id is None
+                    else FilamentPrinterProfile.printer_id == printer_id
+                ),
+            )
+            .limit(1)
+        )
+    ).first()
+    if existing is not None:
+        raise _err(
+            409,
+            "already_imported",
+            "This community profile was already imported for this filament and printer",
+        )
     model_id = _int(remote.get("printer_model_id"))
     if not model_id and printer is not None:
         model_id = printer.filamentdb_printer_model_id

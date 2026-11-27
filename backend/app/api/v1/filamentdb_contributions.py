@@ -34,6 +34,9 @@ EntityType = Literal["manufacturer", "filament", "printer_model", "print_profile
 
 _CONTRIBUTE = RequirePermission("filamentdb:contribute")
 
+# Ab diesem Score gilt ein Treffer der DB als echtes Duplikat.
+_DUPLICATE_SCORE = 0.65
+
 
 _LINK_PERMISSION = {
     "manufacturer": "manufacturers:update",
@@ -227,6 +230,72 @@ async def refresh_contributions(db: DBSession, principal=_CONTRIBUTE):
     await _guard(svc.refresh(db, principal.user_id))
     stmt = select(FilamentDBContribution).order_by(FilamentDBContribution.id.desc())
     return await _list_for(db, principal, stmt)
+
+
+# ── Druckplatten vorschlagen ─────────────────────────────────────────────
+
+
+class BuildPlateSuggestBody(BaseModel):
+    name: str = Field(..., min_length=1, max_length=100)
+
+
+@router.post("/build-plates/suggest")
+async def suggest_build_plate(
+    data: BuildPlateSuggestBody,
+    db: DBSession,
+    principal=_CONTRIBUTE,
+):
+    """Druckplatte als Vorschlag an die FilaMan-DB; bei starkem Treffer nur Hinweis."""
+    name = data.name.strip()
+    if not name:
+        raise HTTPException(
+            status_code=422,
+            detail={"code": "name_required", "message": "Name must not be empty"},
+        )
+    token = await _guard(svc.require_token(db, principal.user_id))
+    payload = {"name": name}
+    check = await _guard(
+        fdb_request(
+            "POST", "/contribute/check", token=token, json={"type": "build_plate", "data": payload}
+        )
+    )
+    matches = check.get("matches", []) if isinstance(check, dict) else []
+    best = None
+    for m in matches:
+        if not isinstance(m, dict):
+            continue
+        score = m.get("score")
+        if isinstance(score, bool) or not isinstance(score, (int, float)):
+            continue
+        if score >= _DUPLICATE_SCORE and (best is None or score > best["score"]):
+            best = m
+    if best is not None:
+        label = best.get("label") or best.get("name")
+        return {
+            "status": "duplicate",
+            "match": {
+                "id": best.get("id") if isinstance(best.get("id"), int) else None,
+                "name": label if isinstance(label, str) else None,
+                "score": best["score"],
+            },
+        }
+    await _guard(
+        fdb_request(
+            "POST",
+            "/contribute",
+            token=token,
+            json={
+                "type": "build_plate",
+                "data": payload,
+                "client_ref": f"filaman-build-plate-{name.lower()}"[:100],
+                "shown_matches": [],
+            },
+        )
+    )
+    from app.api.v1.filamentdb_proxy import clear_build_plates_cache
+
+    clear_build_plates_cache()
+    return {"status": "submitted"}
 
 
 # ── Community-Druckprofile ───────────────────────────────────────────────

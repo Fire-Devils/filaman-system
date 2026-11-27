@@ -359,3 +359,91 @@ async def test_update_cannot_remove_model(auth_client, entities):
     assert unlink.status_code == 200
     assert unlink.json()["printer_id"] is None
     assert unlink.json()["printer_model"] == "X1C"
+
+
+# ─── Proxy /filamentdb/build-plates ───────────────────────────────────────────
+
+
+@pytest.fixture
+def clean_plate_cache():
+    filamentdb_proxy.clear_build_plates_cache()
+    yield
+    filamentdb_proxy.clear_build_plates_cache()
+
+
+@pytest.mark.asyncio
+async def test_build_plates_fetched_cached_and_page_size_capped(
+    auth_client, plugin_row, clean_plate_cache, monkeypatch
+):
+    client, _ = auth_client
+    calls = []
+
+    async def fake_get(path, params=None, *, client=None):
+        calls.append((path, params))
+        return {
+            "items": [
+                {"id": 1, "name": "Textured PEI", "slug": "textured-pei"},
+                {"id": 2, "name": "Cool Plate"},
+                {"id": "x", "name": "bad id"},
+                {"id": 3, "name": "  "},
+            ],
+            "total": 4,
+            "page": 1,
+            "page_size": 200,
+        }
+
+    monkeypatch.setattr(filamentdb_proxy, "_proxy_get", fake_get)
+    first = await client.get("/api/v1/filamentdb/build-plates")
+    second = await client.get("/api/v1/filamentdb/build-plates")
+    assert first.json() == {
+        "available": True,
+        "items": [{"id": 1, "name": "Textured PEI"}, {"id": 2, "name": "Cool Plate"}],
+    }
+    assert second.json() == first.json()
+    assert calls == [("/build-plates", {"page": 1, "page_size": 200})]
+    assert all(p["page_size"] <= 200 for _, p in calls)
+
+
+@pytest.mark.asyncio
+async def test_build_plates_unavailable_without_plugin_or_db(
+    auth_client, plugin_row, db_session, clean_plate_cache, monkeypatch
+):
+    from fastapi import HTTPException
+
+    client, _ = auth_client
+
+    async def failing_get(path, params=None, *, client=None):
+        raise HTTPException(status_code=502, detail={"code": "filamentdb_unreachable"})
+
+    monkeypatch.setattr(filamentdb_proxy, "_proxy_get", failing_get)
+    down = await client.get("/api/v1/filamentdb/build-plates")
+    assert down.status_code == 200
+    assert down.json() == {"available": False, "items": []}
+
+    plugin_row.is_active = False
+    await db_session.commit()
+    off = await client.get("/api/v1/filamentdb/build-plates")
+    assert off.json() == {"available": False, "items": []}
+
+
+@pytest.mark.asyncio
+async def test_build_plates_stale_cache_when_db_goes_away(
+    auth_client, plugin_row, clean_plate_cache, monkeypatch
+):
+    from fastapi import HTTPException
+
+    client, _ = auth_client
+
+    async def ok_get(path, params=None, *, client=None):
+        return {"items": [{"id": 1, "name": "Smooth PEI"}], "total": 1}
+
+    monkeypatch.setattr(filamentdb_proxy, "_proxy_get", ok_get)
+    assert (await client.get("/api/v1/filamentdb/build-plates")).json()["available"] is True
+
+    async def failing_get(path, params=None, *, client=None):
+        raise HTTPException(status_code=504, detail={"code": "filamentdb_timeout"})
+
+    monkeypatch.setattr(filamentdb_proxy, "_proxy_get", failing_get)
+    monkeypatch.setitem(filamentdb_proxy._build_plates_cache, "at", 0.0)  # abgelaufen
+    stale = await client.get("/api/v1/filamentdb/build-plates")
+    assert stale.json() == {"available": True, "items": [{"id": 1, "name": "Smooth PEI"}]}

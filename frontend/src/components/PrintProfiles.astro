@@ -10,9 +10,19 @@ import FormDialog from './FormDialog.astro'
 </section>
 
 <section id="community-profiles" class="print-profiles fm-detail-content hidden">
-  <h2 style="font-weight: 600; margin: 0;" data-i18n="fdbContrib.community.title">Community print profiles</h2>
+  <div class="pp-heading">
+    <h2 style="font-weight: 600; margin: 0;" data-i18n="fdbContrib.community.title">Community print profiles</h2>
+    <button type="button" class="fm-btn fm-btn-outline fm-btn-sm hidden" data-cp-search-open data-i18n="fdbContrib.community.searchOpen">Search more profiles</button>
+  </div>
   <div data-cp-list></div>
 </section>
+
+<FormDialog id="community-search-dialog" titleId="community-search-dialog-title" titleKey="fdbContrib.community.searchTitle" title="Search community profiles" wide>
+  <div data-cs-body></div>
+  <div class="pp-actions">
+    <button type="button" class="fm-btn fm-btn-outline" data-dialog-close data-i18n="common.close">Close</button>
+  </div>
+</FormDialog>
 
 <FormDialog id="print-profile-dialog" titleId="print-profile-dialog-title" titleKey="printProfiles.addTitle" title="Add print profile" wide>
   <form id="print-profile-form" novalidate={false}>
@@ -64,5 +74,11 @@ import FormDialog from './FormDialog.astro'
   .printer-model-results li:hover, .printer-model-results li:focus { background: var(--bg-soft, rgba(128,128,128,.15)); outline: none; }
   .printer-model-suggest { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; font-size: 0.875rem; }
   .printer-model-hint { margin: 4px 0 0; font-size: 0.8125rem; color: var(--text-muted); }
+  .cp-search-form { display: grid; grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr)); gap: 10px 12px; align-items: end; margin-bottom: 12px; }
+  .cp-search-more { margin-top: 12px; }
+  .cp-adopt-panel { margin-top: 16px; padding: 12px 16px; border: 1px solid var(--border); border-radius: var(--radius-sm); display: grid; gap: 8px; }
+  .cp-adopt-panel h3 { margin: 0; font-size: .95rem; font-weight: 600; }
+  .cp-adopt-panel.hidden, .cp-search-more.hidden, .pp-plate-suggest.hidden { display: none; }
+  .pp-plate-suggest { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 6px; }
   .pp-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
 </style>
