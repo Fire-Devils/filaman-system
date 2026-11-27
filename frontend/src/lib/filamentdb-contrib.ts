@@ -91,14 +91,49 @@ export function statusText(entry: Pick<ContribRef, 'status' | 'depends_on'>): st
 
 const STATUS_ICONS = { success: '✓', error: '✕', warning: '…' } as const
 
-/** Statuspille; mit `compact` nur ein Symbol (Text als Tooltip und für Screenreader). */
+let tooltipInstalled = false
+
+/** Ein gemeinsamer Tooltip für alle `.fdb-status`/`.fdb-link-none` mit data-tooltip: erscheint sofort beim Hover/Fokus. */
+function ensureFdbTooltip(): void {
+  if (tooltipInstalled || typeof document === 'undefined') return
+  tooltipInstalled = true
+  const selector = '.fdb-status[data-tooltip], .fdb-link-none[data-tooltip]'
+  let tip: HTMLDivElement | null = null
+  const hide = () => { if (tip) tip.hidden = true }
+  const show = (target: Element | null) => {
+    const el = target instanceof Element ? target.closest<HTMLElement>(selector) : null
+    if (!el) return hide()
+    if (!tip) {
+      tip = document.createElement('div')
+      tip.className = 'fdb-tooltip'
+      tip.setAttribute('role', 'tooltip')
+      document.body.appendChild(tip)
+    }
+    tip.textContent = el.dataset.tooltip ?? ''
+    tip.hidden = false
+    const rect = el.getBoundingClientRect()
+    const half = Math.min(tip.offsetWidth, window.innerWidth - 16) / 2
+    const x = Math.max(8 + half, Math.min(window.innerWidth - 8 - half, rect.left + rect.width / 2))
+    const below = rect.top - tip.offsetHeight - 8 < 0
+    tip.toggleAttribute('data-below', below)
+    tip.style.left = `${x}px`
+    tip.style.top = `${below ? rect.bottom + 8 : rect.top - 8}px`
+  }
+  document.addEventListener('mouseover', (event) => show(event.target as Element))
+  document.addEventListener('focusin', (event) => show(event.target as Element))
+  document.addEventListener('focusout', hide)
+  window.addEventListener('scroll', hide, true)
+}
+
+/** Statuspille; mit `compact` nur ein Symbol (Text als sofortiger Tooltip und für Screenreader). */
 export function statusBadge(entry: Pick<ContribRef, 'status' | 'depends_on'>, options: { compact?: boolean } = {}): string {
   const tone = ['approved', 'published', 'linked'].includes(entry.status)
     ? 'success'
     : ['rejected', 'error'].includes(entry.status) ? 'error' : 'warning'
   const text = escapeHtml(statusText(entry))
   if (options.compact) {
-    return `<span class="fdb-status fdb-status-icon fdb-status-${tone}" data-fdb-status="${escapeHtml(entry.status)}" title="${text}" aria-label="${text}" role="img">${STATUS_ICONS[tone]}</span>`
+    ensureFdbTooltip()
+    return `<span class="fdb-status fdb-status-icon fdb-status-${tone}" data-fdb-status="${escapeHtml(entry.status)}" data-tooltip="${text}" aria-label="${text}" role="img">${STATUS_ICONS[tone]}</span>`
   }
   return `<span class="fdb-status fdb-status-${tone}" data-fdb-status="${escapeHtml(entry.status)}">${text}</span>`
 }
@@ -121,12 +156,13 @@ export function fdbFilterValues(customFields: Record<string, unknown> | null | u
 
 /** Verknüpfungsspalte der Listen: grünes Häkchen bei positiver filamentdb_id, sonst gedämpfter Strich. */
 export function fdbLinkCell(customFields: Record<string, unknown> | null | undefined): string {
+  ensureFdbTooltip()
   if (isFdbLinked(customFields)) {
     const text = escapeHtml(t('fdbContrib.linkedYes'))
-    return `<span class="fdb-status fdb-status-icon fdb-status-success" data-fdb-linked="true" title="${text}" aria-label="${text}" role="img">${STATUS_ICONS.success}</span>`
+    return `<span class="fdb-status fdb-status-icon fdb-status-success" data-fdb-linked="true" data-tooltip="${text}" aria-label="${text}" role="img">${STATUS_ICONS.success}</span>`
   }
   const text = escapeHtml(t('fdbContrib.linkedNo'))
-  return `<span class="fdb-link-none" data-fdb-linked="false" title="${text}" aria-label="${text}" role="img">–</span>`
+  return `<span class="fdb-link-none" data-fdb-linked="false" data-tooltip="${text}" aria-label="${text}" role="img">–</span>`
 }
 
 export type SendButtonMode = 'send' | 'update' | null

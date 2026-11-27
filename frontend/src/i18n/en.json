@@ -2751,12 +2751,12 @@
     "selectRecords": "Select records first"
   },
   "fdbContrib": {
-    "linkedYes": "Linked to FilaMan-DB",
+    "linkedYes": "Linked to FilaMan-DB – the data comes from or is stored in the community database.",
     "filterLinked": "Linked",
     "filterUnlinked": "Not linked",
     "filterPending": "In review",
     "filterRejected": "Rejected",
-    "linkedNo": "Not linked",
+    "linkedNo": "Not linked to FilaMan-DB yet – use “Send to FilaMan-DB” to share this entry with the community.",
     "title": "Send to FilaMan-DB",
     "send": "Send to FilaMan-DB",
     "sendUpdate": "Send update",

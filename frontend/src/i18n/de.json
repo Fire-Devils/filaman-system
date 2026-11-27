@@ -2752,12 +2752,12 @@
     "selectRecords": "Zuerst Datensätze auswählen"
   },
   "fdbContrib": {
-    "linkedYes": "Mit FilaMan-DB verknüpft",
+    "linkedYes": "Mit FilaMan-DB verknüpft – die Daten stammen aus der Community-Datenbank bzw. sind dort hinterlegt.",
     "filterLinked": "Verknüpft",
     "filterUnlinked": "Nicht verknüpft",
     "filterPending": "In Prüfung",
     "filterRejected": "Abgelehnt",
-    "linkedNo": "Nicht verknüpft",
+    "linkedNo": "Noch nicht mit FilaMan-DB verknüpft – über „An FilaMan-DB senden“ kannst du den Eintrag mit der Community teilen.",
     "title": "An FilaMan-DB senden",
     "send": "An FilaMan-DB senden",
     "sendUpdate": "Update senden",

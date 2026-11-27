@@ -120,7 +120,7 @@ describe('FilaMan-DB contribution rendering', () => {
     const compact = statusBadge({ status: 'approved' }, { compact: true })
     expect(compact).toContain('fdb-status-icon')
     expect(compact).toContain('>✓</span>')
-    expect(compact).toMatch(/title="[^"]+"/)
+    expect(compact).toMatch(/data-tooltip="[^"]+"/)
   })
 
   it('shows the registration hint with a link to db.filaman.app', () => {
