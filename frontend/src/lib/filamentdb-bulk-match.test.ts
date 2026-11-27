@@ -6,6 +6,7 @@ import {
   groupItems,
   planApply,
   renderResult,
+  renderDetails,
   runApply,
   sortMatches,
   chunk,
@@ -105,6 +106,42 @@ describe('bulk match logic', () => {
     expect(html.indexOf('value="8"')).toBeLessThan(html.indexOf('value="7"'))
     expect(html).toContain('data-bm-all="suggested"')
     expect(html).not.toContain('data-bm-all="blocked"')
+  })
+
+  it('offers unlink on linked rows, reject on suggestions, and details under each match', () => {
+    const response: BulkCheckResponse = {
+      type: 'manufacturer', items, total: 4,
+      counts: { linked: 1, suggested: 1, none: 1, blocked: 1 },
+    }
+    const html = renderResult(response, defaultSelection(items))
+    expect(html).toContain('data-bm-unlink="1"')
+    expect(html).toContain('data-bm-dismiss="2"')
+    expect(html).toContain('data-bm-details="1:5"')
+    expect(html).toContain('data-bm-details="2:8"')
+    expect(html).toContain('data-bm-details="2:7"')
+    const hidden = renderResult(response, defaultSelection(items), new Set([2]))
+    expect(hidden).not.toContain('data-bm-row="2"')
+  })
+
+  it('ignores dismissed rows when planning', () => {
+    const selection = defaultSelection(items)
+    expect(planApply(items, selection, new Set([2]))).toEqual([])
+  })
+
+  it('renders a comparison table with escaped values', () => {
+    const filament: BulkMatchItem = {
+      local_id: 9, label: 'F', category: 'suggested', blockers: [],
+      local: { manufacturer: 'Bambu <i>Lab</i>', material: 'PLA', color_name: 'Red', color_hex: '#FF0000', diameter_mm: 1.75 },
+      matches: [{ type: 'filament', id: 4, label: 'X', score: 0.5, details: { manufacturer: '<script>x</script>', material: 'PLA Silk' } }],
+    }
+    const html = renderDetails('filament', filament, filament.matches[0], { color_name: { name: 'Blue' } })
+    expect(html).not.toContain('<script>')
+    expect(html).not.toContain('<i>')
+    expect(html).toContain('&lt;script&gt;')
+    expect(html).toContain('PLA Silk')
+    expect(html).toContain('Blue')
+    expect(html).toContain('1.75')
+    expect(html).toContain('50 %')
   })
 
   it('shows an empty note when nothing is left to match', () => {

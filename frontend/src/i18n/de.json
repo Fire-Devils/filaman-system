@@ -3007,6 +3007,20 @@
     "bulkMatchProgress": "Übernehme {done} von {total} …",
     "bulkMatchDone": "Übernommen: {done}, Fehler oder nicht gesendet: {failed}",
     "bulkMatch": {
+      "unlink": "Verknüpfung lösen",
+      "dismiss": "Ablehnen",
+      "details": "Details",
+      "detailsLoading": "Details werden geladen …",
+      "detailsRemote": "FilaMan-DB",
+      "detailsLocal": "Lokal",
+      "field": {
+        "manufacturer": "Hersteller",
+        "material": "Material",
+        "color_name": "Farbname",
+        "color_hex": "Farbe (Hex)",
+        "diameter_mm": "Durchmesser (mm)",
+        "score": "Übereinstimmung"
+      },
       "progress": "{done} von {total} geprüft …",
       "cancel": "Abbrechen",
       "allLinked": "Alles schon verknüpft: Es gibt nichts abzugleichen.",

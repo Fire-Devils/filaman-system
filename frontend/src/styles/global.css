@@ -1444,6 +1444,11 @@ body:has(.fm-header-filter-panel.open)::after {
 #fdb-contrib-dialog .fdb-bm-name { display: flex; align-items: center; gap: 8px; }
 #fdb-contrib-dialog .fdb-bm-options { display: grid; gap: 4px; margin: 6px 0 0 26px; }
 #fdb-contrib-dialog .fdb-bm-option { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+#fdb-contrib-dialog .fdb-bm-details { margin: 2px 0 6px 26px; font-size: 0.85rem; }
+#fdb-contrib-dialog .fdb-bm-details summary { cursor: pointer; color: var(--text-muted, inherit); }
+#fdb-contrib-dialog .fdb-bm-compare { border-collapse: collapse; margin-top: 4px; }
+#fdb-contrib-dialog .fdb-bm-compare th, #fdb-contrib-dialog .fdb-bm-compare td { padding: 2px 10px 2px 0; text-align: left; vertical-align: top; }
+#fdb-contrib-dialog .fdb-bm-compare tbody th { font-weight: 500; color: var(--text-muted, inherit); }
 
 .pc-print-prompt.hidden,
 .pc-print-prompt-stack [hidden] {

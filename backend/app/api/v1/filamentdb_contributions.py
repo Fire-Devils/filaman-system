@@ -234,6 +234,19 @@ async def bulk_check_contributions(
     )
 
 
+class UnlinkRequest(BaseModel):
+    type: Literal["manufacturer", "filament"]
+    local_id: int
+
+
+@router.post("/contributions/unlink")
+async def unlink_contribution(data: UnlinkRequest, db: DBSession, principal=_CONTRIBUTE):
+    """Nimmt eine Verknüpfung zurück (entfernt nur ``custom_fields.filamentdb_id``)."""
+    await ensure_any_permission(db, principal, _LINK_PERMISSION[data.type])
+    await _guard(svc.unlink(db, data.type, data.local_id))
+    return {"type": data.type, "local_id": data.local_id, "unlinked": True}
+
+
 async def _sees_all(db: DBSession, principal) -> bool:
     """Wer ``admin:system`` hat, sieht die Beiträge aller User."""
     if principal.is_superadmin:

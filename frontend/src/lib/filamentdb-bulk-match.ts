@@ -22,6 +22,8 @@ export interface BulkMatchItem {
   matches: ContribMatch[]
   blockers: { code: string; message: string }[]
   linked_remote_id?: number
+  /** Lokale Vergleichsdaten für die Detailzeile. */
+  local?: Record<string, string | number | null>
 }
 
 export interface BulkCheckResponse {
@@ -150,9 +152,10 @@ export function defaultSelection(items: BulkMatchItem[]): BulkSelection {
 }
 
 /** Auswahl in die Aufrufe von /contributions/submit übersetzen (nur angehakte, nicht blockierte Zeilen). */
-export function planApply(items: BulkMatchItem[], selection: BulkSelection): BulkAction[] {
+export function planApply(items: BulkMatchItem[], selection: BulkSelection, dismissed: Set<number> = new Set()): BulkAction[] {
   const actions: BulkAction[] = []
   for (const item of items) {
+    if (dismissed.has(item.local_id)) continue
     if (!selection.checked.has(item.local_id)) continue
     if (item.category !== 'suggested' && item.category !== 'none') continue
     const shown = sortMatches(item.matches).map(m => ({ type: m.type, id: m.id, score: m.score }))
@@ -202,6 +205,49 @@ export async function runApply(
 
 const e = escapeHtml
 
+const DETAIL_KEYS: Record<string, string[]> = {
+  manufacturer: ['manufacturer', 'manufacturer_name', 'brand'],
+  material: ['material', 'material_name', 'material_key', 'material_type'],
+  color_name: ['color_name', 'color', 'manufacturer_color_name'],
+  color_hex: ['hex_color', 'color_hex', 'hex', 'hex_code'],
+  diameter_mm: ['diameter_mm', 'diameter'],
+}
+
+function scalar(value: unknown): string {
+  if (typeof value === 'string' || typeof value === 'number') return String(value)
+  if (value && typeof value === 'object' && typeof (value as { name?: unknown }).name === 'string') return (value as { name: string }).name
+  return ''
+}
+
+function pickField(source: Record<string, unknown> | undefined, field: string): string {
+  for (const key of DETAIL_KEYS[field] ?? [field]) {
+    const value = scalar(source?.[key])
+    if (value) return value
+  }
+  return ''
+}
+
+/** Vergleichstabelle DB-Eintrag gegen lokales Objekt; alle Werte escaped, fehlende als „–“. */
+export function renderDetails(
+  type: BulkMatchType,
+  item: BulkMatchItem,
+  match: ContribMatch,
+  remote?: Record<string, unknown>,
+): string {
+  const source: Record<string, unknown> = { ...(match.details ?? {}), ...(remote ?? {}) }
+  const fields = type === 'manufacturer' ? ['manufacturer'] : ['manufacturer', 'material', 'color_name', 'color_hex', 'diameter_mm']
+  const dash = '–'
+  const cell = (value: string) => e(value || dash)
+  const rows = fields.map(field => `<tr><th scope="row">${e(t(`fdbContrib.bulkMatch.field.${field}`))}</th><td>${cell(field === 'manufacturer' && type === 'manufacturer' ? (scalar(match.label) || pickField(source, field)) : pickField(source, field))}</td><td>${cell(scalar(item.local?.[field]))}</td></tr>`)
+  const score = match.score == null ? dash : `${Math.round(match.score * 100)} %`
+  rows.push(`<tr><th scope="row">${e(t('fdbContrib.bulkMatch.field.score'))}</th><td>${e(score)}</td><td>${dash}</td></tr>`)
+  return `<table class="fdb-bm-compare"><thead><tr><th></th><th>${e(t('fdbContrib.bulkMatch.detailsRemote'))}</th><th>${e(t('fdbContrib.bulkMatch.detailsLocal'))}</th></tr></thead><tbody>${rows.join('')}</tbody></table>`
+}
+
+function detailsBlock(item: BulkMatchItem, match: ContribMatch): string {
+  return `<details class="fdb-bm-details" data-bm-details="${item.local_id}:${Number(match.id)}"><summary>${e(t('fdbContrib.bulkMatch.details'))}</summary><div data-bm-details-body></div></details>`
+}
+
 function sectionHeader(category: BulkCategory, count: number, selectable: boolean): string {
   const tools = selectable
     ? `<span class="fdb-bm-tools"><button type="button" class="fm-btn fm-btn-fdb fm-btn-sm" data-bm-all="${category}">${e(t('fdbContrib.bulkMatchSelectAll'))}</button> <button type="button" class="fm-btn fm-btn-fdb fm-btn-sm" data-bm-nothing="${category}">${e(t('fdbContrib.bulkMatchSelectNone'))}</button></span>`
@@ -210,22 +256,30 @@ function sectionHeader(category: BulkCategory, count: number, selectable: boolea
 }
 
 function renderRow(item: BulkMatchItem, selection: BulkSelection): string {
+  const reject = item.category === 'suggested'
+    ? ` <button type="button" class="fm-btn fm-btn-outline fm-btn-sm" data-bm-dismiss="${item.local_id}">${e(t('fdbContrib.bulkMatch.dismiss'))}</button>`
+    : ''
   const checked = selection.checked.has(item.local_id) ? ' checked' : ''
   const name = `bm-choice-${item.local_id}`
   const current = selection.choice.get(item.local_id)
-  const radios = sortMatches(item.matches).map(m => `<label class="fdb-bm-option"><input type="radio" name="${name}" value="${Number(m.id)}" data-bm-choice="${item.local_id}"${current === m.id ? ' checked' : ''}> <span>${e(m.label ?? `#${m.id}`)}</span> ${matchScoreBadge(m.score)}</label>`).join('')
+  const radios = sortMatches(item.matches).map(m => `<label class="fdb-bm-option"><input type="radio" name="${name}" value="${Number(m.id)}" data-bm-choice="${item.local_id}"${current === m.id ? ' checked' : ''}> <span>${e(m.label ?? `#${m.id}`)}</span> ${matchScoreBadge(m.score)}</label>${detailsBlock(item, m)}`).join('')
   const newOption = item.category === 'suggested'
     ? `<label class="fdb-bm-option"><input type="radio" name="${name}" value="new" data-bm-choice="${item.local_id}"${current === 'new' ? ' checked' : ''}> <span>${e(t('fdbContrib.bulkMatchNoneOfThese'))}</span></label>`
     : ''
-  return `<li class="fdb-bm-row" data-bm-row="${item.local_id}"><label class="fdb-bm-name"><input type="checkbox" data-bm-check="${item.local_id}"${checked}> <strong>${e(item.label)}</strong></label>${radios || newOption ? `<div class="fdb-bm-options">${radios}${newOption}</div>` : ''}</li>`
+  return `<li class="fdb-bm-row" data-bm-row="${item.local_id}"><label class="fdb-bm-name"><input type="checkbox" data-bm-check="${item.local_id}"${checked}> <strong>${e(item.label)}</strong></label>${reject}${radios || newOption ? `<div class="fdb-bm-options">${radios}${newOption}</div>` : ''}</li>`
 }
 
-export function renderResult(response: BulkCheckResponse, selection: BulkSelection): string {
-  const groups = groupItems(response.items)
+function renderLinkedRow(item: BulkMatchItem): string {
+  const match = item.matches.find(m => m.id === item.linked_remote_id) ?? item.matches[0]
+  return `<li data-bm-linked="${item.local_id}">${e(item.label)}${match?.label ? ` <span class="fm-field-hint">→ ${e(match.label)}</span>` : ''} <button type="button" class="fm-btn fm-btn-outline fm-btn-sm" data-bm-unlink="${item.local_id}">${e(t('fdbContrib.bulkMatch.unlink'))}</button>${match ? detailsBlock(item, match) : ''}</li>`
+}
+
+export function renderResult(response: BulkCheckResponse, selection: BulkSelection, dismissed: Set<number> = new Set()): string {
+  const groups = groupItems(response.items.filter(i => !dismissed.has(i.local_id)))
   const parts: string[] = []
   if (!response.total) return `<p class="fm-field-hint" role="status">${e(t('fdbContrib.bulkMatchNothing'))}</p>`
   if (groups.linked.length) {
-    parts.push(`<section class="fdb-bm-section" data-bm-section="linked">${sectionHeader('linked', groups.linked.length, false)}<ul>${groups.linked.map(i => `<li>${e(i.label)}${i.matches[0]?.label ? ` <span class="fm-field-hint">→ ${e(i.matches[0].label)}</span>` : ''}</li>`).join('')}</ul></section>`)
+    parts.push(`<section class="fdb-bm-section" data-bm-section="linked">${sectionHeader('linked', groups.linked.length, false)}<ul>${groups.linked.map(renderLinkedRow).join('')}</ul></section>`)
   }
   for (const category of ['suggested', 'none'] as const) {
     if (!groups[category].length) continue
@@ -264,16 +318,18 @@ export async function openBulkMatchDialog(options: BulkMatchOptions): Promise<vo
 
   let response: BulkCheckResponse | null = null
   let selection: BulkSelection = { checked: new Set(), choice: new Map() }
+  const dismissed = new Set<number>()
+  const remoteCache = new Map<string, Record<string, unknown>>()
 
   function updateApplyButton() {
-    const count = response ? planApply(response.items, selection).length : 0
+    const count = response ? planApply(response.items, selection, dismissed).length : 0
     submit.textContent = t('fdbContrib.bulkMatchApply', { count })
     submit.disabled = count === 0
   }
 
   function showResult(notes = '') {
     if (!response) return
-    body.innerHTML = `${notes}<p role="status"><strong>${e(t('fdbContrib.bulkMatchSummary', { ...response.counts, total: response.total }))}</strong></p>${renderResult(response, selection)}`
+    body.innerHTML = `${notes}<p role="status"><strong>${e(t('fdbContrib.bulkMatchSummary', { ...response.counts, total: response.total }))}</strong></p>${renderResult(response, selection, dismissed)}`
     if (response.counts.linked) changed = true
     const actionable = response.counts.suggested + response.counts.none
     submit.classList.toggle('hidden', actionable === 0)
@@ -317,7 +373,7 @@ export async function openBulkMatchDialog(options: BulkMatchOptions): Promise<vo
 
   async function onApply() {
     if (!response) return
-    const actions = planApply(response.items, selection)
+    const actions = planApply(response.items, selection, dismissed)
     if (!actions.length) return
     submit.classList.add('hidden')
     const progress = (done: number, total: number) => {
@@ -337,8 +393,66 @@ export async function openBulkMatchDialog(options: BulkMatchOptions): Promise<vo
 
   submit.addEventListener('click', onStart)
 
-  body.addEventListener('click', event => {
+  async function loadDetails(box: HTMLDetailsElement) {
+    if (!response || box.dataset.bmLoaded) return
+    const [localId, matchId] = (box.dataset.bmDetails ?? '').split(':').map(Number)
+    const item = response.items.find(i => i.local_id === localId)
+    const match = item?.matches.find(m => m.id === matchId)
+    const target = box.querySelector<HTMLElement>('[data-bm-details-body]')
+    if (!item || !match || !target) return
+    box.dataset.bmLoaded = '1'
+    const key = `${response.type}:${matchId}`
+    if (!match.details || !Object.keys(match.details).length) {
+      if (!remoteCache.has(key)) {
+        target.textContent = t('fdbContrib.bulkMatch.detailsLoading')
+        try {
+          const path = response.type === 'filament' ? 'filaments' : 'manufacturers'
+          remoteCache.set(key, await api.get<Record<string, unknown>>(`/filamentdb/${path}/${matchId}`))
+        } catch {
+          remoteCache.set(key, {})
+        }
+      }
+    }
+    target.innerHTML = renderDetails(response.type, item, match, remoteCache.get(key))
+  }
+
+  body.addEventListener('toggle', event => {
+    const box = event.target as HTMLDetailsElement
+    if (box.dataset?.bmDetails && box.open) void loadDetails(box)
+  }, true)
+
+  body.addEventListener('click', async event => {
     const target = event.target as HTMLElement
+    const dismiss = target.closest<HTMLElement>('[data-bm-dismiss]')
+    if (dismiss && response) {
+      const id = Number(dismiss.dataset.bmDismiss)
+      dismissed.add(id)
+      selection.checked.delete(id)
+      showResult()
+      return
+    }
+    const unlink = target.closest<HTMLButtonElement>('[data-bm-unlink]')
+    if (unlink && response) {
+      const id = Number(unlink.dataset.bmUnlink)
+      const item = response.items.find(i => i.local_id === id)
+      if (!item) return
+      unlink.disabled = true
+      try {
+        await api.post('/filamentdb/contributions/unlink', { type: response.type, local_id: id })
+      } catch (error) {
+        unlink.disabled = false
+        showResult(`<div class="fm-alert-error" role="alert">${e(contribErrorMessage(error))}</div>`)
+        return
+      }
+      item.category = 'suggested'
+      item.linked_remote_id = undefined
+      response.counts.linked = Math.max(0, response.counts.linked - 1)
+      response.counts.suggested += 1
+      selection.checked.add(id)
+      selection.choice.set(id, sortMatches(item.matches)[0].id)
+      showResult()
+      return
+    }
     if (target.closest('[data-bm-cancel]')) {
       cancelRequested = true
       const cancel = body.querySelector<HTMLButtonElement>('[data-bm-cancel]')
