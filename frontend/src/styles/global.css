@@ -1746,6 +1746,8 @@ html[data-theme="light"] .pc-print-prompt-age:not(.is-expiring) {
 .fm-nav-icon svg {
   width: 22px;
   height: 22px;
+}
+.fm-nav-icon svg:not([fill]) {
   fill: currentColor;
 }
 .fm-nav-item:hover .fm-nav-icon,
