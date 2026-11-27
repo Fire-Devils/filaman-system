@@ -156,3 +156,41 @@ async def test_preferences_validation(auth_client):
     assert (await client.patch(PREFS, json={"dashboard_widget_order": ["bad id"]}, headers=hdr)).status_code == 422
     too_many = [f"w{i}" for i in range(51)]
     assert (await client.patch(PREFS, json={"dashboard_widget_order": too_many}, headers=hdr)).status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_preferences_widget_sizes(auth_client):
+    client, csrf = auth_client
+    hdr = {"X-CSRF-Token": csrf}
+    assert (await client.get(PREFS)).json()["dashboard_widget_sizes"] == {}
+
+    sizes = {"a": {"w": 2, "h": "m"}, "b": {"w": "full", "h": "auto"}, "c": {"w": 1, "h": "l"}}
+    resp = await client.patch(PREFS, json={"dashboard_widget_sizes": sizes}, headers=hdr)
+    assert resp.status_code == 200
+    assert resp.json()["dashboard_widget_sizes"] == sizes
+    assert (await client.get(PREFS)).json()["dashboard_widget_sizes"] == sizes
+
+    # Fields left out of a patch stay untouched; an empty object resets the sizes.
+    resp = await client.patch(PREFS, json={"dashboard_layout": "masonry"}, headers=hdr)
+    assert resp.json()["dashboard_widget_sizes"] == sizes
+    resp = await client.patch(PREFS, json={"dashboard_widget_sizes": {}}, headers=hdr)
+    assert resp.json()["dashboard_widget_sizes"] == {}
+
+
+@pytest.mark.asyncio
+async def test_preferences_widget_sizes_validation(auth_client):
+    client, csrf = auth_client
+    hdr = {"X-CSRF-Token": csrf}
+    bad = [
+        {"a": {"w": 4, "h": "auto"}},
+        {"a": {"w": "wide", "h": "auto"}},
+        {"a": {"w": 1, "h": "xl"}},
+        {"a": {"w": 1, "h": "auto", "extra": 1}},
+        {"bad id": {"w": 1, "h": "auto"}},
+        {"a": "full"},
+        {f"w{i}": {"w": 1, "h": "auto"} for i in range(51)},
+    ]
+    for value in bad:
+        resp = await client.patch(PREFS, json={"dashboard_widget_sizes": value}, headers=hdr)
+        assert resp.status_code == 422, value
+    assert (await client.get(PREFS)).json()["dashboard_widget_sizes"] == {}

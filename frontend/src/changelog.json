@@ -1,6 +1,34 @@
 {
   "versions": [
     {
+      "version": "UNRELEASED",
+      "date": "",
+      "changes": {
+        "de": [
+          { "type": "feature", "text": "FilaMan-DB-Abgleich: Automatisch verknüpfte Einträge haben jetzt \"Verknüpfung lösen\"; danach erscheint der Treffer als Vorschlag. Unter jedem Treffer zeigt eine aufklappbare Detailzeile die Daten des DB-Eintrags (Hersteller, Material, Farbe, Durchmesser, Score) im Vergleich zum lokalen Eintrag. Vorschläge lassen sich mit \"Ablehnen\" im Dialog ausblenden." },
+          { "type": "fix", "text": "FilaMan-DB: Der Abgleich \"Auf Aktualisierungen prüfen\" schlug bei allen verknüpften Filamenten die Währung EUR vor, weil die DB auch ohne Preis immer EUR mitschickt. Die Währung wird jetzt nur noch zusammen mit einem Preis übernommen. Sie gehört zum Preis des Filaments; Spulenpreise und Restwerte nutzen weiter die Währung aus den App-Einstellungen." },
+          { "type": "feature", "text": "Dashboard: Unter \"Anpassen\" → \"Anordnen\" stellst Du jetzt für jede Karte Breite (1, 2 oder 3 Spalten oder ganze Zeile) und Höhe (Automatisch, Klein, Mittel, Groß) ein, per Zieh-Griff unten rechts an der Karte oder über die Auswahlfelder. Das gilt im Raster und in der Kachel-Ansicht (Masonry), wo Karten jetzt auch über mehrere Spalten gehen. Die Größen werden pro Benutzer gespeichert; auf dem Handy sind alle Karten einspaltig." },
+          { "type": "fix", "text": "Admin-Übersicht und FilaMan-DB-Infoseite: Seit dem Hilfe-Knopf lagen Überschrift, Karten und Gefahrenzone nebeneinander in einer Zeile. Die Seiten sind wieder richtig aufgebaut." },
+          { "type": "fix", "text": "Drucker: Hersteller und Modell des Druckers gingen beim erneuten Öffnen des Bearbeiten-Dialogs verloren und wurden beim nächsten Speichern gelöscht. Sie bleiben jetzt erhalten. Wer seit 2.12.0 einen Drucker bearbeitet hat, trägt das Druckermodell bitte noch einmal ein." },
+          { "type": "improvement", "text": "Druckereinstellungen: Plugins können die Beschriftungen und Erklärungen ihrer Einstellungen jetzt übersetzen. Moonraker 0.4.0, Bambu Lab 2.14.0 und Bambuddy 1.4.0 bringen Deutsch und Französisch mit." },
+          { "type": "fix", "text": "Moonraker 0.4.0: Drucker ohne AMS, z. B. ein Snapmaker U1 mit vier Toolheads, zeigen keine vier zusätzlichen AMS-Slots mehr. Die Slots aus \"Anzahl virtueller Slots\" gibt es nur noch für eine QIDI BOX oder ein von Hand eingetragenes Slot-Sensor-Objekt." },
+          { "type": "fix", "text": "Admin-Übersicht, FilaMan-DB-Infoseite und SQLite-Backups passen jetzt auf Handys, ohne seitlich zu scrollen. Bei den SQLite-Backups steht auf schmalen Bildschirmen der Dateiname in einer eigenen Zeile, darunter Datum, Größe und die Knöpfe \"Wiederherstellen\" und \"Löschen\"." },
+          { "type": "fix", "text": "Seitenleiste: Die Symbole für AMS View, Spulen-Protokoll und Druckaufträge erscheinen wieder als Umriss mit Details statt als graue Fläche." }
+        ],
+        "en": [
+          { "type": "feature", "text": "FilaMan-DB matching: automatically linked entries now have \"Unlink\"; the match then shows up as a suggestion. Each match has an expandable details row comparing the DB entry (manufacturer, material, color, diameter, score) with the local one. Suggestions can be hidden with \"Reject\" in the dialog." },
+          { "type": "fix", "text": "FilaMan-DB: The \"Check for updates\" comparison proposed EUR as the currency for every linked filament, because the DB always sends EUR, even without a price. The currency is now only taken over together with a price. It belongs to the filament's price; spool prices and remaining values keep using the currency from the app settings." },
+          { "type": "feature", "text": "Dashboard: Under \"Customize\" → \"Arrange\" you can now set each card's width (1, 2 or 3 columns or the full row) and height (Automatic, Small, Medium, Large), with the resize handle at the bottom right of the card or with the selects. This works in the grid and in the tiles (masonry) view, where cards can now span several columns. Sizes are saved per user; on phones all cards use a single column." },
+          { "type": "fix", "text": "Admin overview and FilaMan-DB info page: Since the help button was added, the heading, cards and danger zone sat side by side in a single row. The pages are laid out correctly again." },
+          { "type": "fix", "text": "Printers: The printer's manufacturer and model disappeared when the edit dialog was opened again and were deleted on the next save. They are kept now. If you edited a printer since 2.12.0, please enter its printer model again." },
+          { "type": "improvement", "text": "Printer settings: Plugins can now translate the labels and explanations of their settings. Moonraker 0.4.0, Bambu Lab 2.14.0 and Bambuddy 1.4.0 include German and French." },
+          { "type": "fix", "text": "Moonraker 0.4.0: Printers without an AMS, such as a Snapmaker U1 with four toolheads, no longer show four extra AMS slots. Slots from \"Virtual Slot Count\" are only added for a QIDI BOX or a manually set slot sensor object." },
+          { "type": "fix", "text": "The admin overview, the FilaMan-DB info page and SQLite Backups now fit on phones without horizontal scrolling. On narrow screens, each SQLite backup shows its filename on its own line, with the date, size and the \"Restore\" and \"Delete\" buttons below." },
+          { "type": "fix", "text": "Sidebar: The icons for AMS View, Spool Log and Print Jobs show as outlines with their details again instead of solid gray shapes." }
+        ]
+      }
+    },
+    {
       "version": "2.13.0",
       "date": "",
       "changes": {

@@ -1,78 +1,84 @@
 ---
 import Layout from '../../layouts/Layout.astro'
+import AdminHeader from '../../components/AdminHeader.astro'
 ---
 
 <Layout panel="admin" title="FilaMan - Admin">
   <style>
+    .admin-navigation, .admin-versions { display: grid; gap: var(--section-gap); }
+    .admin-navigation { grid-template-columns: repeat(auto-fit, minmax(min(100%, 200px), 1fr)); }
+    .admin-versions { grid-template-columns: repeat(auto-fill, minmax(min(100%, 200px), 1fr)); }
+    .admin-overview .fm-card { padding: clamp(var(--section-padding), 4vw, 24px); overflow-wrap: anywhere; }
+    .admin-navigation > a { display: block; color: inherit; text-decoration: none; }
     .admin-navigation h2 { display: flex; align-items: flex-start; gap: 10px; font-size: 1.2rem; font-weight: 600; margin-bottom: 8px; }
     .admin-navigation h2 svg { width: 22px; height: 22px; flex: 0 0 22px; margin-top: 2px; fill: currentColor; }
-    .admin-navigation h2 span { min-width: 0; overflow-wrap: anywhere; }
+    .admin-version-row { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 12px; }
   </style>
-  <div class="fm-admin-page">
-  <h1 style="font-size: 1.8rem; font-weight: 700; margin: 0; margin-bottom: 24px; font-family: var(--font-serif);" data-i18n="admin.title">Admin</h1>
+  <div class="fm-admin-page admin-overview">
+  <AdminHeader titleKey="admin.title" title="Admin" back={false} />
   
-  <div class="admin-navigation" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px;">
-    <a href="/admin/users" class="fm-card fm-card-hover" style="padding: 24px; text-decoration: none; display: block; color: inherit;">
+  <div class="admin-navigation">
+    <a href="/admin/users" class="fm-card fm-card-hover">
       <h2><svg aria-hidden="true" focusable="false"><use href="/icons.svg?v=2#icon-users" /></svg><span data-i18n="admin.users">Users</span></h2>
       <p style="font-size: 0.85rem; color: var(--text-muted);" data-i18n="admin.usersDesc">Manage user accounts</p>
     </a>
-    <a href="/admin/roles" class="fm-card fm-card-hover" style="padding: 24px; text-decoration: none; display: block; color: inherit;">
+    <a href="/admin/roles" class="fm-card fm-card-hover">
       <h2><svg aria-hidden="true" focusable="false"><use href="/icons.svg?v=2#icon-admin" /></svg><span data-i18n="admin.rolesPerms">Roles & Permissions</span></h2>
       <p style="font-size: 0.85rem; color: var(--text-muted);" data-i18n="admin.rolesPermsDesc">Manage roles and permissions</p>
     </a>
-    <a href="/admin/devices" class="fm-card fm-card-hover" style="padding: 24px; text-decoration: none; display: block; color: inherit;">
+    <a href="/admin/devices" class="fm-card fm-card-hover">
       <h2><svg aria-hidden="true" focusable="false"><use href="/icons.svg?v=2#icon-device" /></svg><span data-i18n="admin.devices">Devices</span></h2>
       <p style="font-size: 0.85rem; color: var(--text-muted);" data-i18n="admin.devicesDesc">Manage device tokens</p>
     </a>
-    <a href="/admin/extra-fields" class="fm-card fm-card-hover" style="padding: 24px; text-decoration: none; display: block; color: inherit;">
+    <a href="/admin/extra-fields" class="fm-card fm-card-hover">
       <h2><svg aria-hidden="true" focusable="false"><use href="/icons.svg?v=2#icon-fields" /></svg><span data-i18n="admin.extraFieldsTitle">Extra Fields</span></h2>
       <p style="font-size: 0.85rem; color: var(--text-muted);" data-i18n="admin.extraFieldsDesc">System-wide extra fields for spools and filaments</p>
     </a>
-    <a href="/admin/system" class="fm-card fm-card-hover" style="padding: 24px; text-decoration: none; display: block; color: inherit;">
+    <a href="/admin/system" class="fm-card fm-card-hover">
       <h2><svg aria-hidden="true" focusable="false"><use href="/icons.svg?v=2#icon-plugin" /></svg><span data-i18n="admin.systemPlugins">Plugins</span></h2>
       <p style="font-size: 0.85rem; color: var(--text-muted);" data-i18n="admin.systemDesc">Plugins and system management</p>
     </a>
-    <a href="/admin/backup" class="fm-card fm-card-hover" style="padding: 24px; text-decoration: none; display: block; color: inherit;">
+    <a href="/admin/backup" class="fm-card fm-card-hover">
       <h2><svg aria-hidden="true" focusable="false"><use href="/icons.svg?v=2#icon-database" /></svg><span data-i18n="admin.databaseBackup">Database Backup</span></h2>
       <p style="font-size: 0.85rem; color: var(--text-muted);" data-i18n="admin.backupDesc">Export and restore complete database backups</p>
     </a>
-    <a href="/admin/oidc" class="fm-card fm-card-hover" style="padding: 24px; text-decoration: none; display: block; color: inherit;" id="oidc-card">
+    <a href="/admin/oidc" class="fm-card fm-card-hover" id="oidc-card">
       <h2><svg aria-hidden="true" focusable="false"><use href="/icons.svg?v=2#icon-lock" /></svg><span data-i18n="admin.oidc">OIDC / SSO</span></h2>
       <p style="font-size: 0.85rem; color: var(--text-muted);" data-i18n="admin.oidcDesc">Configure OpenID Connect Single Sign-On</p>
       <span id="oidc-https-warning" style="display: none; font-size: 0.8rem; color: var(--error-text); margin-top: 8px; display: none;" data-i18n="admin.oidcHttpsRequired">OIDC requires HTTPS</span>
     </a>
-    <a href="/admin/app-settings" class="fm-card fm-card-hover" style="padding: 24px; text-decoration: none; display: block; color: inherit;">
+    <a href="/admin/app-settings" class="fm-card fm-card-hover">
       <h2><svg aria-hidden="true" focusable="false"><use href="/icons.svg?v=2#icon-settings" /></svg><span data-i18n="admin.appSettings">App Settings</span></h2>
       <p style="font-size: 0.85rem; color: var(--text-muted);" data-i18n="admin.appSettingsDesc">Application-wide settings like login and authentication</p>
     </a>
   </div>
 
   <h2 style="font-size: 1.4rem; font-weight: 700; margin: 32px 0 16px; font-family: var(--font-serif);" data-i18n="admin.versionInfoTitle">System Version</h2>
-  <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 16px;">
-    <div class="fm-card" style="padding: 24px;">
+  <div class="admin-versions">
+    <div class="fm-card">
       <div style="display: grid; gap: 8px;">
-        <div style="display: flex; align-items: center; gap: 12px;">
+        <div class="admin-version-row">
           <span style="font-size: 0.85rem; color: var(--text-muted);" data-i18n="admin.installedVersion">Installed:</span>
           <span id="installed-version" style="font-weight: 600;">...</span>
         </div>
-        <div style="display: flex; align-items: center; gap: 12px;">
+        <div class="admin-version-row">
           <span style="font-size: 0.85rem; color: var(--text-muted);" data-i18n="admin.latestVersion">Latest:</span>
           <span id="latest-version" style="font-weight: 600;">...</span>
         </div>
-        <div id="plugin-updates-row" class="invisible" style="display: flex; align-items: center; gap: 12px;">
+        <div id="plugin-updates-row" class="admin-version-row invisible">
           <span style="font-size: 0.85rem; color: var(--text-muted);" data-i18n="admin.pluginUpdates">Plugin Updates:</span>
           <span id="plugin-update-count" style="font-weight: 600;"></span>
         </div>
-        <a id="firmware-update-row" href="/admin/devices" class="invisible" style="display: flex; align-items: center; gap: 12px; text-decoration: none; color: inherit;">
+        <a id="firmware-update-row" href="/admin/devices" class="admin-version-row invisible" style="text-decoration: none; color: inherit;">
           <span style="font-size: 0.85rem; color: var(--text-muted);" data-i18n="admin.firmwareUpdateRow">New scale firmware:</span>
           <span id="firmware-update-text" style="font-weight: 600; color: var(--error-text);"></span>
         </a>
         <a href="/admin/system/changelog" class="fm-btn fm-btn-outline" style="margin-top: 8px; text-align: center;" data-i18n="admin.viewChangelog">Changelog</a>
       </div>
     </div>
-    <div class="fm-card" style="padding: 24px;">
+    <div class="fm-card">
       <div style="display: grid; gap: 8px;">
-        <div style="display: flex; align-items: center; gap: 12px;">
+        <div class="admin-version-row">
           <span style="font-size: 0.85rem; color: var(--text-muted);" data-i18n="admin.apiVersion">API Version:</span>
           <span id="api-version" style="font-weight: 600;">...</span>
         </div>
@@ -82,7 +88,7 @@ import Layout from '../../layouts/Layout.astro'
   </div>
 
   <h2 style="font-size: 1.4rem; font-weight: 700; margin: 32px 0 16px; color: var(--error-text); font-family: var(--font-serif);" data-i18n="admin.dangerZone">Danger Zone</h2>
-  <div class="fm-card" style="border: 1px solid var(--error-text); padding: 24px;">
+  <div class="fm-card" style="border: 1px solid var(--error-text);">
     <div style="display: flex; justify-content: space-between; align-items: center; gap: 24px; flex-wrap: wrap;">
       <div>
         <h3 style="font-size: 1.05rem; font-weight: 600; margin: 0 0 4px;" data-i18n="admin.killswitchTitle">Delete all data</h3>
@@ -91,7 +97,7 @@ import Layout from '../../layouts/Layout.astro'
       <button
         id="btn-killswitch"
         class="fm-btn"
-        style="background: var(--error-text); color: #fff; white-space: nowrap; flex-shrink: 0;"
+        style="background: var(--error-text); color: #fff;"
         data-i18n="admin.killswitchButton"
       >
         Delete all data

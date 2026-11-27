@@ -1,5 +1,5 @@
 import { escapeHtml } from './extra-fields'
-import { t } from './i18n'
+import { getLang, t } from './i18n'
 
 // Structured config stays read-only because saves replace driver_config wholesale.
 export interface SchemaProperty {
@@ -11,6 +11,7 @@ export interface SchemaProperty {
   enumNames?: string[]
   minimum?: number
   maximum?: number
+  'x-i18n'?: Record<string, { title?: string; description?: string; enumNames?: string[] }>
 }
 
 export interface DriverSchema {
@@ -20,7 +21,12 @@ export interface DriverSchema {
 
 /** Shared controls; each page keeps its own form state and save handler. */
 export function renderDriverConfigFields(schema: DriverSchema, config: Record<string, unknown>, driverKey: string): string {
+  const lang = getLang()
   return Object.entries(schema.properties || {}).map(([key, prop]) => {
+    const tr = prop['x-i18n']?.[lang]
+    const title = tr?.title || prop.title
+    const description = tr?.description || prop.description
+    const enumNames = Array.isArray(tr?.enumNames) ? tr.enumNames : prop.enumNames
     const name = escapeHtml(key)
     const id = `config-${name}`
     const required = schema.required?.includes(key) ? ' required' : ''
@@ -33,14 +39,14 @@ export function renderDriverConfigFields(schema: DriverSchema, config: Record<st
     } else if (prop.type === 'boolean') {
       control = `<input class="fm-checkbox" id="${id}" name="${name}" type="checkbox"${rawValue === true || rawValue === 'true' ? ' checked' : ''}>`
     } else if (Array.isArray(prop.enum)) {
-      const options = prop.enum.map((option, i) => `<option value="${escapeHtml(String(option))}"${String(option) === String(rawValue ?? '') ? ' selected' : ''}>${escapeHtml(String(prop.enumNames?.[i] ?? option))}</option>`).join('')
+      const options = prop.enum.map((option, i) => `<option value="${escapeHtml(String(option))}"${String(option) === String(rawValue ?? '') ? ' selected' : ''}>${escapeHtml(String(enumNames?.[i] ?? option))}</option>`).join('')
       control = `<select class="fm-input" id="${id}" name="${name}"${required}>${options}</select>`
     } else {
       const numeric = prop.type === 'integer' || prop.type === 'number'
       const bounds = numeric ? `${prop.minimum !== undefined ? ` min="${escapeHtml(String(prop.minimum))}"` : ''}${prop.maximum !== undefined ? ` max="${escapeHtml(String(prop.maximum))}"` : ''}` : ''
       control = `<input class="fm-input" id="${id}" name="${name}" type="${numeric ? 'number' : 'text'}" value="${value}"${bounds}${required}>`
     }
-    return `<div><label class="fm-label" for="${id}">${escapeHtml(prop.title || key)}${required ? ' *' : ''}</label>${control}${prop.description ? `<p class="fm-field-hint">${escapeHtml(prop.description)}</p>` : ''}</div>`
+    return `<div><label class="fm-label" for="${id}">${escapeHtml(title || key)}${required ? ' *' : ''}</label>${control}${description ? `<p class="fm-field-hint">${escapeHtml(description)}</p>` : ''}</div>`
   }).join('')
 }
 

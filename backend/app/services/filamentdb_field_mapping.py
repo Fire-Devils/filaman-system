@@ -60,6 +60,10 @@ def standard_filamentdb_fields(
             continue
         # Catalog casing varies; native responses require three uppercase letters.
         if target == "price_currency":
+            # The catalog sends currency "EUR" for every filament, even without
+            # a price; only trust it when a price accompanies it.
+            if data.get("price") is None:
+                continue
             if not isinstance(value, str):
                 continue
             value = value.strip().upper()

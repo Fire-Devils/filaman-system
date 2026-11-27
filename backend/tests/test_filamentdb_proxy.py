@@ -278,6 +278,7 @@ async def test_prepare_filament_returns_all_standard_filamentdb_fields(db_sessio
             ams_compatible="ams,ams-2-pro",
             build_plates="pei,textured-pei",
             currency="EUR",
+            price=20,
         ),
         db_session,
         None,

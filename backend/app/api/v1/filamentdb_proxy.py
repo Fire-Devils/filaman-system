@@ -412,6 +412,12 @@ async def manufacturer_logo(
     })
 
 
+@router.get("/filaments/{filament_id}")
+async def get_filament(filament_id: int, _principal: PrincipalDep):
+    """Read one catalog filament (Detailzeile im Massenabgleich)."""
+    return await _proxy_get(f"/filaments/{filament_id}")
+
+
 @router.get("/filaments")
 async def search_filaments(
     _principal: PrincipalDep,

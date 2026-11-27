@@ -366,21 +366,47 @@ it('applies the saved widget order, hides widgets and keeps unknown widgets at t
   expect(document.querySelectorAll('#dashboard-widgets > [data-widget]').length).toBe(18)
 })
 
-it('distributes widgets over masonry columns by height and keeps left-to-right order', async () => {
-  const heights: Record<string, number> = { spoolStatus: 100, locationStats: 300, lowStockSpools: 100, lowStockFilaments: 100 }
+it('lays masonry cards out on one grid with row spans from their height and respects saved sizes', async () => {
+  const heights: Record<string, number> = { spoolStatus: 100, locationStats: 300 }
   vi.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockImplementation(function (this: HTMLElement) {
     return heights[this.dataset.widget ?? ''] ?? 50
   })
   vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(700)
-  await boot(false, undefined, undefined, undefined, undefined, { dashboard_hidden_widgets: [], dashboard_layout: 'masonry' })
-  const columns = [...document.querySelectorAll('#dashboard-widgets > .dashboard-masonry-col')]
-  expect(document.querySelector('#dashboard-widgets')!.classList.contains('is-masonry')).toBe(true)
-  expect(columns.length).toBe(2)
-  const firstFour = [...document.querySelectorAll<HTMLElement>('[data-widget]')]
-  const column = (id: string) => columns.findIndex(col => col.contains(document.querySelector(`[data-widget="${id}"]`)))
-  // 100 -> left, 300 -> right, then the next two stack into the shorter left column.
-  expect([column('spoolStatus'), column('locationStats'), column('lowStockSpools'), column('lowStockFilaments')]).toEqual([0, 1, 0, 0])
-  expect(firstFour.length).toBe(18)
+  await boot(false, undefined, undefined, undefined, undefined, {
+    dashboard_hidden_widgets: [], dashboard_layout: 'masonry',
+    dashboard_widget_sizes: { spoolStatus: { w: 'full', h: 'm' }, locationStats: { w: 2, h: 'auto' }, bogus: { w: 9, h: 'x' } },
+  })
+  const container = document.querySelector<HTMLElement>('#dashboard-widgets')!
+  expect(container.classList.contains('is-masonry')).toBe(true)
+  expect(container.querySelector('.dashboard-masonry-col')).toBeNull()
+  expect(container.style.getPropertyValue('--dash-cols')).toBe('2')
+  const card = (id: string) => document.querySelector<HTMLElement>(`[data-widget="${id}"]`)!
+  expect(card('spoolStatus').style.gridColumn).toBe('span 2')
+  expect(card('spoolStatus').dataset.h).toBe('m')
+  expect(card('locationStats').style.gridColumn).toBe('span 2')
+  expect(card('lowStockSpools').style.gridColumn).toBe('span 1')
+  expect(card('locationStats').style.gridRow).toMatch(/^span \d+$/)
+  expect(card('locationStats').style.gridRow).not.toBe(card('lowStockSpools').style.gridRow)
+  expect(document.querySelectorAll('#dashboard-widgets > [data-widget]').length).toBe(18)
+})
+
+it('changes a card size with the selects, saves it and drops the entry again at the default', async () => {
+  const fetch = await boot(false, undefined, undefined, undefined, undefined, { dashboard_hidden_widgets: [], dashboard_layout: 'masonry' })
+  document.querySelector<HTMLButtonElement>('#widget-arrange-btn')!.click()
+  const select = (kind: string) => document.querySelector<HTMLSelectElement>(`[data-widget="spoolStatus"] select[data-size="${kind}"]`)!
+  expect(select('w').getAttribute('aria-label')).toContain('dashboard.sizeWidth')
+  select('h').value = 'l'
+  select('h').dispatchEvent(new Event('change'))
+  expect(fetch.api.patch).toHaveBeenLastCalledWith('/me/preferences', { dashboard_widget_sizes: { spoolStatus: { w: 1, h: 'l' } } })
+  expect(document.querySelector<HTMLElement>('[data-widget="spoolStatus"]')!.dataset.h).toBe('l')
+  select('w').value = 'full'
+  select('w').dispatchEvent(new Event('change'))
+  expect(fetch.api.patch).toHaveBeenLastCalledWith('/me/preferences', { dashboard_widget_sizes: { spoolStatus: { w: 'full', h: 'l' } } })
+  select('w').value = '1'
+  select('w').dispatchEvent(new Event('change'))
+  select('h').value = 'auto'
+  select('h').dispatchEvent(new Event('change'))
+  expect(fetch.api.patch).toHaveBeenLastCalledWith('/me/preferences', { dashboard_widget_sizes: {} })
 })
 
 it('saves order and layout through the menu and resets all three together', async () => {
@@ -405,7 +431,7 @@ it('saves order and layout through the menu and resets all three together', asyn
 
   const reset = [...document.querySelectorAll<HTMLButtonElement>('#widget-menu-list button')].find(b => b.textContent === 'dashboard.resetWidgets')!
   reset.click()
-  expect(fetch.api.patch).toHaveBeenLastCalledWith('/me/preferences', { dashboard_hidden_widgets: [], dashboard_widget_order: [], dashboard_layout: 'grid' })
+  expect(fetch.api.patch).toHaveBeenLastCalledWith('/me/preferences', { dashboard_hidden_widgets: [], dashboard_widget_order: [], dashboard_layout: 'grid', dashboard_widget_sizes: {} })
   expect(document.querySelector('#dashboard-widgets')!.classList.contains('is-editing')).toBe(false)
   expect(document.querySelector<HTMLElement>('#dashboard-widgets > [data-widget]')!.dataset.widget).toBe('spoolStatus')
 })

@@ -2067,7 +2067,7 @@ class FilamentDBImportService:
             )
             if fdb_id:
                 custom["filamentdb_id"] = fdb_id
-            if fil_data.get("currency") is not None and "price_currency" not in standard_fields:
+            if fil_data.get("currency") is not None and fil_data.get("price") is not None and "price_currency" not in standard_fields:
                 custom["currency"] = fil_data["currency"]
             for temp_key in (
                 "temp_nozzle_min",
@@ -2221,7 +2221,7 @@ class FilamentDBImportService:
         # Copy before mutation so JSON changes survive the colors helper's flush.
         custom = dict(existing.custom_fields or {})
         # Field names alone do not prove catalog ownership; retain existing user extras.
-        if fil_data.get("currency") is not None and "price_currency" not in standard_fields:
+        if fil_data.get("currency") is not None and fil_data.get("price") is not None and "price_currency" not in standard_fields:
             custom.setdefault("currency", fil_data["currency"])
         for temp_key in (
             "temp_nozzle_min",

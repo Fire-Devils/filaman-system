@@ -499,6 +499,8 @@ async def test_catalog_import_and_update_capture_csv_and_false_provenance(
         "discontinued": False,
         "ams_compatible": "ams, ams-lite",
         "currency": "usd",
+        # A currency is only taken over together with a price.
+        "price": 20,
     }
     await service._import_filaments(
         [source], {6: "PLA"}, {5: manufacturer.id}, {}, {}, "filament", ImportResult()

@@ -421,6 +421,9 @@ async def get_printer(
         custom_fields=printer.custom_fields,
         nozzle_diameter_mm=printer.nozzle_diameter_mm,
         nozzle_hardened=printer.nozzle_hardened,
+        filamentdb_printer_model_id=printer.filamentdb_printer_model_id,
+        printer_manufacturer=printer.printer_manufacturer,
+        printer_model=printer.printer_model,
         driver_config=printer.driver_config,
         slots=slot_responses,
     )
