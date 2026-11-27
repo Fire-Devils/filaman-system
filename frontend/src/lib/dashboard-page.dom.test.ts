@@ -361,13 +361,63 @@ it('saves order and layout through the menu and resets all three together', asyn
   const handle = document.querySelector<HTMLButtonElement>('[data-widget="filamentStats"] .dashboard-drag-handle')!
   handle.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }))
   const order = (fetch.api.patch.mock.calls.at(-1)![1] as { dashboard_widget_order: string[] }).dashboard_widget_order
-  expect(order.slice(0, 3)).toEqual(['spoolStatus', 'locationStats', 'filamentStats'])
+  // spoolStatus is hidden here, so it sorts behind the visible cards while arranging.
+  expect(order.slice(0, 3)).toEqual(['locationStats', 'filamentStats', 'lowStockSpools'])
+  expect(order.at(-1)).toBe('spoolStatus')
 
   const reset = [...document.querySelectorAll<HTMLButtonElement>('#widget-menu-list button')].find(b => b.textContent === 'dashboard.resetWidgets')!
   reset.click()
   expect(fetch.api.patch).toHaveBeenLastCalledWith('/me/preferences', { dashboard_hidden_widgets: [], dashboard_widget_order: [], dashboard_layout: 'grid' })
   expect(document.querySelector('#dashboard-widgets')!.classList.contains('is-editing')).toBe(false)
   expect(document.querySelector<HTMLElement>('#dashboard-widgets > [data-widget]')!.dataset.widget).toBe('spoolStatus')
+})
+
+it('eye button hides a card, keeps it dimmed at the end while arranging and shows it again', async () => {
+  const fetch = await boot(false, undefined, undefined, undefined, undefined, {
+    dashboard_hidden_widgets: ['spoolStatus'], dashboard_widget_order: ['spoolStatus', 'locationStats'],
+  })
+  const card = (id: string) => document.querySelector<HTMLElement>(`[data-widget="${id}"]`)!
+  const eye = (id: string) => card(id).querySelector<HTMLButtonElement>('.dashboard-eye-btn')!
+  // Outside arrange mode a hidden card stays invisible.
+  expect(card('spoolStatus').style.display).toBe('none')
+
+  document.querySelector<HTMLButtonElement>('#widget-arrange-btn')!.click()
+  expect(card('spoolStatus').style.display).toBe('')
+  expect(card('spoolStatus').classList.contains('is-widget-hidden')).toBe(true)
+  const area = document.querySelector<HTMLElement>('#dashboard-hidden-widgets')!
+  expect(area.classList.contains('hidden')).toBe(false)
+  expect(area.contains(card('spoolStatus'))).toBe(true)
+  expect(document.querySelector('#dashboard-widgets')!.contains(card('spoolStatus'))).toBe(false)
+
+  eye('locationStats').click()
+  expect(fetch.api.patch).toHaveBeenLastCalledWith('/me/preferences', { dashboard_hidden_widgets: ['spoolStatus', 'locationStats'] })
+  expect(card('locationStats').classList.contains('is-widget-hidden')).toBe(true)
+  expect(document.querySelector<HTMLInputElement>('#widget-menu-list input[data-widget-id="locationStats"]')!.checked).toBe(false)
+
+  eye('spoolStatus').click()
+  const calls = fetch.api.patch.mock.calls.slice(-2).map(c => c[1] as Record<string, string[]>)
+  expect(calls[0]).toEqual({ dashboard_hidden_widgets: ['locationStats'] })
+  const order = calls[1].dashboard_widget_order
+  expect(order.indexOf('spoolStatus')).toBe(order.length - 2)
+  expect(order.at(-1)).toBe('locationStats')
+  expect(card('spoolStatus').classList.contains('is-widget-hidden')).toBe(false)
+  expect(document.querySelector('#dashboard-widgets')!.contains(card('spoolStatus'))).toBe(true)
+  expect(area.contains(card('locationStats'))).toBe(true)
+
+  document.querySelector<HTMLButtonElement>('#widget-edit-done')!.click()
+  expect(card('locationStats').style.display).toBe('none')
+  expect(area.classList.contains('hidden')).toBe(true)
+  expect(document.querySelector('#dashboard-widgets')!.contains(card('locationStats'))).toBe(true)
+})
+
+it('loads chart data when an eye button shows a hidden chart again', async () => {
+  const hiddenCharts = ['chartSpend', 'chartConsumption', 'chartStockValue', 'chartSpoolCount', 'chartTotalWeight']
+  const fetch = await boot(false, undefined, undefined, undefined, undefined, { dashboard_hidden_widgets: hiddenCharts })
+  await new Promise(resolve => setTimeout(resolve, 0))
+  document.querySelector<HTMLButtonElement>('#widget-arrange-btn')!.click()
+  document.querySelector<HTMLButtonElement>('[data-widget="chartSpend"] .dashboard-eye-btn')!.click()
+  await vi.waitFor(() => expect(document.querySelector('#chart-spend svg')).not.toBeNull())
+  expect(fetch.api.get).toHaveBeenCalledWith('/dashboard/history?months=12')
 })
 
 it('loads history only while a chart is visible and draws chart widgets', async () => {
