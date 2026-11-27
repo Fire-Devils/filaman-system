@@ -137,16 +137,21 @@ const { compactPicker = false } = Astro.props
 
   <!-- Bulk Action Bar -->
   <div id="bulk-action-bar" class="bulk-action-bar">
-    <span class="bulk-count" id="bulk-count"></span>
-    <FilamentPluginHooks mode="selection" />
-    <button class="fm-btn fm-btn-outline" id="bulk-btn-price" data-i18n="filaments.bulkSetPrice">Set Price</button>
-    <button class="fm-btn fm-btn-outline" id="bulk-btn-diameter" data-i18n="filaments.bulkSetDiameter">Set Diameter</button>
-    <button class="fm-btn fm-btn-outline" id="bulk-btn-spool-weight" data-i18n="filaments.bulkSetSpoolWeight">Set Spool Weight</button>
-    <button class="fm-btn fm-btn-outline" id="bulk-btn-density" data-i18n="filaments.bulkSetDensity">Set Density</button>
-    <button class="fm-btn fm-btn-outline" id="bulk-btn-low-stock" data-i18n="filaments.bulkSetLowStock">Set Minimum Stock</button>
-    <button class="fm-btn fm-btn-outline hidden" id="bulk-btn-fdb" data-i18n="fdbContrib.bulkSend">Send to FilaMan-DB</button>
-    <button class="fm-btn fm-btn-outline" id="bulk-btn-print" data-i18n="filaments.bulkLabel">Print Labels</button>
-    <button class="fm-btn fm-btn-danger" id="bulk-btn-delete" data-i18n="filaments.bulkDelete">Delete</button>
+    <div class="bulk-count-group">
+      <span class="bulk-count" id="bulk-count"></span>
+      <button type="button" class="fm-btn-icon bulk-clear-btn" id="bulk-btn-clear" aria-label="Clear selection" title="Clear selection" data-i18n-aria-label="common.clearSelection" data-i18n-title="common.clearSelection"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button>
+    </div>
+    <div class="bulk-actions">
+      <FilamentPluginHooks mode="selection" />
+      <button class="fm-btn fm-btn-outline" id="bulk-btn-price" data-i18n="filaments.bulkSetPrice">Set Price</button>
+      <button class="fm-btn fm-btn-outline" id="bulk-btn-diameter" data-i18n="filaments.bulkSetDiameter">Set Diameter</button>
+      <button class="fm-btn fm-btn-outline" id="bulk-btn-spool-weight" data-i18n="filaments.bulkSetSpoolWeight">Set Spool Weight</button>
+      <button class="fm-btn fm-btn-outline" id="bulk-btn-density" data-i18n="filaments.bulkSetDensity">Set Density</button>
+      <button class="fm-btn fm-btn-outline" id="bulk-btn-low-stock" data-i18n="filaments.bulkSetLowStock">Set Minimum Stock</button>
+      <button class="fm-btn fm-btn-outline hidden" id="bulk-btn-fdb" data-i18n="fdbContrib.bulkSend">Send to FilaMan-DB</button>
+      <button class="fm-btn fm-btn-outline" id="bulk-btn-print" data-i18n="filaments.bulkLabel">Print Labels</button>
+      <button class="fm-btn fm-btn-danger bulk-btn-danger" id="bulk-btn-delete" data-i18n="filaments.bulkDelete">Delete</button>
+    </div>
   </div>
 
   <!-- Bulk Prompt Modal -->
@@ -1245,6 +1250,8 @@ const { compactPicker = false } = Astro.props
         if (event.data.refresh === true) void loadFilaments()
       })
     }
+
+    document.getElementById('bulk-btn-clear')?.addEventListener('click', clearPickerSelection)
 
     // Select all checkbox
     document.getElementById('bulk-select-all')?.addEventListener('change', (e) => {

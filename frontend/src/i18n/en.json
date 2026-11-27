@@ -37,6 +37,7 @@
     "dark": "Dark"
   },
   "common": {
+    "clearSelection": "Clear selection",
     "default": "Default",
     "save": "Save",
     "select": "Select...",
@@ -2977,6 +2978,7 @@
       "already_linked": "Already linked to the FilaMan-DB.",
       "printer_model_missing": "The print profile needs a printer model (manufacturer and model).",
       "material_unknown": "This material does not exist in the FilaMan-DB.",
+      "material_missing": "The filament has no material type.",
       "nothing_to_send": "There are no base values to send.",
       "nozzle_required": "The nozzle diameter is missing.",
       "implausible_value": "Implausible value"
@@ -3116,6 +3118,7 @@
     "displayFields": {
       "manufacturer_id": "Manufacturer",
       "material_id": "Material",
+      "new_material": "Material (new)",
       "filament_id": "Filament",
       "printer_model_id": "Printer model"
     }

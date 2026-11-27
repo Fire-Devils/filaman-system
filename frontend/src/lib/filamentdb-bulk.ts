@@ -7,6 +7,7 @@ import { ApiError, api } from './api'
 import { escapeHtml } from './extra-fields'
 import { bindFormDialog } from './form-dialog'
 import { t } from './i18n'
+import { progressBarHtml, updateProgressBar } from './progress-bar'
 import {
   blockerText,
   contribErrorMessage,
@@ -64,7 +65,8 @@ export async function openBulkSendDialog(options: BulkSendOptions): Promise<void
 
   const total = options.ids.length
   const progress = (done: number, key: string) => {
-    body.innerHTML = `<p class="fm-field-hint" role="status">${e(t(key, { done, total }))}</p>`
+    const label = t(key, { done, total })
+    if (!updateProgressBar(body, done, total, label)) body.innerHTML = progressBarHtml(done, total, label)
   }
   progress(0, 'fdbContrib.bulkChecking')
 

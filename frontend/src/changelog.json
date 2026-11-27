@@ -6,11 +6,17 @@
       "changes": {
         "de": [
           { "type": "feature", "text": "Oben rechts gibt es jetzt auf jeder Seite einen Link zum Handbuch (docu.filaman.app). Er öffnet sich in einem neuen Tab." },
-          { "type": "fix", "text": "FilaMan-DB-Infoseite: Die Einrichtungsanleitung für Admins sagt jetzt \"Schalte FilamentDB Import ein\" statt \"Installiere und aktiviere\". Das Plugin ist ein Systemplugin und muss nicht installiert werden." }
+          { "type": "fix", "text": "FilaMan-DB-Infoseite: Die Einrichtungsanleitung für Admins sagt jetzt \"Schalte FilamentDB Import ein\" statt \"Installiere und aktiviere\". Das Plugin ist ein Systemplugin und muss nicht installiert werden." },
+          { "type": "feature", "text": "FilaMan-DB: Filamente mit einem Material, das es in der FilaMan-DB noch nicht gibt, lassen sich jetzt trotzdem senden. Das Material wird als neu vorgeschlagen und bei der Freigabe angelegt." },
+          { "type": "improvement", "text": "FilaMan-DB: Beim Abgleichen, Prüfen und Senden mehrerer Einträge zeigt ein Fortschrittsbalken mit Prozentangabe, wie weit es ist." },
+          { "type": "improvement", "text": "Auswahlleiste bei Filamenten, Spulen und Standorten: Neuer Knopf ✕ hebt die Auswahl auf. Die Knöpfe sind kompakter und brechen sauber um." }
         ],
         "en": [
           { "type": "feature", "text": "Every page now has a link to the manual (docu.filaman.app) in the top right corner. It opens in a new tab." },
-          { "type": "fix", "text": "FilaMan-DB info page: The admin setup steps now say \"Switch on FilamentDB Import\" instead of \"Install and activate\". The plugin is a system plugin and does not need to be installed." }
+          { "type": "fix", "text": "FilaMan-DB info page: The admin setup steps now say \"Switch on FilamentDB Import\" instead of \"Install and activate\". The plugin is a system plugin and does not need to be installed." },
+          { "type": "feature", "text": "FilaMan-DB: Filaments whose material does not exist in the FilaMan-DB yet can now be sent anyway. The material is proposed as new and created on approval." },
+          { "type": "improvement", "text": "FilaMan-DB: Matching, checking and sending several entries now shows a progress bar with a percentage." },
+          { "type": "improvement", "text": "Selection bar for filaments, spools and locations: a new ✕ button clears the selection. The buttons are more compact and wrap cleanly." }
         ]
       }
     },

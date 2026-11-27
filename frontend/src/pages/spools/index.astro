@@ -108,17 +108,22 @@ import InventoryFilterReset from '../../components/InventoryFilterReset.astro'
 
   <!-- Bulk Action Bar -->
   <div id="bulk-action-bar" class="bulk-action-bar">
-    <span class="bulk-count" id="bulk-count"></span>
-    <button class="fm-btn fm-btn-outline" id="bulk-btn-location" data-i18n="spools.bulkSetLocation">Set Location</button>
-    <button class="fm-btn fm-btn-outline" id="bulk-btn-clear-location" data-i18n="spools.bulkClearLocation">Remove Location</button>
-    <button class="fm-btn fm-btn-outline" id="bulk-btn-status" data-i18n="spools.bulkSetStatus">Set Status</button>
-    <button class="fm-btn fm-btn-outline" id="bulk-btn-threshold" data-i18n="spools.bulkSetThreshold">Set Threshold</button>
-    <button class="fm-btn fm-btn-outline" id="bulk-btn-empty-weight" data-i18n="spools.bulkSetEmptyWeight">Set Empty Spool Weight</button>
-    <button class="fm-btn fm-btn-outline" id="bulk-btn-core-weight" data-i18n="spools.bulkSetCoreWeight">Set Core Weight</button>
-    <button class="fm-btn fm-btn-outline" id="bulk-btn-price" data-i18n="spools.bulkSetPrice">Set Price</button>
-    <button class="fm-btn fm-btn-outline" id="bulk-btn-dried" data-i18n="moisture.bulkMarkDried">Mark as dried</button>
-    <button class="fm-btn fm-btn-outline" id="bulk-btn-labels" data-i18n="spools.bulkLabel">Print Labels</button>
-    <button class="fm-btn fm-btn-danger" id="bulk-btn-delete" data-i18n="spools.bulkDelete">Delete</button>
+    <div class="bulk-count-group">
+      <span class="bulk-count" id="bulk-count"></span>
+      <button type="button" class="fm-btn-icon bulk-clear-btn" id="bulk-btn-clear" aria-label="Clear selection" title="Clear selection" data-i18n-aria-label="common.clearSelection" data-i18n-title="common.clearSelection"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button>
+    </div>
+    <div class="bulk-actions">
+      <button class="fm-btn fm-btn-outline" id="bulk-btn-location" data-i18n="spools.bulkSetLocation">Set Location</button>
+      <button class="fm-btn fm-btn-outline" id="bulk-btn-clear-location" data-i18n="spools.bulkClearLocation">Remove Location</button>
+      <button class="fm-btn fm-btn-outline" id="bulk-btn-status" data-i18n="spools.bulkSetStatus">Set Status</button>
+      <button class="fm-btn fm-btn-outline" id="bulk-btn-threshold" data-i18n="spools.bulkSetThreshold">Set Threshold</button>
+      <button class="fm-btn fm-btn-outline" id="bulk-btn-empty-weight" data-i18n="spools.bulkSetEmptyWeight">Set Empty Spool Weight</button>
+      <button class="fm-btn fm-btn-outline" id="bulk-btn-core-weight" data-i18n="spools.bulkSetCoreWeight">Set Core Weight</button>
+      <button class="fm-btn fm-btn-outline" id="bulk-btn-price" data-i18n="spools.bulkSetPrice">Set Price</button>
+      <button class="fm-btn fm-btn-outline" id="bulk-btn-dried" data-i18n="moisture.bulkMarkDried">Mark as dried</button>
+      <button class="fm-btn fm-btn-outline" id="bulk-btn-labels" data-i18n="spools.bulkLabel">Print Labels</button>
+      <button class="fm-btn fm-btn-danger bulk-btn-danger" id="bulk-btn-delete" data-i18n="spools.bulkDelete">Delete</button>
+    </div>
   </div>
 
   <!-- Bulk Prompt Modal -->
@@ -1326,6 +1331,15 @@ import InventoryFilterReset from '../../components/InventoryFilterReset.astro'
       if (input instanceof HTMLInputElement && input.matches('input.bulk-checkbox[data-spool-id]')) {
         toggleSpoolSelection(Number(input.dataset.spoolId), input.checked)
       }
+    })
+
+    document.getElementById('bulk-btn-clear')?.addEventListener('click', () => {
+      selectedSpoolIds.clear()
+      for (const cb of document.querySelectorAll<HTMLInputElement>('#spools-table input.bulk-checkbox:checked')) {
+        cb.checked = false
+        cb.closest('tr')?.classList.remove('bulk-selected')
+      }
+      updateBulkBar()
     })
 
     // Select all checkbox

@@ -37,6 +37,7 @@
     "dark": "Sombre"
   },
   "common": {
+    "clearSelection": "Désélectionner",
     "default": "Par défaut",
     "save": "Enregistrer",
     "select": "Sélectionner…",
@@ -2977,6 +2978,7 @@
       "already_linked": "Déjà lié à FilaMan-DB.",
       "printer_model_missing": "Le profil d'impression a besoin d'un modèle d'imprimante (fabricant et modèle).",
       "material_unknown": "Ce matériau n'existe pas dans FilaMan-DB.",
+      "material_missing": "Le filament n'a pas de type de matériau.",
       "nothing_to_send": "Aucune valeur de base à envoyer.",
       "nozzle_required": "Le diamètre de buse est manquant.",
       "implausible_value": "Valeur peu plausible"
@@ -3116,6 +3118,7 @@
     "displayFields": {
       "manufacturer_id": "Fabricant",
       "material_id": "Matériau",
+      "new_material": "Matériau (nouveau)",
       "filament_id": "Filament",
       "printer_model_id": "Modèle d'imprimante"
     }

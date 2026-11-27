@@ -452,13 +452,18 @@ async def build(db: AsyncSession, entity_type: str, local_id: int) -> Build:
                 result.dependencies.append(("manufacturer", mfr.id, mfr.name))
             material_id = await _resolve_material_id(fil.material_type)
             if material_id is None:
-                result.blockers.append(
-                    {
-                        "code": "material_unknown",
-                        "message": f"Material {fil.material_type} does not exist in the FilaMan-DB",
-                        "material": fil.material_type,
-                    }
-                )
+                material_name = (fil.material_type or "").strip()
+                if material_name:
+                    # Unknown in the FilaMan-DB: propose it as a new material.
+                    payload["new_material"] = {"name": material_name}
+                    result.display["new_material"] = material_name
+                else:
+                    result.blockers.append(
+                        {
+                            "code": "material_missing",
+                            "message": "The filament has no material type",
+                        }
+                    )
             else:
                 payload["material_id"] = material_id
                 result.display["material_id"] = fil.material_type

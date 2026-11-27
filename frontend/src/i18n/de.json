@@ -37,6 +37,7 @@
     "dark": "Dunkel"
   },
   "common": {
+    "clearSelection": "Auswahl aufheben",
     "default": "Standard",
     "save": "Speichern",
     "select": "Auswählen...",
@@ -2978,6 +2979,7 @@
       "already_linked": "Ist bereits mit der FilaMan-DB verknüpft.",
       "printer_model_missing": "Das Druckprofil braucht ein Druckermodell (Hersteller und Modell).",
       "material_unknown": "Dieses Material gibt es in der FilaMan-DB nicht.",
+      "material_missing": "Das Filament hat keinen Materialtyp.",
       "nothing_to_send": "Es gibt keine Basiswerte zum Senden.",
       "nozzle_required": "Der Düsendurchmesser fehlt.",
       "implausible_value": "Unplausibler Wert"
@@ -3117,6 +3119,7 @@
     "displayFields": {
       "manufacturer_id": "Hersteller",
       "material_id": "Material",
+      "new_material": "Material (neu)",
       "filament_id": "Filament",
       "printer_model_id": "Druckermodell"
     }

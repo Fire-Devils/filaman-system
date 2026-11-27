@@ -525,7 +525,7 @@ async def test_preview_reports_dependencies_and_blockers(auth_client, fake_db, e
 
 
 @pytest.mark.asyncio
-async def test_unknown_material_blocks_filament(auth_client, fake_db, entities):
+async def test_unknown_material_proposes_new_material(auth_client, fake_db, entities):
     client, csrf = auth_client
     await _save_token(client, csrf)
     fake_db.materials = []
@@ -534,10 +534,26 @@ async def test_unknown_material_blocks_filament(auth_client, fake_db, entities):
         json={"type": "filament", "local_id": entities["fil"].id},
         headers=_h(csrf),
     )
-    assert resp.json()["blockers"][0]["code"] == "material_unknown"
-    blocked = await _submit(client, csrf, "filament", entities["fil"].id)
-    assert blocked.status_code == 409
-    assert fake_db.sent("POST", "/contribute") == []
+    body = resp.json()
+    assert not [b for b in body["blockers"] if b["code"].startswith("material")]
+    assert body["payload"]["new_material"] == {"name": entities["fil"].material_type.strip()}
+    assert "material_id" not in body["payload"]
+    assert body["display"]["new_material"] == entities["fil"].material_type
+
+
+@pytest.mark.asyncio
+async def test_empty_material_blocks_filament(auth_client, fake_db, entities, db_session):
+    client, csrf = auth_client
+    await _save_token(client, csrf)
+    fake_db.materials = []
+    entities["fil"].material_type = ""
+    await db_session.commit()
+    resp = await client.post(
+        f"{BASE}/contributions/preview",
+        json={"type": "filament", "local_id": entities["fil"].id},
+        headers=_h(csrf),
+    )
+    assert resp.json()["blockers"][0]["code"] == "material_missing"
 
 
 # ─── Einreichen, Verknüpfen, Abhängigkeiten ───────────────────────────────
@@ -1241,10 +1257,9 @@ async def test_bulk_check_skips_active_submissions_and_marks_blocked(
     await db_session.commit()
     fake_db.materials = []
     body = (await _bulk(client, csrf, "filament", auto_link_exact=False)).json()
-    assert body["counts"]["blocked"] == 1
+    assert body["counts"]["blocked"] == 0
     item = body["items"][0]
-    assert item["category"] == "blocked"
-    assert item["blockers"][0]["code"] == "material_unknown"
+    assert item["category"] != "blocked"
 
     mfr_body = (await _bulk(client, csrf, auto_link_exact=False)).json()
     assert [i["local_id"] for i in mfr_body["items"]] == [entities["mfr"].id]

@@ -9,6 +9,7 @@ import { ApiError, api } from './api'
 import { escapeHtml } from './extra-fields'
 import { bindFormDialog } from './form-dialog'
 import { t } from './i18n'
+import { progressBarHtml, updateProgressBar } from './progress-bar'
 import { contribErrorMessage, createDialog, matchScoreBadge, type ContribMatch } from './filamentdb-contrib'
 
 export type BulkMatchType = 'manufacturer' | 'filament'
@@ -287,7 +288,9 @@ export async function openBulkMatchDialog(options: BulkMatchOptions): Promise<vo
     submit.classList.add('hidden')
     cancelRequested = false
     const showProgress = (done: number, total: number) => {
-      body.innerHTML = `<p class="fm-field-hint" role="status">${e(total ? t('fdbContrib.bulkMatch.progress', { done, total }) : t('fdbContrib.bulkMatchRunning'))}</p>
+      const label = total ? t('fdbContrib.bulkMatch.progress', { done, total }) : t('fdbContrib.bulkMatchRunning')
+      if (updateProgressBar(body, done, total, label)) return
+      body.innerHTML = `${progressBarHtml(done, total, label)}
         <button type="button" class="fm-btn fm-btn-outline fm-btn-sm" data-bm-cancel>${e(t('fdbContrib.bulkMatch.cancel'))}</button>`
     }
     showProgress(0, 0)
@@ -317,7 +320,8 @@ export async function openBulkMatchDialog(options: BulkMatchOptions): Promise<vo
     if (!actions.length) return
     submit.classList.add('hidden')
     const progress = (done: number, total: number) => {
-      body.innerHTML = `<p class="fm-field-hint" role="status">${e(t('fdbContrib.bulkMatchProgress', { done, total }))}</p>`
+      const label = t('fdbContrib.bulkMatchProgress', { done, total })
+      if (!updateProgressBar(body, done, total, label)) body.innerHTML = progressBarHtml(done, total, label)
     }
     progress(0, actions.length)
     const result = await runApply(options.type, actions, progress)

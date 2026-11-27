@@ -148,10 +148,14 @@ import Layout from '../../layouts/Layout.astro'
   </FormDialog>
 
   <div id="bulk-action-bar" class="bulk-action-bar">
-    <span class="bulk-count" id="bulk-count"></span>
-    <button class="fm-btn fm-btn-outline" id="bulk-btn-type" data-i18n="locations.bulkChangeType">Change Type</button>
-    <button class="fm-btn fm-btn-danger" id="bulk-btn-delete" data-i18n="locations.bulkDelete">Delete</button>
-    <button class="fm-btn fm-btn-outline" id="bulk-btn-clear" data-i18n="locations.bulkClear">Clear Selection</button>
+    <div class="bulk-count-group">
+      <span class="bulk-count" id="bulk-count"></span>
+      <button type="button" class="fm-btn-icon bulk-clear-btn" id="bulk-btn-clear" aria-label="Clear selection" title="Clear selection" data-i18n-aria-label="common.clearSelection" data-i18n-title="common.clearSelection"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button>
+    </div>
+    <div class="bulk-actions">
+      <button class="fm-btn fm-btn-outline" id="bulk-btn-type" data-i18n="locations.bulkChangeType">Change Type</button>
+      <button class="fm-btn fm-btn-danger bulk-btn-danger" id="bulk-btn-delete" data-i18n="locations.bulkDelete">Delete</button>
+    </div>
   </div>
 
   <FormDialog id="rfid-modal" titleId="rfid-title" titleKey="rfid.writeTag" title="Write RFID Tag">
