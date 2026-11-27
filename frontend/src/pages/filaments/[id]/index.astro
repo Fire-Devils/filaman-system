@@ -196,8 +196,6 @@ export function getStaticPaths() {
           profilesMount.classList.remove('hidden')
           const filamentId = parseInt(id)
           const profiles = initPrintProfiles({ mount: profilesMount, dialog: profilesDialog, filamentId })
-          const contribHost = profilesMount.querySelector<HTMLElement>('[data-fdb-filament-contrib]')
-          if (contribHost) void mountContributeControl(contribHost, 'filament', filamentId, { showNotice: true })
           const communityMount = document.getElementById('community-profiles')
           const filamentdbId = Number((filament as { custom_fields?: Record<string, unknown> | null }).custom_fields?.filamentdb_id)
           if (communityMount && filamentdbId > 0) {
@@ -425,6 +423,7 @@ export function getStaticPaths() {
                 </div>
               </div>
             </div>
+            <div class="fdb-contrib-row fdb-header-contrib" id="fdb-filament-contrib"></div>
             <div class="detail-page-actions" role="group" aria-label="${t('common.actions')}">
               <a id="btn-enter-filament-edit" href="/filaments/${f.id}?edit=1" class="detail-icon-button" aria-label="${t('common.edit')}" title="${t('common.edit')}"><svg aria-hidden="true"><use href="/icons.svg?v=2#icon-edit"></use></svg></a>
               <button id="btn-duplicate-filament" type="button" class="detail-icon-button" aria-label="${t('common.duplicate')}" title="${t('common.duplicate')}"><svg aria-hidden="true"><use href="/icons.svg?v=2#icon-copy"></use></svg></button>
@@ -452,6 +451,8 @@ export function getStaticPaths() {
         event.preventDefault()
         void setFilamentEditing(true)
       })
+      const contribHost = document.getElementById('fdb-filament-contrib')
+      if (contribHost) void mountContributeControl(contribHost, 'filament', f.id)
       document.getElementById('btn-duplicate-filament')?.addEventListener('click', () => {
         sessionStorage.setItem('filaman_duplicate_filament', JSON.stringify(f))
         window.location.href = '/filaments/new'

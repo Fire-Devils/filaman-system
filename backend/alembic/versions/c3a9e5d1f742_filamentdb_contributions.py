@@ -39,6 +39,7 @@ def upgrade() -> None:
             nullable=True,
         ),
         sa.Column("payload", sa.JSON(), nullable=True),
+        sa.Column("payload_hash", sa.String(length=64), nullable=True),
         sa.Column("last_error", sa.Text(), nullable=True),
         sa.Column("last_checked_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column(

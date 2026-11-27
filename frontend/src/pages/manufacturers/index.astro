@@ -94,7 +94,7 @@ import InventoryFilterReset from '../../components/InventoryFilterReset.astro'
     import { createManufacturerDialog, type Manufacturer } from '../../lib/manufacturer-dialog'
     import type { AppDialogs } from '../../lib/form-dialog'
     import { mountPanel } from '../../lib/panel-navigation'
-    import { fetchContributions, loadContribContext, openContributeDialog, statusBadge, type ContribRef } from '../../lib/filamentdb-contrib'
+    import { fetchContributionsFresh, loadContribContext, openContributeDialog, sendButtonLabel, sendButtonMode, statusBadge, type ContribRef } from '../../lib/filamentdb-contrib'
 
     mountPanel('manufacturers', async (panelSignal) => {
     const dialogWindow = window as unknown as AppDialogs
@@ -109,7 +109,7 @@ import InventoryFilterReset from '../../components/InventoryFilterReset.astro'
       if (!fdbContext.canContribute) return
       try {
         fdbStatuses.clear()
-        for (const entry of await fetchContributions('manufacturer')) fdbStatuses.set(entry.local_id, entry)
+        for (const entry of await fetchContributionsFresh('manufacturer')) fdbStatuses.set(entry.local_id, entry)
       } catch { /* Status ist optional */ }
     }
     await loadFdbStatuses()
@@ -337,7 +337,7 @@ import InventoryFilterReset from '../../components/InventoryFilterReset.astro'
           <td class="col-archived" style="color: var(--text-muted);">${mf.archived_spool_count ?? '-'}</td>
           <td class="col-spool_weight" style="font-family: monospace;">${mf.empty_spool_weight_g != null ? mf.empty_spool_weight_g + 'g' : '-'}</td>
           <td style="text-align: right;">
-            <span class="fm-row-actions">${fdbContext.canContribute ? `<button type="button" class="fm-btn fm-btn-outline fm-btn-sm btn-fdb-send" data-id="${mf.id}">${escapeHtml(t('fdbContrib.send'))}</button>` : ''}${tableAction('edit', { id: mf.id })}${tableAction('delete', { id: mf.id })}</span>
+            <span class="fm-row-actions">${fdbContext.canContribute && sendButtonMode(fdbStatuses.get(mf.id)) ? `<button type="button" class="fm-btn fm-btn-outline fm-btn-sm btn-fdb-send" data-id="${mf.id}">${escapeHtml(sendButtonLabel(sendButtonMode(fdbStatuses.get(mf.id))!))}</button>` : ''}${tableAction('edit', { id: mf.id })}${tableAction('delete', { id: mf.id })}</span>
           </td>
         </tr>
       `

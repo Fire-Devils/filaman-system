@@ -891,3 +891,40 @@ async def test_build_plate_in_profile_api(auth_client, entities):
         headers=_h(csrf),
     )
     assert created.status_code == 201 and created.json()["build_plate"] == "Cool Plate"
+
+
+# ─── changed / payload_hash ───────────────────────────────────────────────
+
+
+async def _listed(client, type_, local_id):
+    resp = await client.get(f"{BASE}/contributions", params={"entity_type": type_, "local_id": local_id})
+    assert resp.status_code == 200, resp.text
+    return resp.json()["items"][0]
+
+
+@pytest.mark.asyncio
+async def test_changed_flag_follows_local_values(auth_client, fake_db, entities, db_session):
+    client, csrf = auth_client
+    await _save_token(client, csrf)
+    resp = await _submit(client, csrf, "manufacturer", entities["mfr"].id)
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["changed"] is False
+    assert (await _listed(client, "manufacturer", entities["mfr"].id))["changed"] is False
+
+    entities["mfr"].name = "Acme Renamed"
+    await db_session.commit()
+    assert (await _listed(client, "manufacturer", entities["mfr"].id))["changed"] is True
+
+
+@pytest.mark.asyncio
+async def test_link_sets_payload_hash(auth_client, fake_db, entities, db_session):
+    client, csrf = auth_client
+    await _save_token(client, csrf)
+    fake_db.matches = {"manufacturer": [{"id": 11, "score": 0.8}]}
+    resp = await _submit(client, csrf, "manufacturer", entities["mfr"].id, action="link", match_id=11)
+    assert resp.status_code == 200, resp.text
+    row = await db_session.scalar(
+        select(FilamentDBContribution).where(FilamentDBContribution.local_id == entities["mfr"].id)
+    )
+    assert row.payload_hash and len(row.payload_hash) == 64
+    assert resp.json()["changed"] is False

@@ -19,6 +19,7 @@ it.each(['', '?select_for_spool=1', '?select_for_spool=0'])('keeps list navigati
   const bulk = listSource.slice(listSource.indexOf('    const selectionLimit'), listSource.indexOf('  </script>'))
   const runtime = new Function('window', 'document', 't', 'escapeHtml', 'formatNumericRange', 'toColorSwatchBackground', 'formatPrice', `
     const selectedFilamentIds = new Set(), getCurrency = () => 'EUR', compactPicker = false;
+    const loadContribContext = async () => ({ canContribute: false }), openBulkSendDialog = async () => {};
     const selectedPickerFilaments = new Map(), filamentPlugins = undefined;
     const filamentList = new Map([17, 18].map(id => [id, {
       id, manufacturer_id: id - 16, designation: 'PLA', material_type: 'PLA', record_token: String(id),

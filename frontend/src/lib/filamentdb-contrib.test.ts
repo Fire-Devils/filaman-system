@@ -14,6 +14,7 @@ import {
   statusText,
   type ContribPreview,
 } from './filamentdb-contrib'
+import { planBulkSend } from './filamentdb-bulk'
 import { ALL_PROFILE_FIELDS } from './print-profiles'
 import { tokenStatusText } from './filamentdb-token-settings'
 
@@ -135,5 +136,27 @@ describe('community profile cards', () => {
   it('hides rating without a token', () => {
     const card = renderCommunityCard({ id: 3, is_own: false }, { canRate: false, canAdopt: true })
     expect(card).not.toContain('data-cp-rate')
+  })
+})
+
+describe('planBulkSend', () => {
+  const ok = { ...basePreview, blockers: [], matches: [] }
+  it('sends, skips and flags duplicates', () => {
+    const plan = planBulkSend([
+      { id: 1, preview: ok },
+      { id: 2, entry: { status: 'pending', changed: false }, preview: ok },
+      { id: 3, preview: { ...ok, blockers: [{ code: 'material_unknown', message: 'x' }] } },
+      { id: 4, preview: { ...ok, matches: [{ type: 'filament', id: 9, label: 'A', score: 0.9 }] } },
+      { id: 5, entry: { status: 'published', changed: true }, preview: ok },
+      { id: 6, error: 'boom' },
+    ])
+    expect(plan.map(d => [d.id, d.action, d.reason])).toEqual([
+      [1, 'send', null],
+      [2, 'skip', 'unchanged'],
+      [3, 'skip', 'blocked'],
+      [4, 'duplicate', 'duplicate'],
+      [5, 'send', null],
+      [6, 'skip', 'error'],
+    ])
   })
 })

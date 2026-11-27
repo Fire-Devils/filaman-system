@@ -13,6 +13,8 @@ Typ + lokale ID):
   lokal und sendet wartende Beiträge nach.
 """
 
+import hashlib
+import json
 import logging
 import re
 from dataclasses import dataclass, field
@@ -283,6 +285,38 @@ async def _filament_payload(db: AsyncSession, fil: Filament) -> dict[str, Any]:
     return _clean(data)
 
 
+async def local_fingerprint(db: AsyncSession, entity_type: str, local_id: int) -> str:
+    """SHA-256 der lokalen Werte, die gesendet würden (ohne Netzwerkzugriff)."""
+    if entity_type == "manufacturer":
+        mfr = await _get_manufacturer(db, local_id)
+        data: dict[str, Any] = {"name": mfr.name, "url": mfr.url}
+    elif entity_type == "printer_model":
+        printer = await _get_printer(db, local_id)
+        data = {
+            "printer_manufacturer": printer.printer_manufacturer,
+            "printer_model": printer.printer_model,
+            "nozzle_diameter_mm": printer.nozzle_diameter_mm,
+        }
+    elif entity_type == "filament":
+        fil = await _get_filament(db, local_id)
+        data = {
+            "payload": await _filament_payload(db, fil),
+            "material_type": fil.material_type,
+            "manufacturer_id": fil.manufacturer_id,
+        }
+    else:
+        profile = await _get_profile(db, local_id)
+        data = {name: getattr(profile, name) for name in PROFILE_FIELDS}
+        data["filament_id"] = profile.filament_id
+        data["printer_id"] = profile.printer_id
+    raw = json.dumps(data, sort_keys=True, default=str, ensure_ascii=False)
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+
+
+async def _stamp(db: AsyncSession, row: FilamentDBContribution) -> None:
+    row.payload_hash = await local_fingerprint(db, row.entity_type, row.local_id)
+
+
 async def build(db: AsyncSession, entity_type: str, local_id: int) -> Build:
     """Baut genau den Payload, der gesendet würde, samt Voraussetzungen und Blockern."""
     if entity_type not in ENTITY_TYPES:
@@ -534,6 +568,7 @@ async def link(
     row.depends_on_id = None
     row.payload = None
     row.last_error = None
+    await _stamp(db, row)
     await db.commit()
     await db.refresh(row)
     return row
@@ -583,6 +618,7 @@ async def _submit_row(
             row.status = "linked"
             row.remote_entity_id = int(matches[0]["id"])
             row.last_error = None
+            await _stamp(db, row)
             await db.flush()
             return row
         shown_matches = [
@@ -613,6 +649,7 @@ async def _send_or_wait(
             row.depends_on_id = dep_rows[0].id
             row.payload = b.payload
             row.last_error = None
+            await _stamp(db, row)
             await db.flush()
             return
         b = rebuilt
@@ -643,6 +680,7 @@ async def _send_or_wait(
         else:
             row.status = "pending"
             row.remote_submission_id = resp.get("submission_id")
+    await _stamp(db, row)
     await db.flush()
 
 
@@ -763,6 +801,8 @@ async def _refresh_user(db: AsyncSession, user_id: int, token: str) -> list[Fila
                 row.remote_entity_id = int(item["entity_id"])
                 try:
                     await _apply_link(db, row.entity_type, row.local_id, row.remote_entity_id)
+                    if row.payload_hash is None:
+                        await _stamp(db, row)
                 except FilamentDBError as exc:
                     row.last_error = exc.message
     await advance_waiting(db, token, user_id)
@@ -859,12 +899,18 @@ async def _user_label(db: AsyncSession, user_id: int | None) -> str | None:
 
 async def serialize(db: AsyncSession, row: FilamentDBContribution) -> dict[str, Any]:
     dep = await db.get(FilamentDBContribution, row.depends_on_id) if row.depends_on_id else None
+    try:
+        current = await local_fingerprint(db, row.entity_type, row.local_id)
+        changed = row.payload_hash is None or row.payload_hash != current
+    except FilamentDBError:
+        changed = False  # lokales Objekt gelöscht
     return {
         "id": row.id,
         "entity_type": row.entity_type,
         "local_id": row.local_id,
         "label": await _label(db, row.entity_type, row.local_id),
         "status": row.status,
+        "changed": changed,
         "remote_submission_id": row.remote_submission_id,
         "remote_entity_id": row.remote_entity_id,
         "depends_on": (
@@ -941,6 +987,7 @@ async def import_community_profile(
     row = await _upsert_row(db, "print_profile", profile.id, user_id)
     row.status = "linked"
     row.remote_entity_id = remote_profile_id
+    await _stamp(db, row)
     await db.commit()
     await db.refresh(profile)
     return profile

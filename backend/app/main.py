@@ -220,7 +220,7 @@ async def _filamentdb_contributions_loop() -> None:
     """Stand der FilaMan-DB-Einreichungen alle 30 min abgleichen (nur Primary-Worker)."""
     from app.services.filamentdb_contribution_service import run_refresh_once
 
-    delay = _FILAMENTDB_CONTRIB_INTERVAL
+    delay = 60  # erster Lauf kurz nach dem Start, danach alle 30 min
     while True:
         await asyncio.sleep(delay)
         delay = _FILAMENTDB_CONTRIB_INTERVAL if _is_primary else _TAKEOVER_INTERVAL

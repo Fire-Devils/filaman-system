@@ -40,6 +40,7 @@ class FilamentDBContribution(Base, TimestampMixin):
         Integer, ForeignKey("filamentdb_contributions.id", ondelete="SET NULL"), nullable=True
     )
     payload: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
+    payload_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
     last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
     last_checked_at: Mapped[datetime | None] = mapped_column(TZDateTime(), nullable=True)
     created_by: Mapped[int | None] = mapped_column(

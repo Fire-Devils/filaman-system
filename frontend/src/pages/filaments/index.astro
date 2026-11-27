@@ -139,6 +139,7 @@ const { compactPicker = false } = Astro.props
     <button class="fm-btn fm-btn-outline" id="bulk-btn-spool-weight" data-i18n="filaments.bulkSetSpoolWeight">Set Spool Weight</button>
     <button class="fm-btn fm-btn-outline" id="bulk-btn-density" data-i18n="filaments.bulkSetDensity">Set Density</button>
     <button class="fm-btn fm-btn-outline" id="bulk-btn-low-stock" data-i18n="filaments.bulkSetLowStock">Set Minimum Stock</button>
+    <button class="fm-btn fm-btn-outline hidden" id="bulk-btn-fdb" data-i18n="fdbContrib.bulkSend">Send to FilaMan-DB</button>
     <button class="fm-btn fm-btn-outline" id="bulk-btn-print" data-i18n="filaments.bulkLabel">Print Labels</button>
     <button class="fm-btn fm-btn-danger" id="bulk-btn-delete" data-i18n="filaments.bulkDelete">Delete</button>
   </div>
@@ -189,6 +190,8 @@ const { compactPicker = false } = Astro.props
     import { mountFilamentPluginHooks } from '../../lib/filament-plugin-hooks'
     import type { AppDialogs } from '../../lib/form-dialog'
     import { mountPanel } from '../../lib/panel-navigation'
+    import { loadContribContext } from '../../lib/filamentdb-contrib'
+    import { openBulkSendDialog } from '../../lib/filamentdb-bulk'
 
     mountPanel('filaments', async (panelSignal) => {
     const dialogWindow = window as unknown as AppDialogs
@@ -1275,6 +1278,25 @@ const { compactPicker = false } = Astro.props
     }
 
     // Print Labels
+    void loadContribContext().then(context => {
+      if (context.canContribute) document.getElementById('bulk-btn-fdb')?.classList.remove('hidden')
+    }).catch(() => { /* ohne Kontext kein Knopf */ })
+    document.getElementById('bulk-btn-fdb')?.addEventListener('click', () => {
+      if (selectedFilamentIds.size === 0) return
+      void openBulkSendDialog({
+        type: 'filament',
+        ids: [...selectedFilamentIds],
+        label: id => {
+          // Name aus der gerenderten Zeile (Hersteller + Bezeichnung), Fallback #id
+          const row = document.querySelector(`.bulk-checkbox[data-filament-id="${id}"]`)?.closest('tr')
+          const text = [row?.querySelector('.col-manufacturer')?.textContent, row?.querySelector('.col-designation > div')?.textContent]
+            .map(part => part?.trim()).filter(part => part && part !== '-').join(' ')
+          return text || `#${id}`
+        },
+        link: id => `/filaments/${id}`,
+        onDone: () => { void loadFilaments(true) },
+      })
+    })
     document.getElementById('bulk-btn-print')?.addEventListener('click', () => {
       if (selectedFilamentIds.size === 0) return
       const ids = [...selectedFilamentIds].join(',')

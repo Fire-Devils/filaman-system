@@ -6,7 +6,6 @@ import FormDialog from './FormDialog.astro'
     <h2 style="font-weight: 600; margin: 0;" data-i18n="printProfiles.title">Print profiles</h2>
     <button type="button" class="fm-btn fm-btn-primary fm-btn-sm hidden" data-pp-add data-i18n="printProfiles.add">Add print profile</button>
   </div>
-  <div class="fdb-contrib-row" data-fdb-filament-contrib></div>
   <div class="pp-cards" data-pp-list></div>
 </section>
 
@@ -29,10 +28,6 @@ import FormDialog from './FormDialog.astro'
   .fdb-contrib-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
   .fdb-contrib-row:empty, .pp-contrib:empty { display: none; }
   .pp-contrib { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-  .fdb-status { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: .75rem; font-weight: 600; border: 1px solid var(--border); }
-  .fdb-status-success { color: var(--success-text); }
-  .fdb-status-warning { color: var(--warning-text); }
-  .fdb-status-error { color: var(--error-text); }
   .fdb-stars { color: var(--warning-text); letter-spacing: 1px; }
   .fdb-star { background: none; border: 0; padding: 0 2px; cursor: pointer; font-size: 1.1rem; color: var(--text-muted); }
   .fdb-star.fdb-star-on { color: var(--warning-text); }

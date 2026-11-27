@@ -3511,3 +3511,25 @@ html.sidebar-collapsed #sidebar-color-mode { display: none; }
 .fm-import-divider { margin-top: 12px; padding-top: 20px; border-top: 2px solid var(--border); }
 .fm-import-divider-title { margin: 0 0 4px; font-size: 1.25rem; font-weight: 700; color: var(--text); }
 .fm-import-divider-desc { margin: 0; color: var(--text-muted); font-size: .9rem; }
+
+/* FilaMan-DB Beitragsstatus als Pille */
+.fdb-status {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 2px 10px;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  line-height: 1.5;
+  white-space: nowrap;
+  vertical-align: middle;
+  border: 1px solid var(--border);
+}
+.fdb-contrib-row .fdb-status, .pp-contrib .fdb-status { margin-left: 0; }
+.fdb-status-success { color: var(--success-text); background: var(--success-bg); border-color: var(--success-border); }
+.fdb-status-warning { color: var(--warning-text); background: var(--warning-bg); border-color: var(--warning-border); }
+.fdb-status-error { color: var(--error-text); background: var(--error-bg); border-color: var(--error-border); }
+.fdb-header-contrib { margin-left: auto; flex: 0 0 auto; }
+.fdb-header-contrib:empty { display: none; }
+.fdb-header-contrib + .detail-page-actions { margin-left: 0; }
+.fdb-bulk-list { margin: 8px 0 0; padding-left: 18px; }

@@ -18,6 +18,7 @@ export interface ContribRef {
   local_id: number
   label: string | null
   status: string
+  changed?: boolean
   depends_on?: { entity_type: ContribType; local_id: number; label: string | null; status: string } | null
   remote_entity_id?: number | null
   last_error?: string | null
@@ -93,6 +94,19 @@ export function statusBadge(entry: Pick<ContribRef, 'status' | 'depends_on'>): s
   return `<span class="fdb-status fdb-status-${tone}" data-fdb-status="${escapeHtml(entry.status)}">${escapeHtml(statusText(entry))}</span>`
 }
 
+export type SendButtonMode = 'send' | 'update' | null
+
+/** Welcher Senden-Knopf zu einem Beitrag passt (null: nur die Statuspille). */
+export function sendButtonMode(entry?: Pick<ContribRef, 'status' | 'changed'> | null): SendButtonMode {
+  if (!entry || ['rejected', 'changes_requested', 'error', 'draft'].includes(entry.status)) return 'send'
+  if (['waiting', 'pending', 'approved', 'published', 'linked'].includes(entry.status) && entry.changed) return 'update'
+  return null
+}
+
+export function sendButtonLabel(mode: Exclude<SendButtonMode, null>): string {
+  return t(mode === 'update' ? 'fdbContrib.sendUpdate' : 'fdbContrib.send')
+}
+
 export function noTokenNoticeHtml(): string {
   const link = `<a href="${FILAMENTDB_SITE_URL}" target="_blank" rel="noopener noreferrer">db.filaman.app</a>`
   return `<p class="fm-field-hint fm-db-hint" data-fdb-no-token>${t('fdbContrib.noToken', { link })}</p>`
@@ -126,6 +140,40 @@ export async function fetchContributions(type?: ContribType, localId?: number): 
   return data.items
 }
 
+const REFRESH_KEY = 'fdbContribRefreshAt'
+const REFRESH_MIN_INTERVAL_MS = 2 * 60 * 1000
+const REFRESH_STATUSES = ['waiting', 'pending', 'changes_requested']
+
+/**
+ * Stößt höchstens alle 2 Minuten je Browser-Tab einen Abgleich an, wenn Beiträge
+ * auf eine Entscheidung warten. Gibt true zurück, wenn abgeglichen wurde (dann neu laden).
+ * Fehler werden still ignoriert; der Zeitstempel wird vorher gesetzt, es gibt keine Wiederholschleife.
+ */
+export async function refreshContributionsIfStale(entries: Pick<ContribRef, 'status'>[]): Promise<boolean> {
+  if (!entries.some(entry => REFRESH_STATUSES.includes(entry.status))) return false
+  const now = Date.now()
+  try {
+    const last = Number(sessionStorage.getItem(REFRESH_KEY) ?? 0)
+    if (last && now - last < REFRESH_MIN_INTERVAL_MS) return false
+    sessionStorage.setItem(REFRESH_KEY, String(now))
+  } catch { /* ohne sessionStorage nicht abgleichen, sonst gäbe es keine Drosselung */ return false }
+  try {
+    await api.post('/filamentdb/contributions/refresh')
+    return true
+  } catch {
+    return false
+  }
+}
+
+/** Beiträge laden und bei Bedarf einmal abgleichen und neu laden. */
+export async function fetchContributionsFresh(type?: ContribType, localId?: number): Promise<ContribRef[]> {
+  const items = await fetchContributions(type, localId)
+  if (await refreshContributionsIfStale(items)) {
+    try { return await fetchContributions(type, localId) } catch { return items }
+  }
+  return items
+}
+
 export function formatPayloadValue(value: unknown): string {
   if (value === null || value === undefined) return '—'
   if (typeof value === 'boolean') return t(value ? 'fdbContrib.yes' : 'fdbContrib.no')
@@ -145,6 +193,13 @@ function fieldLabel(key: string): string {
   return key
 }
 
+export function blockerText(b: ContribPreview['blockers'][number]): string {
+  const key = `fdbContrib.blockers.${b.code}`
+  let text = t(key) === key ? b.message : t(key)
+  if (b.code === 'implausible_value') text = `${text}: ${fieldLabel(String(b.field ?? ''))} (${b.min} – ${b.max})`
+  return text
+}
+
 export function renderPreviewBody(preview: ContribPreview): string {
   const e = escapeHtml
   const parts: string[] = [`<p class="fm-field-hint">${e(t('fdbContrib.previewIntro'))}</p>`]
@@ -152,12 +207,7 @@ export function renderPreviewBody(preview: ContribPreview): string {
   if (preview.mode === 'update') parts.push(`<p class="fm-field-hint">${e(t('fdbContrib.noteUpdate'))}</p>`)
 
   if (preview.blockers.length) {
-    const items = preview.blockers.map(b => {
-      const key = `fdbContrib.blockers.${b.code}`
-      let text = t(key) === key ? b.message : t(key)
-      if (b.code === 'implausible_value') text = `${text}: ${fieldLabel(String(b.field ?? ''))} (${b.min} – ${b.max})`
-      return `<li>${e(text)}</li>`
-    }).join('')
+    const items = preview.blockers.map(b => `<li>${e(blockerText(b))}</li>`).join('')
     parts.push(`<div class="fm-alert-error" role="alert"><strong>${e(t('fdbContrib.blockersTitle'))}</strong><ul>${items}</ul></div>`)
   }
 
@@ -179,7 +229,7 @@ export function renderPreviewBody(preview: ContribPreview): string {
 }
 
 /** Jedes Öffnen baut den Dialog neu auf, damit keine Klick-Handler doppelt hängen. */
-function createDialog(): HTMLDialogElement {
+export function createDialog(): HTMLDialogElement {
   document.getElementById('fdb-contrib-dialog')?.remove()
   const dialog = document.createElement('dialog')
   dialog.id = 'fdb-contrib-dialog'
@@ -273,10 +323,11 @@ export async function mountContributeControl(host: HTMLElement, type: ContribTyp
   }
   if (!context.canContribute) return
   let entries: ContribRef[] = []
-  try { entries = await fetchContributions(type, localId) } catch { /* Status ist optional */ }
+  try { entries = await fetchContributionsFresh(type, localId) } catch { /* Status ist optional */ }
   const entry = entries[0]
-  host.innerHTML = `${entry ? statusBadge(entry) : ''}<button type="button" class="fm-btn fm-btn-outline fm-btn-sm" data-fdb-send>${escapeHtml(t('fdbContrib.send'))}</button>`
-  host.querySelector('[data-fdb-send]')!.addEventListener('click', () => {
+  const mode = sendButtonMode(entry)
+  host.innerHTML = `${entry ? statusBadge(entry) : ''}${mode ? `<button type="button" class="fm-btn fm-btn-outline fm-btn-sm" data-fdb-send>${escapeHtml(sendButtonLabel(mode))}</button>` : ''}`
+  host.querySelector('[data-fdb-send]')?.addEventListener('click', () => {
     void openContributeDialog({ type, localId, onDone: () => void mountContributeControl(host, type, localId, options) })
   })
 }
