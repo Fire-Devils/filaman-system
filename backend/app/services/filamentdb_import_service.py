@@ -19,6 +19,7 @@ from sqlalchemy.orm import selectinload
 from app.core.cache import response_cache
 from app.models.filament import Color, Filament, FilamentColor, Manufacturer
 from app.services.bambu_idx import clear_bambu_idx_for_filament
+from app.services.filamentdb_contribution_service import mark_in_sync
 from app.services.extra_field_validation import normalize_numeric_range
 from app.services.filamentdb_field_mapping import standard_filamentdb_fields
 from app.services.material_presets import apply_defaults_to_new_filament
@@ -1539,6 +1540,7 @@ class FilamentDBImportService:
             new_cf["filamentdb_id"] = fdb_id
             fil.custom_fields = new_cf
             claimed.setdefault(fdb_id, local_id)
+            await mark_in_sync(self.db, "filament", local_id)
             done += 1
         await self.db.commit()
         return {"linked": done, "warnings": warnings}
@@ -1630,6 +1632,7 @@ class FilamentDBImportService:
                     continue
                 setattr(mfr, field_name, value)
             result.manufacturers_updated += 1
+            await mark_in_sync(self.db, "manufacturer", mfr.id)
 
         await self.db.commit()
         return result
@@ -1671,6 +1674,7 @@ class FilamentDBImportService:
             color_map = await self._import_colors(self._extract_colors([fil_data]), ImportResult())
             await self._create_filament_colors(local.id, fil_data, color_map)
         await self.db.flush()
+        await mark_in_sync(self.db, "filament", local.id)
 
     # ------------------------------------------------------------------ #
     #  Import ausfuehren
@@ -2030,6 +2034,7 @@ class FilamentDBImportService:
                     existing_fil.custom_fields = cf
                     await self.db.flush()
                     claimed_catalog_ids[existing_fil.id] = fdb_id
+                    await mark_in_sync(self.db, "filament", existing_fil.id)
                     result.filaments_updated += 1
                 else:
                     result.filaments_skipped += 1

@@ -2819,7 +2819,8 @@
       "pending": "Eingereicht. Die Prüfung in der FilaMan-DB läuft.",
       "waiting": "Eingereicht. Das Objekt wartet auf die Freigabe der Voraussetzungen und wird dann automatisch gesendet.",
       "published": "Veröffentlicht.",
-      "linked": "Verknüpft. Es wurde nichts gesendet."
+      "linked": "Verknüpft. Es wurde nichts gesendet.",
+      "no_changes": "Die FilaMan-DB hat schon dieselben Werte. Es gab nichts zu senden."
     },
     "blockerLinks": {
       "editProfile": "Druckprofil bearbeiten",

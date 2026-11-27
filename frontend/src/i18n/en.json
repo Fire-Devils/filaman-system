@@ -2818,7 +2818,8 @@
       "pending": "Submitted. Review in the FilaMan-DB is under way.",
       "waiting": "Submitted. The item waits for its prerequisites to be approved and is then sent automatically.",
       "published": "Published.",
-      "linked": "Linked. Nothing was sent."
+      "linked": "Linked. Nothing was sent.",
+      "no_changes": "The FilaMan-DB already has the same values. There was nothing to send."
     },
     "blockerLinks": {
       "editProfile": "Edit print profile",
