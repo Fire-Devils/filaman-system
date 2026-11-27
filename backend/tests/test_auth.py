@@ -366,7 +366,7 @@ class TestMePreferences:
         dashboard = await client.patch(
             "/api/v1/me/preferences", headers=headers, json={"dashboard_hidden_widgets": ["filamentStats"]},
         )
-        assert dashboard.json() == {"dashboard_hidden_widgets": ["filamentStats"]}
+        assert dashboard.json() == {"dashboard_hidden_widgets": ["filamentStats"], "dashboard_widget_order": [], "dashboard_layout": "grid"}
         assert (await client.get(path)).json() == saved.json()
 
         await client.post("/auth/logout", headers=headers)
@@ -387,7 +387,7 @@ class TestMePreferences:
 
         initial = await client.get("/api/v1/me/preferences")
         assert initial.status_code == 200
-        assert initial.json() == {"dashboard_hidden_widgets": []}
+        assert initial.json() == {"dashboard_hidden_widgets": [], "dashboard_widget_order": [], "dashboard_layout": "grid"}
 
         updated = await client.patch(
             "/api/v1/me/preferences",
