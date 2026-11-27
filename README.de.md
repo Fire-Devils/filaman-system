@@ -105,12 +105,8 @@ Die Anwendung ist anschließend unter `http://localhost:8083` erreichbar.
 - **Standard E-Mail:** `admin@example.com`
 - **Standard Passwort:** `admin123`
 
-Labels verwenden den gemeinsamen SVG/WASM-Renderer für Designer, Export und
-API. Das Image enthält Node 20 und Schriftarten; Chromium ist nicht erforderlich.
-SVG ist der einzige Label-Renderer; eine Renderer-Auswahl oder ein Fallback
-ist nicht erforderlich.
-Container-Prüfungen auf nativem ARM64 sowie emuliertem AMD64/ARMv7 sind bestanden;
-die Abnahme durch echte Druck- und Scan-Tests steht noch aus.
+Etiketten werden für Designer, Export und API als SVG gerendert. Das Image bringt
+Node 20 und die nötigen Schriftarten mit, ein Browser auf dem Server ist nicht nötig.
 Siehe [API-Dokumentation](docs/label-api.md).
 
 ### Docker Container selber bauen

@@ -105,10 +105,8 @@ The application will be available at `http://localhost:8083`.
 - **Default Email:** `admin@example.com`
 - **Default Password:** `admin123`
 
-Labels use a shared SVG/WASM renderer for the designer, exports and API.
-The image packages Node 20 and fonts; no server browser is required. SVG is the
-only label renderer, with no renderer selector or fallback. Container checks pass on native
-ARM64 and emulated AMD64/ARMv7; physical print/scan acceptance is still pending.
+Labels are rendered as SVG for the designer, exports and the API. The image already
+contains Node 20 and the fonts it needs, so no browser is required on the server.
 See [API documentation](docs/label-api.md).
 
 ### Build Docker Container Yourself
