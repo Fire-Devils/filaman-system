@@ -43,6 +43,7 @@ const { compactPicker = false } = Astro.props
         <span data-i18n="colors.title">Color Library</span>
       </a>
       <a id="spool-selection-import" href="/spools/new?from_tag=1" class="fm-btn fm-btn-outline spool-selection-only" hidden data-i18n="spools.importFromTag">Import from Tag</a>
+      <button id="btn-fdb-match" type="button" class="fm-btn fm-btn-outline hidden" data-i18n="fdbContrib.bulkMatchButton">Match with FilaMan-DB</button>
       <a id="add-filament" href="/filaments/new" class="fm-btn fm-btn-primary" data-i18n="filaments.addFilament">
         Add Filament
       </a>
@@ -191,6 +192,7 @@ const { compactPicker = false } = Astro.props
     import { mountFilamentPluginHooks } from '../../lib/filament-plugin-hooks'
     import type { AppDialogs } from '../../lib/form-dialog'
     import { mountPanel } from '../../lib/panel-navigation'
+    import { openBulkMatchDialog } from '../../lib/filamentdb-bulk-match'
     import { fetchContributions, loadContribContext, statusBadge, fdbLinkCell, fdbFilterValues } from '../../lib/filamentdb-contrib'
     import { openBulkSendDialog } from '../../lib/filamentdb-bulk'
 
@@ -1300,6 +1302,12 @@ const { compactPicker = false } = Astro.props
     // Print Labels
     void loadContribContext().then(context => {
       if (context.canContribute) document.getElementById('bulk-btn-fdb')?.classList.remove('hidden')
+      if (!context.canContribute || compactPicker || selectForSpool) return
+      const matchButton = document.getElementById('btn-fdb-match')
+      matchButton?.classList.remove('hidden')
+      matchButton?.addEventListener('click', () => {
+        void openBulkMatchDialog({ type: 'filament', onDone: () => void loadFilaments(true) })
+      }, { signal: panelSignal })
     }).catch(() => { /* ohne Kontext kein Knopf */ })
     // Einreichungsstatus als kleine Pille an der Bezeichnung (ein Request für alle Filamente, Fehler still)
     if (!compactPicker && !selectForSpool) {

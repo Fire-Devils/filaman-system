@@ -87,6 +87,22 @@ describe('FilaMan-DB contribution rendering', () => {
     expect(html).toContain('Acme')
   })
 
+  it('puts the similar-entries warning first, with score badges and a primary button', () => {
+    const html = renderPreviewBody({
+      ...basePreview,
+      matches: [{ type: 'filament', id: 9, label: 'A', score: 0.95 }, { type: 'filament', id: 10, label: 'B', score: 0.7 }],
+      dependencies: [{ type: 'manufacturer', local_id: 2, label: 'Acme' }],
+    })
+    const matches = html.indexOf('fdb-matches')
+    expect(matches).toBeGreaterThan(-1)
+    expect(matches).toBeLessThan(html.indexOf('fdb-deps'))
+    expect(matches).toBeLessThan(html.indexOf('fdb-payload'))
+    expect(html).toContain('role="status"')
+    expect(html).toContain('fdb-score-strong')
+    expect(html).toContain('fdb-score-weak')
+    expect(html).toContain('fm-btn fm-btn-primary')
+  })
+
   it('shows "already linked" as an info note, not as a missing item', () => {
     const html = renderPreviewBody({
       ...basePreview,

@@ -574,6 +574,116 @@ async def preview(
     }
 
 
+# ── Massenabgleich ───────────────────────────────────────────────────────
+
+BULK_MAX_LIMIT = 200
+
+
+def _bulk_matches(raw: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    out = []
+    for m in raw:
+        score = m.get("score")
+        score = float(score) if isinstance(score, (int, float)) and not isinstance(score, bool) else 0.0
+        label = m.get("label") or m.get("name")
+        out.append(
+            {
+                "type": m.get("type"),
+                "id": m["id"],
+                "label": label if isinstance(label, str) else None,
+                "score": score,
+            }
+        )
+    out.sort(key=lambda m: m["score"], reverse=True)
+    return out
+
+
+async def bulk_check(
+    db: AsyncSession,
+    user_id: int | None,
+    entity_type: str,
+    *,
+    auto_link_exact: bool,
+    limit: int = BULK_MAX_LIMIT,
+) -> dict[str, Any]:
+    """Prüft alle unverknüpften Hersteller bzw. Filamente gegen die FilaMan-DB.
+
+    Übersprungen werden Objekte mit lokaler Verknüpfung oder aktiver Einreichung.
+    Je Objekt sequenziell ``build`` + ``check_matches``; ein Fehler eines Objekts
+    ergibt Kategorie ``blocked``, nur ein ungültiger Token bricht den Lauf ab.
+    """
+    if entity_type not in ("manufacturer", "filament"):
+        raise _err(422, "invalid_type", f"Bulk check is not available for {entity_type}")
+    limit = max(1, min(limit, BULK_MAX_LIMIT))
+    token = await require_token(db, user_id)
+
+    model = Manufacturer if entity_type == "manufacturer" else Filament
+    busy = set(
+        await db.scalars(
+            select(FilamentDBContribution.local_id).where(
+                FilamentDBContribution.entity_type == entity_type,
+                FilamentDBContribution.status.in_(ACTIVE_STATUSES),
+            )
+        )
+    )
+    objs = (await db.scalars(select(model).order_by(model.id))).all()
+    candidates = [o.id for o in objs if not _cf_id(o.custom_fields) and o.id not in busy]
+    truncated = len(candidates) > limit
+    candidates = candidates[:limit]
+
+    items: list[dict[str, Any]] = []
+    for local_id in candidates:
+        item: dict[str, Any] = {
+            "local_id": local_id,
+            "label": await _label(db, entity_type, local_id) or f"#{local_id}",
+            "category": "none",
+            "matches": [],
+            "blockers": [],
+        }
+        try:
+            b = await build(db, entity_type, local_id)
+            if b.blockers:
+                item["category"] = "blocked"
+                item["blockers"] = b.blockers
+            else:
+                item["matches"] = _bulk_matches(await check_matches(db, b, token))
+                best = item["matches"][0] if item["matches"] else None
+                if auto_link_exact and best and best["score"] >= AUTO_LINK_SCORE:
+                    await link(db, user_id, entity_type, local_id, best["id"])
+                    item["category"] = "linked"
+                    item["linked_remote_id"] = best["id"]
+                elif item["matches"]:
+                    item["category"] = "suggested"
+                if b.dependencies:
+                    item["dependencies"] = [
+                        {"type": t, "local_id": lid, "label": lb} for t, lid, lb in b.dependencies
+                    ]
+        except FilamentDBError as exc:
+            if exc.status_code == 401 or exc.code in ("invalid_token", "filamentdb_token_invalid"):
+                raise
+            await db.rollback()
+            item["category"] = "blocked"
+            item["matches"] = []
+            item["blockers"] = [{"code": exc.code, "message": exc.message}]
+        except Exception as exc:  # noqa: BLE001 - ein Objekt darf den Lauf nicht beenden
+            logger.warning("Bulk check failed for %s %s: %s", entity_type, local_id, exc)
+            await db.rollback()
+            item["category"] = "blocked"
+            item["matches"] = []
+            item["blockers"] = [{"code": "check_failed", "message": str(exc)}]
+        items.append(item)
+
+    counts = {c: 0 for c in ("linked", "suggested", "none", "blocked")}
+    for item in items:
+        counts[item["category"]] += 1
+    return {
+        "type": entity_type,
+        "items": items,
+        "counts": counts,
+        "total": len(items),
+        "truncated": truncated,
+    }
+
+
 # ── Lokale Verknüpfung ───────────────────────────────────────────────────
 
 

@@ -8,6 +8,7 @@ import InventoryFilterReset from '../../components/InventoryFilterReset.astro'
   <div class="fm-list-toolbar">
     <h1 data-i18n="manufacturers.title">Manufacturers</h1>
     <div class="fm-list-controls">
+      <button id="btn-fdb-match" class="fm-btn fm-btn-outline hidden" data-i18n="fdbContrib.bulkMatchButton">Match with FilaMan-DB</button>
       <button id="btn-new" class="fm-btn fm-btn-primary" data-i18n="manufacturers.addManufacturer">
         Add Manufacturer
       </button>
@@ -95,6 +96,7 @@ import InventoryFilterReset from '../../components/InventoryFilterReset.astro'
     import { createManufacturerDialog, type Manufacturer } from '../../lib/manufacturer-dialog'
     import type { AppDialogs } from '../../lib/form-dialog'
     import { mountPanel } from '../../lib/panel-navigation'
+    import { openBulkMatchDialog } from '../../lib/filamentdb-bulk-match'
     import { fetchContributionsFresh, loadContribContext, openContributeDialog, sendButtonLabel, sendButtonMode, statusBadge, fdbLinkCell, fdbFilterValues, type ContribRef } from '../../lib/filamentdb-contrib'
 
     mountPanel('manufacturers', async (panelSignal) => {
@@ -114,6 +116,13 @@ import InventoryFilterReset from '../../components/InventoryFilterReset.astro'
       } catch { /* Status ist optional */ }
     }
     await loadFdbStatuses()
+    if (fdbContext.canContribute) {
+      const matchButton = document.getElementById('btn-fdb-match')
+      matchButton?.classList.remove('hidden')
+      matchButton?.addEventListener('click', () => {
+        void openBulkMatchDialog({ type: 'manufacturer', onDone: () => void loadFdbStatuses().then(() => loadManufacturers()) })
+      }, { signal: panelSignal })
+    }
     const manufacturerDialog = createManufacturerDialog({
       filamentDbActive,
       signal: panelSignal,

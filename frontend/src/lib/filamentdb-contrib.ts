@@ -284,6 +284,22 @@ export function blockerLinks(b: ContribPreview['blockers'][number]): { href: str
   return links
 }
 
+/** Prozent-Badge: ab 90 % kräftig grün, sonst neutral. */
+export function matchScoreBadge(score: number | undefined): string {
+  if (score == null) return ''
+  const pct = Math.round(score * 100)
+  const strong = pct >= 90
+  return `<span class="fdb-score ${strong ? 'fdb-score-strong' : 'fdb-score-weak'}" data-fdb-score="${pct}">${escapeHtml(t('fdbContrib.matchScore', { score: pct }))}</span>`
+}
+
+/** Auffälliger Block „Ähnliche Einträge“: steht ganz oben, damit keine Duplikate gesendet werden. */
+function renderMatchesBlock(matches: ContribMatch[]): string {
+  const e = escapeHtml
+  const items = matches.map(m => `<li class="fdb-match"><span class="fdb-match-label">${e(m.label ?? `#${m.id}`)} ${matchScoreBadge(m.score)}</span>
+      <button type="button" class="fm-btn fm-btn-primary fm-btn-sm" data-fdb-link="${Number(m.id)}">${e(t('fdbContrib.thisIsIt'))}</button></li>`).join('')
+  return `<div class="fdb-matches fdb-matches-alert" role="status"><div class="fdb-matches-head"><span class="fdb-matches-icon" aria-hidden="true">⚠</span><strong class="fdb-matches-title">${e(t('fdbContrib.matchesTitle'))}</strong></div><p class="fdb-matches-hint">${e(t('fdbContrib.matchesHint'))}</p><ul>${items}</ul></div>`
+}
+
 export function renderPreviewBody(preview: ContribPreview): string {
   const e = escapeHtml
   const parts: string[] = [`<p class="fm-field-hint">${e(t('fdbContrib.previewIntro'))}</p>`]
@@ -302,15 +318,11 @@ export function renderPreviewBody(preview: ContribPreview): string {
     parts.push(`<div class="fm-alert-error" role="alert"><strong>${e(t('fdbContrib.blockersTitle'))}</strong><ul>${items}</ul></div>`)
   }
 
+  if (preview.matches.length) parts.push(renderMatchesBlock(preview.matches))
+
   if (preview.dependencies.length) {
     const items = preview.dependencies.map(d => `<li>${e(t(`fdbContrib.types.${d.type}`))}: ${e(d.label)}</li>`).join('')
     parts.push(`<div class="fdb-deps"><strong>${e(t('fdbContrib.dependenciesTitle'))}</strong><ul>${items}</ul><p class="fm-field-hint">${e(t('fdbContrib.dependenciesHint'))}</p></div>`)
-  }
-
-  if (preview.matches.length) {
-    const items = preview.matches.map(m => `<li class="fdb-match"><span>${e(m.label ?? `#${m.id}`)}${m.score != null ? ` <small>${e(t('fdbContrib.matchScore', { score: Math.round(m.score * 100) }))}</small>` : ''}</span>
-      <button type="button" class="fm-btn fm-btn-outline fm-btn-sm" data-fdb-link="${Number(m.id)}">${e(t('fdbContrib.thisIsIt'))}</button></li>`).join('')
-    parts.push(`<div class="fdb-matches"><strong>${e(t('fdbContrib.matchesTitle'))}</strong><p class="fm-field-hint">${e(t('fdbContrib.matchesHint'))}</p><ul>${items}</ul></div>`)
   }
 
   const rows = Object.entries(preview.payload)
@@ -376,6 +388,12 @@ export async function openContributeDialog(options: ContributeDialogOptions): Pr
   body.innerHTML = renderPreviewBody(preview)
   submit.textContent = t(preview.matches.length ? 'fdbContrib.submitAnyway' : 'fdbContrib.submit')
   submit.classList.toggle('hidden', preview.blockers.length > 0)
+  const hint = preview.matches.length && !preview.blockers.length
+    ? dialog.querySelector('.fdb-actions')?.insertAdjacentElement('beforebegin', Object.assign(document.createElement('p'), {
+        className: 'fdb-submit-hint',
+        textContent: t('fdbContrib.checkMatchesFirst'),
+      }))
+    : null
 
   async function send(action: 'submit' | 'link', matchId?: number) {
     submit.disabled = true
@@ -391,6 +409,7 @@ export async function openContributeDialog(options: ContributeDialogOptions): Pr
       const key = entry.no_changes ? 'no_changes' : entry.status === 'waiting' ? 'waiting' : entry.status === 'linked' ? 'linked' : entry.status === 'published' ? 'published' : 'pending'
       body.innerHTML = `<p role="status">${escapeHtml(t(`fdbContrib.result.${key}`))}</p><p>${statusBadge(entry)}</p>`
       submit.classList.add('hidden')
+      hint?.remove()
       options.onDone?.(entry)
     } catch (error) {
       body.insertAdjacentHTML('afterbegin', `<div class="fm-alert-error" role="alert">${escapeHtml(contribErrorMessage(error))}</div>`)

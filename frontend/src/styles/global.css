@@ -1401,6 +1401,37 @@ body:has(.fm-header-filter-panel.open)::after {
   font-weight: 500;
 }
 
+/* FilaMan-DB: Ähnliche Einträge im Sende-Dialog (auffällige Warnbox) */
+#fdb-contrib-dialog .fdb-matches-alert {
+  margin: 12px 0;
+  padding: 14px 16px;
+  background: var(--warning-bg);
+  border: 2px solid var(--warning-border);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+}
+#fdb-contrib-dialog .fdb-matches-head { display: flex; align-items: center; gap: 8px; }
+#fdb-contrib-dialog .fdb-matches-icon { font-size: 1.25rem; line-height: 1; color: var(--warning-text); }
+#fdb-contrib-dialog .fdb-matches-title { font-size: 1.05rem; color: var(--warning-text); }
+#fdb-contrib-dialog .fdb-matches-hint { margin: 6px 0 8px; font-size: 0.875rem; color: var(--text); }
+#fdb-contrib-dialog .fdb-matches-alert ul { margin: 0; padding: 0; }
+#fdb-contrib-dialog .fdb-matches-alert .fdb-match { margin-left: 0; padding: 8px 0; border-top: 1px solid var(--warning-border); }
+#fdb-contrib-dialog .fdb-match-label { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-weight: 600; }
+.fdb-score { display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: 0.75rem; font-weight: 700; border: 1px solid var(--border); background: var(--bg-elevated); color: var(--text-muted); white-space: nowrap; }
+.fdb-score-strong { background: var(--success-bg); border-color: var(--success-border); color: var(--success-text); }
+#fdb-contrib-dialog .fdb-submit-hint { margin: 12px 0 -4px; font-size: 0.85rem; font-weight: 600; color: var(--warning-text); }
+
+/* FilaMan-DB: Massenabgleich */
+#fdb-contrib-dialog .fdb-bm-auto { display: flex; align-items: center; gap: 8px; margin-top: 12px; }
+#fdb-contrib-dialog .fdb-bm-section { margin-top: 16px; }
+#fdb-contrib-dialog .fdb-bm-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+#fdb-contrib-dialog .fdb-bm-head h3 { margin: 0; font-size: 1rem; }
+#fdb-contrib-dialog .fdb-bm-list { list-style: none; margin: 8px 0 0; padding: 0; }
+#fdb-contrib-dialog .fdb-bm-row { padding: 8px 0; border-top: 1px solid var(--border); }
+#fdb-contrib-dialog .fdb-bm-name { display: flex; align-items: center; gap: 8px; }
+#fdb-contrib-dialog .fdb-bm-options { display: grid; gap: 4px; margin: 6px 0 0 26px; }
+#fdb-contrib-dialog .fdb-bm-option { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+
 .pc-print-prompt.hidden,
 .pc-print-prompt-stack [hidden] {
   display: none !important;
