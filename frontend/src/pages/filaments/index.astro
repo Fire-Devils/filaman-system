@@ -120,6 +120,7 @@ const { compactPicker = false } = Astro.props
           <th data-i18n="spools.spoolWidth" class="col-spool_width">Spool width</th>
           <th data-i18n="spools.spoolMaterial" class="col-spool_material">Spool material</th>
           <th data-i18n="filaments.colFdbLink" class="col-fdb_link">FilaMan-DB</th>
+          <th data-i18n="filaments.colFdbContrib" class="col-fdb_contrib">Submission</th>
         </tr>
       </thead>
       <tbody id="filaments-table">
@@ -193,7 +194,7 @@ const { compactPicker = false } = Astro.props
     import type { AppDialogs } from '../../lib/form-dialog'
     import { mountPanel } from '../../lib/panel-navigation'
     import { openBulkMatchDialog } from '../../lib/filamentdb-bulk-match'
-    import { fetchContributions, loadContribContext, statusBadge, fdbLinkCell, fdbFilterValues } from '../../lib/filamentdb-contrib'
+    import { fetchContributionsFresh, loadContribContext, fdbLinkCell, fdbContribCell, fdbFilterValues, fdbContribFilterValues, type ContribRef } from '../../lib/filamentdb-contrib'
     import { openBulkSendDialog } from '../../lib/filamentdb-bulk'
 
     mountPanel('filaments', async (panelSignal) => {
@@ -241,8 +242,7 @@ const { compactPicker = false } = Astro.props
     let sortDirection: 'asc' | 'desc' | null = null
     const sortStorageKey = `filaman-sort-${storageScope}`
     const selectedFilamentIds = new Set<number>()
-    const filamentContribBadges = new Map<number, string>()
-    const filamentContribStatus = new Map<number, string>()
+    const filamentContribEntries = new Map<number, ContribRef>()
     const selectedPickerFilaments = new Map<number, Pick<Filament, 'id' | 'manufacturer_id' | 'designation' | 'material_type' | 'record_token'>>()
 
     // Map frontend sort keys to backend sort_by values; empty string = client-side only (not server-sortable)
@@ -439,7 +439,8 @@ const { compactPicker = false } = Astro.props
       if (key === 'subgroup') return filament.material_subgroup
       if (key === 'weight') return filament.raw_material_weight_g
       if (key === 'density') return filament.density_g_cm3
-      if (key === 'fdb_link') return fdbFilterValues(filament.custom_fields, filamentContribStatus.get(filament.id))
+      if (key === 'fdb_link') return fdbFilterValues(filament.custom_fields)
+      if (key === 'fdb_contrib') return fdbContribFilterValues(filamentContribEntries.get(filament.id)?.status)
       return null
     }
 
@@ -626,7 +627,7 @@ const { compactPicker = false } = Astro.props
           <td class="col-logo" style="padding: 12px;">${f.manufacturer?.logo_url ? `<span style="color: var(--text-muted);" hidden>-</span><img src="${escapeHtml(f.manufacturer.logo_url)}" alt="" style="height: 24px; width: auto; max-width: 72px; object-fit: contain; background: color-mix(in srgb, white 30%, var(--bg-soft) 70%); border: 1px solid color-mix(in srgb, white 22%, var(--border) 78%); border-radius: 8px; padding: 4px 8px; vertical-align: middle;" onerror="this.style.display='none'; this.previousElementSibling?.removeAttribute('hidden')" />` : '<span style="color: var(--text-muted);">-</span>'}</td>
           <td class="col-type" style="padding: 12px; color: var(--text-muted);">${escapeHtml(f.material_type)}</td>
           <td class="col-designation" style="padding: 12px;">
-            <div style="font-weight: 500;">${escapeHtml(f.designation)}${filamentContribBadges.get(f.id) ?? ''}</div>
+            <div style="font-weight: 500;">${escapeHtml(f.designation)}</div>
             ${compactPicker && f.manufacturer?.name ? `<div class="fm-picker-manufacturer">${escapeHtml(f.manufacturer.name)}</div>` : ''}
             ${f.manufacturer_color_name ? `<div style="font-size: 0.85rem; color: var(--text-muted);">${escapeHtml(f.manufacturer_color_name)}</div>` : ''}
           </td>
@@ -660,6 +661,7 @@ const { compactPicker = false } = Astro.props
           <td class="col-spool_width" style="padding: 12px;">${f.spool_width_mm != null ? `${f.spool_width_mm} mm` : '-'}</td>
           <td class="col-spool_material" style="padding: 12px;">${escapeHtml(f.spool_material || '-')}</td>
           <td class="col-fdb_link" style="padding: 12px;">${fdbLinkCell(f.custom_fields)}</td>
+          <td class="col-fdb_contrib" style="padding: 12px;">${fdbContribCell(filamentContribEntries.get(f.id))}</td>
           ${filamentExtraFields.map((field) => {
             const value = getExtraFieldColumnValue(f.custom_fields, field.key)
             const key = `cf_${field.key}`
@@ -873,11 +875,21 @@ const { compactPicker = false } = Astro.props
           options: [
             { value: 'linked', label: t('fdbContrib.filterLinked') },
             { value: 'unlinked', label: t('fdbContrib.filterUnlinked') },
+          ],
+          searchable: false,
+          onApply: (value) => applyColumnFilter('fdb_link', value),
+        },
+        {
+          key: 'fdb_contrib',
+          label: t('filaments.colFdbContrib'),
+          columnSelector: 'th.col-fdb_contrib',
+          type: 'multi',
+          options: [
             { value: 'pending', label: t('fdbContrib.filterPending') },
             { value: 'rejected', label: t('fdbContrib.filterRejected') },
           ],
           searchable: false,
-          onApply: (value) => applyColumnFilter('fdb_link', value),
+          onApply: (value) => applyColumnFilter('fdb_contrib', value),
         },
         ...filamentExtraFields.map((field) => {
           const key = `cf_${field.key}`
@@ -932,6 +944,7 @@ const { compactPicker = false } = Astro.props
     })
     
     // ── Column Visibility ──────────────────────────────────────────────
+    const fdbCanContribute = !compactPicker && !selectForSpool && (await loadContribContext().catch(() => null))?.canContribute === true
     const filColumnGroups: ColumnGroup[] = [
       {
         heading: t('common.columnsStandard'),
@@ -943,6 +956,7 @@ const { compactPicker = false } = Astro.props
           { key: 'diameter', label: t('filaments.diameter') },
           { key: 'spools', label: t('filaments.spools') },
           { key: 'fdb_link', label: t('filaments.colFdbLink') },
+          ...(fdbCanContribute ? [{ key: 'fdb_contrib', label: t('filaments.colFdbContrib') }] : []),
         ],
       },
       {
@@ -1306,26 +1320,31 @@ const { compactPicker = false } = Astro.props
       const matchButton = document.getElementById('btn-fdb-match')
       matchButton?.classList.remove('hidden')
       matchButton?.addEventListener('click', () => {
-        void openBulkMatchDialog({ type: 'filament', onDone: () => void loadFilaments(true) })
+        void openBulkMatchDialog({ type: 'filament', onDone: () => void reloadAfterFdbChange() })
       }, { signal: panelSignal })
     }).catch(() => { /* ohne Kontext kein Knopf */ })
-    // Einreichungsstatus als kleine Pille an der Bezeichnung (ein Request für alle Filamente, Fehler still)
-    if (!compactPicker && !selectForSpool) {
-      void loadContribContext().then(async context => {
-        if (!context.pluginActive) return
-        const items = await fetchContributions('filament')
-        for (const entry of items) {
-          filamentContribStatus.set(entry.local_id, entry.status)
-          if (!filamentContribBadges.has(entry.local_id)) filamentContribBadges.set(entry.local_id, statusBadge(entry, { compact: true }).replace('class="fdb-status ', 'class="fdb-status fdb-status-inline '))
-        }
+    // Einreichungsstatus in eigener Spalte (ein Request fuer alle Filamente, Fehler still)
+    async function refreshFilamentContrib(): Promise<boolean> {
+      if (compactPicker || selectForSpool) return false
+      try {
+        const context = await loadContribContext()
+        if (!context.pluginActive) return false
+        const items = await fetchContributionsFresh('filament')
+        filamentContribEntries.clear()
+        for (const entry of items) filamentContribEntries.set(entry.local_id, entry)
         document.querySelectorAll<HTMLElement>('tr[data-filament-row]').forEach(row => {
-          const badge = filamentContribBadges.get(Number(row.dataset.filamentRow))
-          const host = row.querySelector('.col-designation > div')
-          if (badge && host && !host.querySelector('.fdb-status')) host.insertAdjacentHTML('beforeend', badge)
+          const cell = row.querySelector('.col-fdb_contrib')
+          if (cell) cell.innerHTML = fdbContribCell(filamentContribEntries.get(Number(row.dataset.filamentRow)))
         })
-        if (columnFilters.fdb_link) applyFiltersAndRender()
-      }).catch(() => { /* Status ist optional */ })
+        if (columnFilters.fdb_contrib) applyFiltersAndRender()
+        return true
+      } catch { return false /* Status ist optional */ }
     }
+    async function reloadAfterFdbChange() {
+      await refreshFilamentContrib()
+      await loadFilaments(true)
+    }
+    void refreshFilamentContrib()
     document.getElementById('bulk-btn-fdb')?.addEventListener('click', () => {
       if (selectedFilamentIds.size === 0) return
       void openBulkSendDialog({
@@ -1339,7 +1358,7 @@ const { compactPicker = false } = Astro.props
           return text || `#${id}`
         },
         link: id => `/filaments/${id}`,
-        onDone: () => { void loadFilaments(true) },
+        onDone: () => { void reloadAfterFdbChange() },
       })
     })
     document.getElementById('bulk-btn-print')?.addEventListener('click', () => {

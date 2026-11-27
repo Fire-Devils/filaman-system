@@ -551,7 +551,8 @@
     "colSubgroup": "Subgroup",
     "colWeight": "Material Weight",
     "colDensity": "Density",
-    "colFdbLink": "FilaMan-DB"
+    "colFdbLink": "FilaMan-DB",
+    "colFdbContrib": "Submission"
   },
   "spools": {
     "title": "Spools",
@@ -1170,7 +1171,8 @@
     "colTotalPrice": "Total Value",
     "colArchived": "Archived",
     "colSpoolWeight": "Spool Weight",
-    "colFdbLink": "FilaMan-DB"
+    "colFdbLink": "FilaMan-DB",
+    "colFdbContrib": "Submission"
   },
   "admin": {
     "title": "Admin",
@@ -2757,6 +2759,7 @@
     "filterPending": "In review",
     "filterRejected": "Rejected",
     "linkedNo": "Not linked to FilaMan-DB yet – use “Send to FilaMan-DB” to share this entry with the community.",
+    "notSubmitted": "Not submitted",
     "title": "Send to FilaMan-DB",
     "send": "Send to FilaMan-DB",
     "sendUpdate": "Send update",

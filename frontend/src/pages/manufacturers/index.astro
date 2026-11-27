@@ -54,12 +54,13 @@ import InventoryFilterReset from '../../components/InventoryFilterReset.astro'
           <th data-i18n="manufacturers.colArchived" data-sort="archived_spool_count" class="sortable col-archived">Archived</th>
           <th data-i18n="manufacturers.colSpoolWeight" data-sort="empty_spool_weight_g" class="sortable col-spool_weight">Spool Weight</th>
           <th data-i18n="manufacturers.colFdbLink" class="col-fdb_link">FilaMan-DB</th>
+          <th data-i18n="manufacturers.colFdbContrib" class="col-fdb_contrib">Submission</th>
           <th data-column-actions style="text-align: right;" data-i18n="common.actions">Actions</th>
         </tr>
       </thead>
       <tbody id="manufacturers-table">
         <tr>
-          <td colspan="11" style="text-align: center; color: var(--text-muted); padding: 24px;" data-i18n="common.loading">Loading...</td>
+          <td colspan="12" style="text-align: center; color: var(--text-muted); padding: 24px;" data-i18n="common.loading">Loading...</td>
         </tr>
       </tbody>
     </table>
@@ -97,7 +98,7 @@ import InventoryFilterReset from '../../components/InventoryFilterReset.astro'
     import type { AppDialogs } from '../../lib/form-dialog'
     import { mountPanel } from '../../lib/panel-navigation'
     import { openBulkMatchDialog } from '../../lib/filamentdb-bulk-match'
-    import { fetchContributionsFresh, loadContribContext, openContributeDialog, sendButtonLabel, sendButtonMode, statusBadge, fdbLinkCell, fdbFilterValues, type ContribRef } from '../../lib/filamentdb-contrib'
+    import { fetchContributionsFresh, loadContribContext, openContributeDialog, sendButtonLabel, sendButtonMode, fdbLinkCell, fdbContribCell, fdbFilterValues, fdbContribFilterValues, type ContribRef } from '../../lib/filamentdb-contrib'
 
     mountPanel('manufacturers', async (panelSignal) => {
     const dialogWindow = window as unknown as AppDialogs
@@ -116,11 +117,17 @@ import InventoryFilterReset from '../../components/InventoryFilterReset.astro'
       } catch { /* Status ist optional */ }
     }
     await loadFdbStatuses()
+    // Nach Senden/Abgleich Status UND Hersteller (custom_fields.filamentdb_id) neu laden, sonst fehlt das Verknuepft-Haekchen.
+    async function reloadAfterFdbChange() {
+      await loadFdbStatuses()
+      invalidateCachePrefix(CACHE_KEYS.MANUFACTURERS)
+      await loadManufacturers(false)
+    }
     if (fdbContext.canContribute) {
       const matchButton = document.getElementById('btn-fdb-match')
       matchButton?.classList.remove('hidden')
       matchButton?.addEventListener('click', () => {
-        void openBulkMatchDialog({ type: 'manufacturer', onDone: () => void loadFdbStatuses().then(() => loadManufacturers()) })
+        void openBulkMatchDialog({ type: 'manufacturer', onDone: () => void reloadAfterFdbChange() })
       }, { signal: panelSignal })
     }
     const manufacturerDialog = createManufacturerDialog({
@@ -264,7 +271,8 @@ import InventoryFilterReset from '../../components/InventoryFilterReset.astro'
       if (key === 'total_price') return manufacturer.total_price_available
       if (key === 'archived') return manufacturer.archived_spool_count
       if (key === 'spool_weight') return manufacturer.empty_spool_weight_g
-      if (key === 'fdb_link') return fdbFilterValues(manufacturer.custom_fields, fdbStatuses.get(manufacturer.id)?.status)
+      if (key === 'fdb_link') return fdbFilterValues(manufacturer.custom_fields)
+      if (key === 'fdb_contrib') return fdbContribFilterValues(fdbStatuses.get(manufacturer.id)?.status)
       return null
     }
 
@@ -296,7 +304,7 @@ import InventoryFilterReset from '../../components/InventoryFilterReset.astro'
         console.error('Failed to load manufacturers:', error)
         document.getElementById('manufacturers-table')!.innerHTML = `
           <tr>
-            <td colspan="11" style="text-align: center; color: var(--error-text); padding: 24px;">${t('manufacturers.failedLoad')}</td>
+            <td colspan="12" style="text-align: center; color: var(--error-text); padding: 24px;">${t('manufacturers.failedLoad')}</td>
           </tr>
         `
       }
@@ -325,7 +333,7 @@ import InventoryFilterReset from '../../components/InventoryFilterReset.astro'
         const hasFilters = search || Object.values(columnFilters).some(isColumnFilterActive)
         tbody.innerHTML = `
           <tr>
-            <td colspan="11" style="text-align: center; color: var(--text-muted); padding: 24px;">
+            <td colspan="12" style="text-align: center; color: var(--text-muted); padding: 24px;">
               ${hasFilters ? t('manufacturers.noResults') : t('manufacturers.noManufacturers')}
             </td>
           </tr>
@@ -338,7 +346,7 @@ import InventoryFilterReset from '../../components/InventoryFilterReset.astro'
         const website = safeExternalUrl(mf.url)
         return `
         <tr style="cursor: pointer;" class="manufacturer-row" data-manufacturer-id="${mf.id}">
-          <td class="col-name" style="font-weight: 500;">${escapeHtml(mf.name)}${fdbStatuses.has(mf.id) ? ` ${statusBadge(fdbStatuses.get(mf.id)!, { compact: true })}` : ''}</td>
+          <td class="col-name" style="font-weight: 500;">${escapeHtml(mf.name)}</td>
           <td class="col-logo" style="padding: 12px; text-align: center;">${mf.logo_url ? `<span style="color: var(--text-muted);" hidden>-</span><img src="${escapeHtml(mf.logo_url)}" alt="" style="height: 24px; width: auto; max-width: 72px; object-fit: contain; background: color-mix(in srgb, white 30%, var(--bg-soft) 70%); border: 1px solid color-mix(in srgb, white 22%, var(--border) 78%); border-radius: 8px; padding: 4px 8px; vertical-align: middle;" onerror="this.style.display='none'; this.previousElementSibling?.removeAttribute('hidden')" />` : '<span style="color: var(--text-muted);">-</span>'}</td>
           <td class="col-url">${website ? `<a href="${website}" target="_blank" rel="noopener" style="color: var(--accent); text-decoration: none;">${escapeHtml(mf.url)}</a>` : `<span style="color: var(--text-muted);">${escapeHtml(mf.url) || '-'}</span>`}</td>
           <td class="col-filaments"><a href="/filaments?manufacturer_id=${mf.id}" style="color: var(--accent); text-decoration: none; font-weight: 500;">${mf.filament_count || 0}</a></td>
@@ -348,6 +356,7 @@ import InventoryFilterReset from '../../components/InventoryFilterReset.astro'
           <td class="col-archived" style="color: var(--text-muted);">${mf.archived_spool_count ?? '-'}</td>
           <td class="col-spool_weight" style="font-family: monospace;">${mf.empty_spool_weight_g != null ? mf.empty_spool_weight_g + 'g' : '-'}</td>
           <td class="col-fdb_link">${fdbLinkCell(mf.custom_fields)}</td>
+          <td class="col-fdb_contrib">${fdbContribCell(fdbStatuses.get(mf.id))}</td>
           <td style="text-align: right;">
             <span class="fm-row-actions">${fdbContext.canContribute && sendButtonMode(fdbStatuses.get(mf.id)) ? `<button type="button" class="fm-btn fm-btn-outline fm-btn-sm btn-fdb-send" data-id="${mf.id}">${escapeHtml(sendButtonLabel(sendButtonMode(fdbStatuses.get(mf.id))!))}</button>` : ''}${tableAction('edit', { id: mf.id })}${tableAction('delete', { id: mf.id })}</span>
           </td>
@@ -373,7 +382,7 @@ import InventoryFilterReset from '../../components/InventoryFilterReset.astro'
       }
       const id = Number(action.dataset.id)
       if (action.classList.contains('btn-fdb-send')) {
-        void openContributeDialog({ type: 'manufacturer', localId: id, onDone: () => void loadFdbStatuses().then(() => renderManufacturers()) })
+        void openContributeDialog({ type: 'manufacturer', localId: id, onDone: () => void reloadAfterFdbChange() })
         return
       }
       if (action.classList.contains('btn-edit')) {
@@ -504,11 +513,21 @@ import InventoryFilterReset from '../../components/InventoryFilterReset.astro'
           options: [
             { value: 'linked', label: t('fdbContrib.filterLinked') },
             { value: 'unlinked', label: t('fdbContrib.filterUnlinked') },
+          ],
+          searchable: false,
+          onApply: (value) => applyColumnFilter('fdb_link', value),
+        },
+        {
+          key: 'fdb_contrib',
+          label: t('manufacturers.colFdbContrib'),
+          columnSelector: 'th.col-fdb_contrib',
+          type: 'multi',
+          options: [
             { value: 'pending', label: t('fdbContrib.filterPending') },
             { value: 'rejected', label: t('fdbContrib.filterRejected') },
           ],
           searchable: false,
-          onApply: (value) => applyColumnFilter('fdb_link', value),
+          onApply: (value) => applyColumnFilter('fdb_contrib', value),
         },
       ]
       columnFilters = sanitizeColumnFilters(columnFilters, definitions)
@@ -545,6 +564,7 @@ import InventoryFilterReset from '../../components/InventoryFilterReset.astro'
           { key: 'spools', label: t('manufacturers.spools') },
           { key: 'materials', label: t('manufacturers.materials') },
           { key: 'fdb_link', label: t('manufacturers.colFdbLink') },
+          ...(fdbContext.canContribute ? [{ key: 'fdb_contrib', label: t('manufacturers.colFdbContrib') }] : []),
         ],
       },
       {

@@ -8,6 +8,7 @@ import { starsText, renderCommunityCard } from './community-profiles'
 import {
   contribErrorMessage,
   fdbFilterValues,
+  fdbContribFilterValues,
   formatPayloadValue,
   noTokenNoticeHtml,
   renderPreviewBody,
@@ -217,13 +218,21 @@ describe('formatPayloadValue colors', () => {
 })
 
 describe('fdbFilterValues', () => {
-  it('maps link and contribution status to filter values', () => {
+  it('maps the link to filter values', () => {
     expect(fdbFilterValues({ filamentdb_id: 3 })).toEqual(['linked'])
     expect(fdbFilterValues({ filamentdb_id: 0 })).toEqual(['unlinked'])
-    expect(fdbFilterValues(null, 'waiting')).toEqual(['unlinked', 'pending'])
-    expect(fdbFilterValues({ filamentdb_id: 3 }, 'pending')).toEqual(['linked', 'pending'])
-    expect(fdbFilterValues(undefined, 'rejected')).toEqual(['unlinked', 'rejected'])
-    expect(fdbFilterValues(undefined, 'error')).toEqual(['unlinked', 'rejected'])
-    expect(fdbFilterValues(undefined, 'approved')).toEqual(['unlinked'])
+    expect(fdbFilterValues(null)).toEqual(['unlinked'])
   })
 })
+
+describe('fdbContribFilterValues', () => {
+  it('maps the contribution status to filter values', () => {
+    expect(fdbContribFilterValues('waiting')).toEqual(['pending'])
+    expect(fdbContribFilterValues('pending')).toEqual(['pending'])
+    expect(fdbContribFilterValues('rejected')).toEqual(['rejected'])
+    expect(fdbContribFilterValues('error')).toEqual(['rejected'])
+    expect(fdbContribFilterValues('approved')).toEqual([])
+    expect(fdbContribFilterValues(undefined)).toEqual([])
+  })
+})
+

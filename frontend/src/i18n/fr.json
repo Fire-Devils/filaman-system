@@ -551,7 +551,8 @@
     "colSubgroup": "Sous-groupe",
     "colWeight": "Poids de matière",
     "colDensity": "Densité",
-    "colFdbLink": "FilaMan-DB"
+    "colFdbLink": "FilaMan-DB",
+    "colFdbContrib": "Soumission"
   },
   "spools": {
     "title": "Bobines",
@@ -1170,7 +1171,8 @@
     "colTotalPrice": "Valeur totale",
     "colArchived": "Archivé",
     "colSpoolWeight": "Poids de la bobine",
-    "colFdbLink": "FilaMan-DB"
+    "colFdbLink": "FilaMan-DB",
+    "colFdbContrib": "Soumission"
   },
   "admin": {
     "title": "Admin",
@@ -2757,6 +2759,7 @@
     "filterPending": "En vérification",
     "filterRejected": "Refusé",
     "linkedNo": "Pas encore lié à FilaMan-DB – utilise « Envoyer à FilaMan-DB » pour partager cette entrée avec la communauté.",
+    "notSubmitted": "Non soumis",
     "title": "Envoyer à FilaMan-DB",
     "send": "Envoyer à FilaMan-DB",
     "sendUpdate": "Envoyer la mise à jour",

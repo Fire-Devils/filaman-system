@@ -61,6 +61,12 @@ export function resetContribContext() {
   contextPromise = null
 }
 
+// Client-Navigation (ClientRouter) laedt das Modul nicht neu: ohne Reset bliebe der Kontext
+// (z. B. canContribute=false vor dem Token-Speichern) bis zum manuellen Neuladen stehen.
+if (typeof document !== 'undefined') {
+  document.addEventListener('astro:after-swap', resetContribContext)
+}
+
 export function loadContribContext(): Promise<ContribContext> {
   contextPromise ??= (async () => {
     const none: ContribContext = { canContribute: false, pluginActive: false, tokenSaved: false, needsToken: false }
@@ -140,18 +146,29 @@ export function statusBadge(entry: Pick<ContribRef, 'status' | 'depends_on'>, op
 
 export type FdbFilterValue = 'linked' | 'unlinked' | 'pending' | 'rejected'
 
-/** Werte der FilaMan-DB-Spaltenfilter: Verknüpfung plus (falls vorhanden) Prüf-/Ablehnungsstatus des Beitrags. */
 /** Verknüpft = positive filamentdb_id (Zahl oder Zahl als Text, wie auf der Detailseite). */
 export function isFdbLinked(customFields: Record<string, unknown> | null | undefined): boolean {
   const id = Number(customFields?.filamentdb_id)
   return Number.isFinite(id) && id > 0
 }
 
-export function fdbFilterValues(customFields: Record<string, unknown> | null | undefined, contribStatus?: string | null): FdbFilterValue[] {
-  const values: FdbFilterValue[] = [isFdbLinked(customFields) ? 'linked' : 'unlinked']
+export function fdbFilterValues(customFields: Record<string, unknown> | null | undefined): FdbFilterValue[] {
+  return [isFdbLinked(customFields) ? 'linked' : 'unlinked']
+}
+
+/** Werte des Einreichungs-Spaltenfilters: Prüf-/Ablehnungsstatus des Beitrags (leer ohne Einreichung). */
+export function fdbContribFilterValues(contribStatus?: string | null): FdbFilterValue[] {
+  const values: FdbFilterValue[] = []
   if (contribStatus && ['pending', 'waiting'].includes(contribStatus)) values.push('pending')
   if (contribStatus && ['rejected', 'error'].includes(contribStatus)) values.push('rejected')
   return values
+}
+
+/** Einreichungsspalte der Listen: Statuspille des eigenen Beitrags, ohne Einreichung gedämpfter Strich. */
+export function fdbContribCell(entry?: Pick<ContribRef, 'status' | 'depends_on'> | null): string {
+  if (entry) return statusBadge(entry)
+  const text = escapeHtml(t('fdbContrib.notSubmitted'))
+  return `<span class="fdb-link-none" data-fdb-submitted="false" aria-label="${text}">–</span>`
 }
 
 /** Verknüpfungsspalte der Listen: grünes Häkchen bei positiver filamentdb_id, sonst gedämpfter Strich. */

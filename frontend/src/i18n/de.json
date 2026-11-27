@@ -552,7 +552,8 @@
     "colSubgroup": "Untergruppe",
     "colWeight": "Materialgewicht",
     "colDensity": "Dichte",
-    "colFdbLink": "FilaMan-DB"
+    "colFdbLink": "FilaMan-DB",
+    "colFdbContrib": "Einreichung"
   },
   "spools": {
     "title": "Spulen",
@@ -1171,7 +1172,8 @@
     "colTotalPrice": "Gesamtwert",
     "colArchived": "Archiviert",
     "colSpoolWeight": "Spulengewicht",
-    "colFdbLink": "FilaMan-DB"
+    "colFdbLink": "FilaMan-DB",
+    "colFdbContrib": "Einreichung"
   },
   "admin": {
     "title": "Admin",
@@ -2758,6 +2760,7 @@
     "filterPending": "In Prüfung",
     "filterRejected": "Abgelehnt",
     "linkedNo": "Noch nicht mit FilaMan-DB verknüpft – über „An FilaMan-DB senden“ kannst du den Eintrag mit der Community teilen.",
+    "notSubmitted": "Nicht eingereicht",
     "title": "An FilaMan-DB senden",
     "send": "An FilaMan-DB senden",
     "sendUpdate": "Update senden",
