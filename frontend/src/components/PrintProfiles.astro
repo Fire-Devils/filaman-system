@@ -10,11 +10,16 @@ import FormDialog from './FormDialog.astro'
 </section>
 
 <section id="community-profiles" class="print-profiles fm-detail-content hidden">
-  <div class="pp-heading">
-    <h2 style="font-weight: 600; margin: 0;" data-i18n="fdbContrib.community.title">Community print profiles</h2>
-    <button type="button" class="fm-btn fm-btn-outline fm-btn-sm hidden" data-cp-search-open data-i18n="fdbContrib.community.searchOpen">Search more profiles</button>
-  </div>
-  <div data-cp-list></div>
+  <details data-cp-details>
+    <summary class="pp-heading" style="cursor: pointer;">
+      <h2 style="font-weight: 600; margin: 0; display: inline;"><span data-i18n="fdbContrib.community.title">Community print profiles</span><span data-cp-count></span></h2>
+    </summary>
+    <p class="pp-muted" style="margin: 8px 0;" data-i18n="fdbContrib.community.intro">Profiles from other users in FilaMan-DB.</p>
+    <div style="margin-bottom: 8px;">
+      <button type="button" class="fm-btn fm-btn-outline fm-btn-sm hidden" data-cp-search-open data-i18n="fdbContrib.community.searchOpen">Search more profiles</button>
+    </div>
+    <div data-cp-list></div>
+  </details>
 </section>
 
 <FormDialog id="community-search-dialog" titleId="community-search-dialog-title" titleKey="fdbContrib.community.searchTitle" title="Search community profiles" wide>

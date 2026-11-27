@@ -11,6 +11,7 @@ Token wird absichtlich nicht als 401 zurückgegeben.
 """
 
 import logging
+import time
 from collections.abc import Awaitable
 from typing import Any, Literal, TypeVar
 
@@ -190,6 +191,9 @@ async def submit_contribution(
             shown_matches=data.shown_matches,
         )
     )
+    if data.type == "print_profile":
+        # Die Zähler hängen an der DB-Filament-ID; ein Einreichen ändert sie, also alles leeren.
+        clear_profile_count_cache()
     return await svc.serialize(db, row)
 
 
@@ -326,6 +330,41 @@ async def suggest_build_plate(
 # ── Community-Druckprofile ───────────────────────────────────────────────
 
 
+_PROFILE_COUNT_TTL = 15 * 60.0
+_profile_count_cache: dict[int, tuple[float, int]] = {}
+
+
+def clear_profile_count_cache(filament_id: int | None = None) -> None:
+    if filament_id is None:
+        _profile_count_cache.clear()
+    else:
+        _profile_count_cache.pop(filament_id, None)
+
+
+@router.get("/print-profiles/count")
+async def count_print_profiles(
+    principal: PrincipalDep,
+    filament_id: int = Query(..., gt=0),
+):
+    """Anzahl Community-Profile zu einem DB-Filament (15 Minuten im Speicher gehalten)."""
+    now = time.monotonic()
+    cached = _profile_count_cache.get(filament_id)
+    if cached is not None and now - cached[0] < _PROFILE_COUNT_TTL:
+        return {"count": cached[1]}
+    try:
+        data = await fdb_request(
+            "GET", "/print-profiles", params={"filament_id": filament_id, "page": 1, "page_size": 1}
+        )
+        total = data.get("total") if isinstance(data, dict) else None
+        count = int(total) if isinstance(total, (int, float)) else None
+    except (FilamentDBError, ValueError, TypeError):
+        count = None
+    if count is None:
+        return {"count": None}
+    _profile_count_cache[filament_id] = (now, count)
+    return {"count": count}
+
+
 @router.get("/print-profiles")
 async def search_print_profiles(
     db: DBSession,
@@ -410,4 +449,5 @@ async def import_print_profile(
             db, principal.user_id, profile_id, data.filament_id, data.printer_id
         )
     )
+    clear_profile_count_cache()
     return {"id": profile.id, "filament_id": profile.filament_id, "printer_id": profile.printer_id}

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { hasMoreResults, profileModelLabel, profileModelMismatch, profileOriginText, SEARCH_MAX_RESULTS } from './community-profiles'
+import { countSuffix, hasMoreResults, profileModelLabel, profileModelMismatch, profileOriginText, SEARCH_MAX_RESULTS } from './community-profiles'
 
 describe('community profile model mismatch', () => {
   const profile = { printer_model_id: 5 }
@@ -50,5 +50,17 @@ describe('community search paging', () => {
     expect(hasMoreResults(45, 45)).toBe(false)
     expect(hasMoreResults(20, undefined)).toBe(false)
     expect(hasMoreResults(SEARCH_MAX_RESULTS, 1000)).toBe(false)
+  })
+})
+
+describe('community profile count suffix', () => {
+  it('shows the count in brackets, also for zero', () => {
+    expect(countSuffix(3)).toBe(' (3)')
+    expect(countSuffix(0)).toBe(' (0)')
+  })
+
+  it('shows nothing when the count is unknown', () => {
+    expect(countSuffix(null)).toBe('')
+    expect(countSuffix(undefined)).toBe('')
   })
 })

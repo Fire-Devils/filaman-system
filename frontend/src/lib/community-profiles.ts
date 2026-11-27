@@ -85,7 +85,7 @@ export function renderCommunityCard(profile: CommunityProfile, options: { canRat
     .map(row => `<div><dt>${e(row.label)}</dt><dd>${e(row.value)}</dd></div>`).join('')
   const own = profile.is_own ? `<span class="fdb-status fdb-status-success">${e(t('fdbContrib.community.own'))}</span>` : ''
   let actions = ''
-  if (options.canAdopt) actions += `<button type="button" class="fm-btn fm-btn-primary fm-btn-sm" data-cp-adopt="${Number(profile.id)}">${e(t('fdbContrib.community.adopt'))}</button> `
+  if (options.canAdopt) actions += `<button type="button" class="fm-btn fm-btn-primary fm-btn-sm" data-cp-adopt="${Number(profile.id)}" title="${e(t('fdbContrib.community.adoptHint'))}">${e(t('fdbContrib.community.adopt'))}</button> `
   if (options.canRate && !profile.is_own) {
     const stars = [1, 2, 3, 4, 5].map(n => `<button type="button" class="fdb-star${profile.my_rating && n <= profile.my_rating ? ' fdb-star-on' : ''}" data-cp-rate="${Number(profile.id)}" data-stars="${n}" aria-label="${e(t('fdbContrib.community.stars', { n }))}">★</button>`).join('')
     actions += `<span class="fdb-rate" role="group" aria-label="${e(t('fdbContrib.community.rate'))}">${stars}</span> `
@@ -106,15 +106,38 @@ export interface CommunityProfilesOptions {
   onAdopted?: () => void
 }
 
+/** Anzeige "(3)" hinter der Überschrift; bei null (Fehler) nichts. */
+export function countSuffix(count: number | null | undefined): string {
+  return typeof count === 'number' && count >= 0 ? ` (${count})` : ''
+}
+
 export async function initCommunityProfiles(options: CommunityProfilesOptions): Promise<void> {
-  const { mount, filamentId, filamentdbId } = options
-  const context = await loadContribContext()
+  const { mount, filamentdbId } = options
   const user = await getMe()
-  const list = mount.querySelector('[data-cp-list]') as HTMLElement
   // Das Plugin muss aktiv sein; Lesen geht auch ohne Token.
   const status = await api.get<{ plugin_active: boolean }>('/filamentdb/contributions/status').catch(() => null)
   if (!status?.plugin_active || !user) return
   mount.classList.remove('hidden')
+  const details = mount.querySelector('[data-cp-details]') as HTMLDetailsElement | null
+  const countEl = mount.querySelector('[data-cp-count]')
+  let loadedOnce = false
+  const open = () => {
+    if (loadedOnce) return
+    loadedOnce = true
+    void loadCommunitySection(options, user)
+  }
+  if (details) details.addEventListener('toggle', () => { if (details.open) open() })
+  else open()
+  try {
+    const data = await api.get<{ count: number | null }>(`/filamentdb/print-profiles/count?filament_id=${filamentdbId}`)
+    if (countEl) countEl.textContent = countSuffix(data.count)
+  } catch { /* ohne Zahl weiter */ }
+}
+
+async function loadCommunitySection(options: CommunityProfilesOptions, user: NonNullable<Awaited<ReturnType<typeof getMe>>>): Promise<void> {
+  const { mount, filamentId, filamentdbId } = options
+  const context = await loadContribContext()
+  const list = mount.querySelector('[data-cp-list]') as HTMLElement
   const canAdopt = hasPermission(user, 'filaments:update')
   const canRate = context.canContribute
   const profilesById = new Map<number, CommunityProfile>()

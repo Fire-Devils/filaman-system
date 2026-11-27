@@ -1270,3 +1270,62 @@ async def test_bulk_check_needs_contribute_permission(viewer_auth_client, fake_d
     resp = await _bulk(client, csrf, auto_link_exact=True)
     assert resp.status_code == 403
     assert fake_db.requests == []
+
+
+@pytest.mark.asyncio
+async def test_import_community_profile_with_nested_printer_model(auth_client, fake_db, entities, db_session):
+    client, csrf = auth_client
+    entities["printer"].printer_manufacturer = None
+    entities["printer"].printer_model = None
+    entities["printer"].filamentdb_printer_model_id = None
+    await db_session.commit()
+    fake_db.profiles[8] = {
+        "id": 8,
+        "nozzle_temp_c": 210,
+        "printer_model": {"id": 3, "manufacturer": "Prusa", "model": "MK4"},
+    }
+    resp = await client.post(
+        f"{BASE}/print-profiles/8/import",
+        json={"filament_id": entities["fil"].id, "printer_id": entities["printer"].id},
+        headers=_h(csrf),
+    )
+    assert resp.status_code == 201, resp.text
+    created = await db_session.get(FilamentPrinterProfile, resp.json()["id"])
+    assert (created.printer_manufacturer, created.printer_model) == ("Prusa", "MK4")
+    assert created.filamentdb_printer_model_id == 3
+
+
+@pytest.mark.asyncio
+async def test_print_profile_count_is_cached_and_cleared_on_import(auth_client, fake_db, entities):
+    from app.api.v1.filamentdb_contributions import clear_profile_count_cache
+
+    clear_profile_count_cache()
+    client, csrf = auth_client
+    url = f"{BASE}/print-profiles/count?filament_id=77"
+    first = await client.get(url)
+    assert first.status_code == 200 and first.json() == {"count": 1}
+    params = [r for r in fake_db.requests if r[1] == "/print-profiles"]
+    assert len(params) == 1
+    assert (await client.get(url)).json() == {"count": 1}
+    assert len([r for r in fake_db.requests if r[1] == "/print-profiles"]) == 1
+
+    fake_db.profiles[9] = {"id": 9, "nozzle_temp_c": 210}
+    imported = await client.post(
+        f"{BASE}/print-profiles/9/import",
+        json={"filament_id": entities["fil"].id, "printer_id": entities["printer"].id},
+        headers=_h(csrf),
+    )
+    assert imported.status_code == 201, imported.text
+    await client.get(url)
+    assert len([r for r in fake_db.requests if r[1] == "/print-profiles"]) == 2
+
+
+@pytest.mark.asyncio
+async def test_print_profile_count_is_null_when_db_fails(auth_client, fake_db):
+    from app.api.v1.filamentdb_contributions import clear_profile_count_cache
+
+    clear_profile_count_cache()
+    client, _ = auth_client
+    fake_db.fail["GET /print-profiles"] = (500, {"code": "boom", "message": "x"})
+    resp = await client.get(f"{BASE}/print-profiles/count?filament_id=78")
+    assert resp.status_code == 200 and resp.json() == {"count": None}

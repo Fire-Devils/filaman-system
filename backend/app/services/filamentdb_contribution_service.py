@@ -1172,6 +1172,10 @@ async def serialize(db: AsyncSession, row: FilamentDBContribution) -> dict[str, 
 # ── Community-Profile übernehmen ─────────────────────────────────────────
 
 
+def _text_or_none(value: Any) -> str | None:
+    return value.strip() or None if isinstance(value, str) else None
+
+
 def _integer_profile_columns() -> set[str]:
     from sqlalchemy import Integer
 
@@ -1224,8 +1228,17 @@ async def import_community_profile(
     model_id = _int(remote.get("printer_model_id"))
     if not model_id and printer is not None:
         model_id = printer.filamentdb_printer_model_id
-    manufacturer = remote.get("printer_manufacturer") or (printer.printer_manufacturer if printer else None)
-    model_name = remote.get("printer_model") or (printer.printer_model if printer else None)
+    remote_model = remote.get("printer_model")
+    if isinstance(remote_model, dict):
+        # Die FilaMan-DB liefert das Modell verschachtelt (PrinterModelRef).
+        remote_manufacturer = remote_model.get("manufacturer")
+        remote_model_name = remote_model.get("model")
+        model_id = model_id or _int(remote_model.get("id"))
+    else:
+        remote_manufacturer = remote.get("printer_manufacturer")
+        remote_model_name = remote_model
+    manufacturer = _text_or_none(remote_manufacturer) or (printer.printer_manufacturer if printer else None)
+    model_name = _text_or_none(remote_model_name) or (printer.printer_model if printer else None)
     if not (model_id or (manufacturer and model_name)):
         raise _err(
             422, "printer_model_required", "The profile has no printer model; choose a printer with a model"
