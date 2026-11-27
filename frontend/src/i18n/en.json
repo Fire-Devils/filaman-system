@@ -550,7 +550,8 @@
     "colFinish": "Finish",
     "colSubgroup": "Subgroup",
     "colWeight": "Material Weight",
-    "colDensity": "Density"
+    "colDensity": "Density",
+    "colFdbLink": "FilaMan-DB"
   },
   "spools": {
     "title": "Spools",
@@ -1165,7 +1166,8 @@
     "totalSpentAllTime": "Total Spent (all time)",
     "colTotalPrice": "Total Value",
     "colArchived": "Archived",
-    "colSpoolWeight": "Spool Weight"
+    "colSpoolWeight": "Spool Weight",
+    "colFdbLink": "FilaMan-DB"
   },
   "admin": {
     "title": "Admin",
@@ -2746,6 +2748,12 @@
     "selectRecords": "Select records first"
   },
   "fdbContrib": {
+    "linkedYes": "Linked to FilaMan-DB",
+    "filterLinked": "Linked",
+    "filterUnlinked": "Not linked",
+    "filterPending": "In review",
+    "filterRejected": "Rejected",
+    "linkedNo": "Not linked",
     "title": "Send to FilaMan-DB",
     "send": "Send to FilaMan-DB",
     "sendUpdate": "Send update",

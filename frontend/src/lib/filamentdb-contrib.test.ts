@@ -7,6 +7,7 @@ import { ApiError } from './api'
 import { starsText, renderCommunityCard } from './community-profiles'
 import {
   contribErrorMessage,
+  fdbFilterValues,
   formatPayloadValue,
   noTokenNoticeHtml,
   renderPreviewBody,
@@ -196,5 +197,17 @@ describe('formatPayloadValue colors', () => {
   })
   it('keeps real names', () => {
     expect(formatPayloadValue([{ color_name: 'Rot', hex_code: '#ff0000' }, { color_name: 'Blau', hex_code: '#0000ff' }])).toBe('Rot #ff0000, Blau #0000ff')
+  })
+})
+
+describe('fdbFilterValues', () => {
+  it('maps link and contribution status to filter values', () => {
+    expect(fdbFilterValues({ filamentdb_id: 3 })).toEqual(['linked'])
+    expect(fdbFilterValues({ filamentdb_id: 0 })).toEqual(['unlinked'])
+    expect(fdbFilterValues(null, 'waiting')).toEqual(['unlinked', 'pending'])
+    expect(fdbFilterValues({ filamentdb_id: 3 }, 'pending')).toEqual(['linked', 'pending'])
+    expect(fdbFilterValues(undefined, 'rejected')).toEqual(['unlinked', 'rejected'])
+    expect(fdbFilterValues(undefined, 'error')).toEqual(['unlinked', 'rejected'])
+    expect(fdbFilterValues(undefined, 'approved')).toEqual(['unlinked'])
   })
 })

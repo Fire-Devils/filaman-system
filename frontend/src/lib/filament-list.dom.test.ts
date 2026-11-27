@@ -6,17 +6,18 @@ import { escapeHtml, formatNumericRange, getExtraFieldColumnValue, renderExtraFi
 import { toColorSwatchBackground } from './colors'
 import { formatPrice } from './format'
 import { columnClassName } from './column-key'
+import { fdbLinkCell } from './filamentdb-contrib'
 
 const source = readFileSync('src/pages/filaments/index.astro', 'utf8')
 const script = source.slice(source.indexOf('    function renderColorDots'), source.indexOf('    function setupHeaderFilters'))
-const render = new Function('escapeHtml', 'formatNumericRange', 'toColorSwatchBackground', 'formatPrice', 'getExtraFieldColumnValue', 'renderExtraFieldColumn', 'columnClassName', `
+const render = new Function('escapeHtml', 'formatNumericRange', 'toColorSwatchBackground', 'formatPrice', 'getExtraFieldColumnValue', 'renderExtraFieldColumn', 'columnClassName', 'fdbLinkCell', `
   const selectedFilamentIds = new Set(), filamentContribBadges = new Map(), getCurrency = () => 'EUR', t = () => '';
   const compactPicker = false, selectForSpool = false, createFilamentHref = '/filaments/new', updateBulkBar = () => {};
   const filamentExtraFields = [{ key: 'notes', label: 'Notes', field_type: 'text' }];
   const filReorder = { applyOrder() {} }, filResize = { refreshColumns() {} };
   ${transpileModule(script, {}).outputText}
   return { renderFilaments, renderGroupedFilaments, filamentContribBadges };
-`)(escapeHtml, formatNumericRange, toColorSwatchBackground, formatPrice, getExtraFieldColumnValue, renderExtraFieldColumn, columnClassName)
+`)(escapeHtml, formatNumericRange, toColorSwatchBackground, formatPrice, getExtraFieldColumnValue, renderExtraFieldColumn, columnClassName, fdbLinkCell)
 
 afterEach(() => { document.body.innerHTML = '' })
 
@@ -67,4 +68,21 @@ it('shows a cached contribution pill next to the designation', () => {
   const rows = document.querySelectorAll('tr[data-filament-row]')
   expect(rows[0].querySelector('.col-designation .fdb-status')?.textContent).toBe('In Prüfung')
   expect(rows[1].querySelector('.fdb-status')).toBeNull()
+})
+
+it('fdbLinkCell shows a green check only for a positive filamentdb_id', () => {
+  document.body.innerHTML = [{ filamentdb_id: 5 }, { filamentdb_id: 0 }, { filamentdb_id: '5' }, {}, null]
+    .map(cf => `<p>${fdbLinkCell(cf)}</p>`).join('')
+  const cells = [...document.querySelectorAll('p > span')]
+  expect(cells.map(c => c.getAttribute('data-fdb-linked'))).toEqual(['true', 'false', 'true', 'false', 'false'])
+  expect(cells[0].classList.contains('fdb-status-success')).toBe(true)
+  expect(cells[0].textContent).toBe('\u2713')
+  expect(cells[1].textContent).toBe('\u2013')
+  expect(cells[0].getAttribute('aria-label')).toBeTruthy()
+})
+
+it('renderFilaments renders the FilaMan-DB link column', () => {
+  document.body.innerHTML = '<table><tbody id="filaments-table"></tbody></table>'
+  render.renderFilaments([{ id: 1, manufacturer_id: 1, manufacturer: { name: 'M' }, designation: 'D', material_type: 'PLA', diameter_mm: 1.75, custom_fields: { filamentdb_id: 3 }, colors: [] }])
+  expect(document.querySelector('.col-fdb_link [data-fdb-linked]')?.getAttribute('data-fdb-linked')).toBe('true')
 })

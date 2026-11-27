@@ -102,6 +102,32 @@ export function statusBadge(entry: Pick<ContribRef, 'status' | 'depends_on'>, op
   return `<span class="fdb-status fdb-status-${tone}" data-fdb-status="${escapeHtml(entry.status)}">${text}</span>`
 }
 
+export type FdbFilterValue = 'linked' | 'unlinked' | 'pending' | 'rejected'
+
+/** Werte der FilaMan-DB-Spaltenfilter: Verknüpfung plus (falls vorhanden) Prüf-/Ablehnungsstatus des Beitrags. */
+/** Verknüpft = positive filamentdb_id (Zahl oder Zahl als Text, wie auf der Detailseite). */
+export function isFdbLinked(customFields: Record<string, unknown> | null | undefined): boolean {
+  const id = Number(customFields?.filamentdb_id)
+  return Number.isFinite(id) && id > 0
+}
+
+export function fdbFilterValues(customFields: Record<string, unknown> | null | undefined, contribStatus?: string | null): FdbFilterValue[] {
+  const values: FdbFilterValue[] = [isFdbLinked(customFields) ? 'linked' : 'unlinked']
+  if (contribStatus && ['pending', 'waiting'].includes(contribStatus)) values.push('pending')
+  if (contribStatus && ['rejected', 'error'].includes(contribStatus)) values.push('rejected')
+  return values
+}
+
+/** Verknüpfungsspalte der Listen: grünes Häkchen bei positiver filamentdb_id, sonst gedämpfter Strich. */
+export function fdbLinkCell(customFields: Record<string, unknown> | null | undefined): string {
+  if (isFdbLinked(customFields)) {
+    const text = escapeHtml(t('fdbContrib.linkedYes'))
+    return `<span class="fdb-status fdb-status-icon fdb-status-success" data-fdb-linked="true" title="${text}" aria-label="${text}" role="img">${STATUS_ICONS.success}</span>`
+  }
+  const text = escapeHtml(t('fdbContrib.linkedNo'))
+  return `<span class="fdb-link-none" data-fdb-linked="false" title="${text}" aria-label="${text}" role="img">–</span>`
+}
+
 export type SendButtonMode = 'send' | 'update' | null
 
 /** Welcher Senden-Knopf zu einem Beitrag passt (null: nur die Statuspille). */
