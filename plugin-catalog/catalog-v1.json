@@ -38,10 +38,10 @@
     "description": "Sends spool assignments to Klipper printers through Moonraker. Setup also requires the FilaMan component on the Moonraker host.",
     "publisher": "Fire-Devils",
     "repository_url": "https://github.com/Fire-Devils/FilaMan-Moonraker-Plugin",
-    "version": "0.2.5",
+    "version": "0.4.0",
     "min_filaman_version": "2.0.3",
-    "zip_path": "moonraker_filaman-0.2.5.zip",
-    "sha256": "f762043abaf267d32d11ae41ca03b2b2156afddd025d14d13391a224b150cd11"
+    "zip_path": "moonraker_filaman-0.4.0.zip",
+    "sha256": "fda995c04d0a1d56a74cb072c3986a7d48c7720e057ef3e554969e26cb7b512d"
   },
   {
     "plugin_key": "spoolmanapi",
