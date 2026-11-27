@@ -5,6 +5,7 @@
       "date": "",
       "changes": {
         "de": [
+          { "type": "feature", "text": "FilaMan-DB-Abgleich: Automatisch verknüpfte Einträge haben jetzt \"Verknüpfung lösen\"; danach erscheint der Treffer als Vorschlag. Unter jedem Treffer zeigt eine aufklappbare Detailzeile die Daten des DB-Eintrags (Hersteller, Material, Farbe, Durchmesser, Score) im Vergleich zum lokalen Eintrag. Vorschläge lassen sich mit \"Ablehnen\" im Dialog ausblenden." },
           { "type": "fix", "text": "FilaMan-DB: Der Abgleich \"Auf Aktualisierungen prüfen\" schlug bei allen verknüpften Filamenten die Währung EUR vor, weil die DB auch ohne Preis immer EUR mitschickt. Die Währung wird jetzt nur noch zusammen mit einem Preis übernommen. Sie gehört zum Preis des Filaments; Spulenpreise und Restwerte nutzen weiter die Währung aus den App-Einstellungen." },
           { "type": "feature", "text": "Dashboard: Unter \"Anpassen\" → \"Anordnen\" stellst Du jetzt für jede Karte Breite (1, 2 oder 3 Spalten oder ganze Zeile) und Höhe (Automatisch, Klein, Mittel, Groß) ein, per Zieh-Griff unten rechts an der Karte oder über die Auswahlfelder. Das gilt im Raster und in der Kachel-Ansicht (Masonry), wo Karten jetzt auch über mehrere Spalten gehen. Die Größen werden pro Benutzer gespeichert; auf dem Handy sind alle Karten einspaltig." },
           { "type": "fix", "text": "Admin-Übersicht und FilaMan-DB-Infoseite: Seit dem Hilfe-Knopf lagen Überschrift, Karten und Gefahrenzone nebeneinander in einer Zeile. Die Seiten sind wieder richtig aufgebaut." },
@@ -15,6 +16,7 @@
           { "type": "fix", "text": "Seitenleiste: Die Symbole für AMS View, Spulen-Protokoll und Druckaufträge erscheinen wieder als Umriss mit Details statt als graue Fläche." }
         ],
         "en": [
+          { "type": "feature", "text": "FilaMan-DB matching: automatically linked entries now have \"Unlink\"; the match then shows up as a suggestion. Each match has an expandable details row comparing the DB entry (manufacturer, material, color, diameter, score) with the local one. Suggestions can be hidden with \"Reject\" in the dialog." },
           { "type": "fix", "text": "FilaMan-DB: The \"Check for updates\" comparison proposed EUR as the currency for every linked filament, because the DB always sends EUR, even without a price. The currency is now only taken over together with a price. It belongs to the filament's price; spool prices and remaining values keep using the currency from the app settings." },
           { "type": "feature", "text": "Dashboard: Under \"Customize\" → \"Arrange\" you can now set each card's width (1, 2 or 3 columns or the full row) and height (Automatic, Small, Medium, Large), with the resize handle at the bottom right of the card or with the selects. This works in the grid and in the tiles (masonry) view, where cards can now span several columns. Sizes are saved per user; on phones all cards use a single column." },
           { "type": "fix", "text": "Admin overview and FilaMan-DB info page: Since the help button was added, the heading, cards and danger zone sat side by side in a single row. The pages are laid out correctly again." },

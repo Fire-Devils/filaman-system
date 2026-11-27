@@ -1431,3 +1431,64 @@ async def test_print_profile_count_is_null_when_db_fails(auth_client, fake_db):
     fake_db.fail["GET /print-profiles"] = (500, {"code": "boom", "message": "x"})
     resp = await client.get(f"{BASE}/print-profiles/count?filament_id=78")
     assert resp.status_code == 200 and resp.json() == {"count": None}
+
+
+# ─── Verknüpfung lösen ────────────────────────────────────────────────────
+
+
+async def _unlink(client, csrf, type_, local_id):
+    return await client.post(
+        f"{BASE}/contributions/unlink",
+        json={"type": type_, "local_id": local_id},
+        headers=_h(csrf),
+    )
+
+
+@pytest.mark.asyncio
+async def test_unlink_removes_only_filamentdb_id(auth_client, fake_db, entities, db_session):
+    client, csrf = auth_client
+    await _save_token(client, csrf)
+    mfr = entities["mfr"]
+    mfr.custom_fields = {"other": "keep"}
+    await db_session.commit()
+    fake_db.matches["manufacturer"] = [{"id": 7, "label": "Acme", "score": 1.0, "type": "manufacturer"}]
+    # über Auto-Verknüpfung entsteht die Zeile im Status "linked"
+    body = (await _bulk(client, csrf, ids=[mfr.id], auto_link_exact=True)).json()
+    assert body["items"][0]["category"] == "linked"
+    await db_session.refresh(mfr)
+    assert mfr.custom_fields == {"other": "keep", "filamentdb_id": 7}
+
+    resp = await _unlink(client, csrf, "manufacturer", mfr.id)
+    assert resp.status_code == 200, resp.text
+    await db_session.refresh(mfr)
+    assert mfr.custom_fields == {"other": "keep"}
+    assert (await db_session.scalars(select(FilamentDBContribution))).first() is None
+
+    # wieder Kandidat, Treffer kommt als Vorschlag
+    fake_db.matches["manufacturer"] = [
+        {"id": 7, "label": "Acme", "score": 1.0, "type": "manufacturer", "material": "PLA"}
+    ]
+    again = (await _bulk(client, csrf, ids=[mfr.id], auto_link_exact=False)).json()
+    item = again["items"][0]
+    assert item["category"] == "suggested"
+    assert item["matches"][0]["details"] == {"material": "PLA"}
+    assert item["local"]["manufacturer"] == mfr.name
+
+
+@pytest.mark.asyncio
+async def test_unlink_filament_and_missing_object(auth_client, fake_db, entities, db_session):
+    client, csrf = auth_client
+    fil = entities["fil"]
+    fil.custom_fields = {"filamentdb_id": 3}
+    await db_session.commit()
+    assert (await _unlink(client, csrf, "filament", fil.id)).status_code == 200
+    await db_session.refresh(fil)
+    assert "filamentdb_id" not in (fil.custom_fields or {})
+    assert (await _unlink(client, csrf, "filament", 999999)).status_code == 404
+    assert (await _unlink(client, csrf, "manufacturer", 999999)).status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_unlink_needs_permission(viewer_auth_client, fake_db, entities):  # noqa: F811
+    viewer, viewer_csrf = viewer_auth_client
+    assert (await _unlink(viewer, viewer_csrf, "manufacturer", entities["mfr"].id)).status_code == 403

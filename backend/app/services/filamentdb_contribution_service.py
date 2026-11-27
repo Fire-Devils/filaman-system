@@ -589,16 +589,55 @@ def _bulk_matches(raw: list[dict[str, Any]]) -> list[dict[str, Any]]:
         score = m.get("score")
         score = float(score) if isinstance(score, (int, float)) and not isinstance(score, bool) else 0.0
         label = m.get("label") or m.get("name")
+        # Zusatzfelder der DB (Hersteller, Material, Farbe, Durchmesser …) für die Detailzeile:
+        # nur einfache Werte, Strings gekürzt. Die Oberfläche gibt sie ausschließlich escaped aus.
+        details = {
+            k: (v[:200] if isinstance(v, str) else v)
+            for k, v in m.items()
+            if k not in ("type", "id", "label", "name", "score")
+            and isinstance(k, str)
+            and isinstance(v, (str, int, float))
+            and not isinstance(v, bool)
+        }
         out.append(
             {
                 "type": m.get("type"),
                 "id": m["id"],
                 "label": label if isinstance(label, str) else None,
                 "score": score,
+                "details": details,
             }
         )
     out.sort(key=lambda m: m["score"], reverse=True)
     return out
+
+
+async def _local_summary(db: AsyncSession, entity_type: str, local_id: int) -> dict[str, Any]:
+    """Lokale Vergleichsdaten für die Detailzeile im Massenabgleich."""
+    if entity_type == "manufacturer":
+        mfr = await db.get(Manufacturer, local_id)
+        return {"manufacturer": mfr.name} if mfr else {}
+    fil = await db.get(Filament, local_id)
+    if fil is None:
+        return {}
+    mfr = await db.get(Manufacturer, fil.manufacturer_id)
+    link = await db.scalar(
+        select(FilamentColor)
+        .where(FilamentColor.filament_id == fil.id)
+        .order_by(FilamentColor.position)
+        .limit(1)
+    )
+    color = await db.get(Color, link.color_id) if link else None
+    return {
+        "manufacturer": mfr.name if mfr else None,
+        "material": fil.material_type,
+        "name": fil.designation,
+        "color_name": (link.display_name_override if link and link.display_name_override else None)
+        or fil.manufacturer_color_name
+        or (color.name if color else None),
+        "color_hex": color.hex_code if color else None,
+        "diameter_mm": fil.diameter_mm,
+    }
 
 
 BULK_BATCH_MAX = 25
@@ -663,6 +702,7 @@ async def bulk_check(
             "category": "none",
             "matches": [],
             "blockers": [],
+            "local": await _local_summary(db, entity_type, local_id),
         }
         try:
             b = await build(db, entity_type, local_id)
@@ -706,6 +746,30 @@ async def bulk_check(
         "counts": counts,
         "total": len(items),
     }
+
+
+async def unlink(
+    db: AsyncSession, entity_type: str, local_id: int
+) -> None:
+    """Entfernt nur ``custom_fields.filamentdb_id``; übrige Custom-Fields bleiben unverändert.
+
+    Eine reine Verknüpfungszeile (Status ``linked``) wird gelöscht, damit das Objekt wieder
+    als Kandidat gilt. Echte Einreichungen bleiben unangetastet.
+    """
+    if entity_type not in ("manufacturer", "filament"):
+        raise _err(422, "invalid_type", f"Unlink is not available for {entity_type}")
+    obj = (
+        await _get_manufacturer(db, local_id)
+        if entity_type == "manufacturer"
+        else await _get_filament(db, local_id)
+    )
+    cf = dict(obj.custom_fields or {})
+    cf.pop("filamentdb_id", None)
+    obj.custom_fields = cf or None
+    row = await get_row(db, entity_type, local_id)
+    if row is not None and row.status == "linked":
+        await db.delete(row)
+    await db.commit()
 
 
 # ── Lokale Verknüpfung ───────────────────────────────────────────────────

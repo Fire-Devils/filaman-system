@@ -33,6 +33,8 @@ export interface ContribMatch {
   id: number
   label?: string
   score?: number
+  /** Zusatzfelder aus /contribute/check (einfache Werte), z. B. Hersteller, Material, Farbe. */
+  details?: Record<string, string | number>
 }
 
 export interface ContribPreview {
