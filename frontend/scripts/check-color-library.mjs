@@ -89,7 +89,8 @@ try {
       const nameWidth = await table.locator('th.col-name').evaluate(cell => cell.getBoundingClientRect().width)
       assert.ok(nameWidth < 320, `Name column contracts before scrolling: ${nameWidth}px`)
     }
-    const actionRight = await page.locator('#btn-new').evaluate(button => button.getBoundingClientRect().right)
+    // The last header action (the help button) ends at the table edge
+    const actionRight = await page.locator('.fm-list-controls').evaluate(controls => controls.lastElementChild.getBoundingClientRect().right)
     const tableRight = await page.locator('.fm-colors-table').evaluate(card => card.getBoundingClientRect().right)
     assert.ok(Math.abs(actionRight - tableRight) < 2, `Action/table edges at ${width}px: ${actionRight}/${tableRight}`)
     const padding = await table.locator('tbody td').first().evaluate(cell => parseFloat(getComputedStyle(cell).paddingRight) + parseFloat(getComputedStyle(cell.nextElementSibling).paddingLeft))

@@ -161,8 +161,8 @@ try {
       const tables = header.parentElement.querySelector('.sidebar-settings-lists').getBoundingClientRect()
       const feedback = header.querySelector('.sidebar-settings-feedback').getBoundingClientRect()
       const buttons = header.querySelector('.fm-list-controls').getBoundingClientRect()
-      const defaults = header.querySelector('#sidebar-reset').getBoundingClientRect()
-      if (Math.abs(tables.right - defaults.right) >= 1) return false
+      // The controls row (Save, Defaults, help button) ends at the table edge
+      if (Math.abs(tables.right - buttons.right) >= 1) return false
       const centerY = rect => rect.top + rect.height / 2
       if (innerWidth <= 599) return feedback.bottom <= buttons.top
       return feedback.right <= buttons.left && Math.abs(centerY(feedback) - centerY(buttons)) < 1 &&
