@@ -5,10 +5,10 @@
     "description": "Connects to Bambu Lab printers and manages AMS spool assignments.",
     "publisher": "Fire-Devils",
     "repository_url": "https://github.com/Fire-Devils/filaman-bambulab-plugin",
-    "version": "2.13.0",
+    "version": "2.14.0",
     "min_filaman_version": "2.0.3",
-    "zip_path": "bambulab-2.13.0.zip",
-    "sha256": "663f11eec1159c4ee01cf7978ada7847786c73c7a290755266ddbe4d1154d77c"
+    "zip_path": "bambulab-2.14.0.zip",
+    "sha256": "7fe855327a27d62c791dfd11f05152fb539df0d1babf865697edd2ee9ac17832"
   },
   {
     "plugin_key": "bambuddy",
@@ -16,10 +16,10 @@
     "description": "Connects to Bambuddy for AMS inventory and filament usage.",
     "publisher": "Fire-Devils",
     "repository_url": "https://github.com/Fire-Devils/filaman-bambuddy-plugin",
-    "version": "1.3.14",
+    "version": "1.4.0",
     "min_filaman_version": "2.0.3",
-    "zip_path": "bambuddy-1.3.14.zip",
-    "sha256": "a1d20bc2570e3d0c2624f4d0156c35dfaf5c256f75c55b1cde27521a3f120664"
+    "zip_path": "bambuddy-1.4.0.zip",
+    "sha256": "9f3dee77cceb2cc6fb54e600d8050086545133ee2ac82c5a3ec2e30a7d08b21d"
   },
   {
     "plugin_key": "filament_swatch",
@@ -38,10 +38,10 @@
     "description": "Sends spool assignments to Klipper printers through Moonraker. Setup also requires the FilaMan component on the Moonraker host.",
     "publisher": "Fire-Devils",
     "repository_url": "https://github.com/Fire-Devils/FilaMan-Moonraker-Plugin",
-    "version": "0.2.5",
+    "version": "0.4.0",
     "min_filaman_version": "2.0.3",
-    "zip_path": "moonraker_filaman-0.2.5.zip",
-    "sha256": "f762043abaf267d32d11ae41ca03b2b2156afddd025d14d13391a224b150cd11"
+    "zip_path": "moonraker_filaman-0.4.0.zip",
+    "sha256": "fda995c04d0a1d56a74cb072c3986a7d48c7720e057ef3e554969e26cb7b512d"
   },
   {
     "plugin_key": "spoolmanapi",

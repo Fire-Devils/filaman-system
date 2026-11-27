@@ -174,6 +174,30 @@ async def test_printer_and_filament_fields_writable(auth_client, db_session):
     assert body["abrasive"] is False
 
 
+@pytest.mark.asyncio
+async def test_printer_detail_returns_model_fields(auth_client):
+    client, csrf = auth_client
+    headers = {"X-CSRF-Token": csrf}
+    created = await client.post(
+        "/api/v1/printers",
+        json={
+            "name": "Modelled",
+            "driver_key": "bambu_mqtt",
+            "printer_manufacturer": "Bambu Lab",
+            "printer_model": "X1C",
+            "filamentdb_printer_model_id": 42,
+        },
+        headers=headers,
+    )
+    assert created.status_code == 201, created.text
+    detail = await client.get(f"/api/v1/printers/{created.json()['id']}")
+    assert detail.status_code == 200
+    body = detail.json()
+    assert body["printer_manufacturer"] == "Bambu Lab"
+    assert body["printer_model"] == "X1C"
+    assert body["filamentdb_printer_model_id"] == 42
+
+
 MIGRATION_PATH = (
     Path(__file__).parents[1]
     / "alembic"

@@ -1,8 +1,12 @@
-import { describe, expect, it } from 'vitest'
+// @vitest-environment happy-dom
+import { afterEach, describe, expect, it } from 'vitest'
+
+import { setLang } from './i18n'
 
 import {
   buildDriverConfigPayload,
   isStructuredProp,
+  renderDriverConfigFields,
   type SchemaProperty,
 } from './driver-config-form'
 
@@ -114,5 +118,45 @@ describe('buildDriverConfigPayload', () => {
     )
 
     expect(payload).toEqual({ moonraker_url: 'http://printer.local' })
+  })
+})
+
+describe('renderDriverConfigFields x-i18n', () => {
+  afterEach(() => setLang('en'))
+  const schema = {
+    properties: {
+      mode: {
+        type: 'string',
+        title: 'Mode',
+        description: 'Pick one',
+        enum: ['a', 'b'],
+        enumNames: ['Alpha', 'Beta'],
+        'x-i18n': { de: { title: 'Modus', description: 'Wähle eins', enumNames: ['Erste', 'Zweite'] }, fr: { title: 'Mode FR' } },
+      },
+    },
+  }
+
+  it('uses the translation for the current language', () => {
+    setLang('de')
+    const html = renderDriverConfigFields(schema, {}, 'x')
+    expect(html).toContain('Modus')
+    expect(html).toContain('Wähle eins')
+    expect(html).toContain('>Erste<')
+  })
+
+  it('falls back to English for a missing language', () => {
+    setLang('es')
+    const html = renderDriverConfigFields(schema, {}, 'x')
+    expect(html).toContain('Mode')
+    expect(html).toContain('Pick one')
+    expect(html).toContain('>Alpha<')
+  })
+
+  it('falls back per field when a translation is partial', () => {
+    setLang('fr')
+    const html = renderDriverConfigFields(schema, {}, 'x')
+    expect(html).toContain('Mode FR')
+    expect(html).toContain('Pick one')
+    expect(html).toContain('>Beta<')
   })
 })

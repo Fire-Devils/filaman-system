@@ -5,10 +5,18 @@
       "date": "",
       "changes": {
         "de": [
+          { "type": "fix", "text": "Admin-Übersicht und FilaMan-DB-Infoseite: Seit dem Hilfe-Knopf lagen Überschrift, Karten und Gefahrenzone nebeneinander in einer Zeile. Die Seiten sind wieder richtig aufgebaut." },
+          { "type": "fix", "text": "Drucker: Hersteller und Modell des Druckers gingen beim erneuten Öffnen des Bearbeiten-Dialogs verloren und wurden beim nächsten Speichern gelöscht. Sie bleiben jetzt erhalten. Wer seit 2.12.0 einen Drucker bearbeitet hat, trägt das Druckermodell bitte noch einmal ein." },
+          { "type": "improvement", "text": "Druckereinstellungen: Plugins können die Beschriftungen und Erklärungen ihrer Einstellungen jetzt übersetzen. Moonraker 0.4.0, Bambu Lab 2.14.0 und Bambuddy 1.4.0 bringen Deutsch und Französisch mit." },
+          { "type": "fix", "text": "Moonraker 0.4.0: Drucker ohne AMS, z. B. ein Snapmaker U1 mit vier Toolheads, zeigen keine vier zusätzlichen AMS-Slots mehr. Die Slots aus \"Anzahl virtueller Slots\" gibt es nur noch für eine QIDI BOX oder ein von Hand eingetragenes Slot-Sensor-Objekt." },
           { "type": "fix", "text": "Admin-Übersicht, FilaMan-DB-Infoseite und SQLite-Backups passen jetzt auf Handys, ohne seitlich zu scrollen. Bei den SQLite-Backups steht auf schmalen Bildschirmen der Dateiname in einer eigenen Zeile, darunter Datum, Größe und die Knöpfe \"Wiederherstellen\" und \"Löschen\"." },
           { "type": "fix", "text": "Seitenleiste: Die Symbole für AMS View, Spulen-Protokoll und Druckaufträge erscheinen wieder als Umriss mit Details statt als graue Fläche." }
         ],
         "en": [
+          { "type": "fix", "text": "Admin overview and FilaMan-DB info page: Since the help button was added, the heading, cards and danger zone sat side by side in a single row. The pages are laid out correctly again." },
+          { "type": "fix", "text": "Printers: The printer's manufacturer and model disappeared when the edit dialog was opened again and were deleted on the next save. They are kept now. If you edited a printer since 2.12.0, please enter its printer model again." },
+          { "type": "improvement", "text": "Printer settings: Plugins can now translate the labels and explanations of their settings. Moonraker 0.4.0, Bambu Lab 2.14.0 and Bambuddy 1.4.0 include German and French." },
+          { "type": "fix", "text": "Moonraker 0.4.0: Printers without an AMS, such as a Snapmaker U1 with four toolheads, no longer show four extra AMS slots. Slots from \"Virtual Slot Count\" are only added for a QIDI BOX or a manually set slot sensor object." },
           { "type": "fix", "text": "The admin overview, the FilaMan-DB info page and SQLite Backups now fit on phones without horizontal scrolling. On narrow screens, each SQLite backup shows its filename on its own line, with the date, size and the \"Restore\" and \"Delete\" buttons below." },
           { "type": "fix", "text": "Sidebar: The icons for AMS View, Spool Log and Print Jobs show as outlines with their details again instead of solid gray shapes." }
         ]
