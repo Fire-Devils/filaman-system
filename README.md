@@ -14,7 +14,7 @@ Empty spools don't belong in the trash! We support the [Recycling Fabrik](https:
 FilaMan is a comprehensive filament management system for 3D printing. It helps you keep track of your filament spools, manufacturers, colors, and current stock levels. It also features integrations with printers and AMS (Automatic Material System) units.
 
 ### Documentation
-The full user manual is available at **[docu.filaman.app](https://docu.filaman.app)**.
+The full user manual is available at **[docu.filaman.app](https://docu.filaman.app)**. It is available in German and English and includes screenshots.
 
 To browse, install, or submit plugins, see the [plugin catalog guide](plugin-catalog/README.md).
 See the [label rendering and print-request API](docs/label-api.md) for device and client integration.
@@ -23,6 +23,9 @@ See the [label rendering and print-request API](docs/label-api.md) for device an
 To unlock the full potential of this system, we highly recommend our companion hardware project:
 **[FilaMan-System-ESP32](https://github.com/Fire-Devils/FilaMan-System-ESP32)**
 With this ESP32-based smart scale and RFID integration, you can simply place your spools on the scale, automatically measure the remaining weight, and sync the data seamlessly with this software via RFID tags!
+
+- **Firmware updates over Wi-Fi:** Upload or import scale firmware under Admin > Devices; the scales fetch it from the FilaMan server themselves. See [Scale Firmware Updates](https://docu.filaman.app/Docs/En/21-Firmware-Updates).
+- **"Spool full" at the scale:** Weigh a full spool and long-press the touch button to calculate the empty spool weight and set the remaining weight to the nominal weight. See [Scale: setup and operation](https://docu.filaman.app/Docs/En/28-Scale).
 
 ### 🏠 Home Assistant Integration
 If you are using Home Assistant, install FilaMan from our add-on repository:
@@ -43,18 +46,40 @@ Studio, giving custom and third-party filament much the same seamless workflow
 as an official Bambu RFID spool.
 
 ## Features
+
+**Inventory**
 - **Spool Management:** Track remaining weight, estimated metres and percentage, location, and status.
 - **Filament and Spool Details:** Consistent, responsive pages with quick actions and in-place editing.
 - **Standard Filament Properties:** Temperature ranges, drying recommendations, print settings, and dimensions alongside typed extra fields.
-- **Catalogs and Imports:** Search FilaManDB for filament specifications and import existing inventory from Spoolman.
+- **Material Presets:** Store default nozzle and bed temperature, flow ratio, drying, drying interval and density per material; new filaments take them over into empty fields.
+- **Color Library:** Reusable colors with transparency and a visual color filter; duplicate colors can be compared and merged (also with differing HEX values) while keeping all filament assignments.
+- **Moisture and Abrasive Filament:** Tracks when a spool was opened or dried and shows a material-based moisture status; abrasive filaments are flagged, with warnings for non-hardened nozzles.
+- **Purchase Value and Remaining Value:** Each spool's purchase price pro rata by remaining weight, shown on the dashboard, manufacturer view, spool detail page and as a spool list column.
 - **Dual RFID Tags:** Store two RFID tag UIDs per spool, so either side of a dual-tag spool can identify the same inventory item.
-- **Multi-User:** Role-based access control and tenant support.
+
+**Catalogs and Community**
+- **Catalogs and Imports:** Search FilaManDB for filament specifications and import existing inventory from Spoolman.
+- **FilaMan-DB Community:** Send manufacturers, filaments and print profiles to the community database after a preview, match your entries against it in bulk, and use "Check for updates" to compare linked filaments with the current data.
+- **Print Profiles:** Per filament and printer model: temperatures, speed, flow/pressure advance, retraction and fan, plus community print profiles you can adopt.
+
+**Printing and Analysis**
+- **Print Jobs, Projects and Slicer Link:** Log prints with projects and costs and deduct filament from spools; a script for PrusaSlicer, OrcaSlicer, BambuStudio and Cura reports sliced jobs, and consumption is only booked after you confirm.
+- **Analytics:** Consumption and costs by month, material and manufacturer, plus purchases, print statistics and top projects.
+- **Printable Labels and Label Designer:** Print and export spool or filament labels with QR codes, a freeform millimetre-accurate designer, grouped and searchable field tokens, and label-paper sheet output.
+- **AMS View:** Live overview of the AMS units and slots per printer with color, material and remaining amount; kiosk mode for a wall display.
+
+**Integrations and Extensibility**
 - **Printer Integration:** Plugin system to connect with 3D printers and AMS units. Plugin authors can supply [custom icon assets](docs/plugin-icons.md).
 - **Bambuddy Integration:** Synchronize spool inventory and AMS assignments, track filament use, and automatically apply custom Bambu Cloud slicer profiles.
-- **Printable Labels:** Print and export spool or filament labels with QR codes, custom layouts, grouped and searchable field tokens, and label-paper sheet output.
-- **Database Support:** Works with SQLite (default), MySQL, and PostgreSQL.
-- **Responsive UI:** Modern design with light, dark, and brand themes.
+- **Plugin Catalog and Plugin Buttons:** Browse and install plugins from a curated catalog; plugins can add their own buttons to the filament editor, the filament list and the color library.
+- **AI Access (MCP):** AI assistants such as Claude, Cursor, VS Code, Codex or Gemini can query FilaMan through the built-in MCP server and, if allowed, maintain spools, filaments and locations.
+- **ESP32 Scale:** Firmware updates over Wi-Fi from the FilaMan server and a "Spool full" function at the scale (see below).
+
+**Platform**
+- **Multi-User:** Role-based access control and tenant support.
 - **OIDC (OAuth2) Login:** Single Sign-On (SSO) via OpenID Connect for existing users.
+- **Database Support:** Works with SQLite (default), MySQL, and PostgreSQL.
+- **Responsive UI:** Modern design with light, dark, and brand themes; available in English, German and French.
 
 ## 🗺️ Roadmap
 We have exciting plans for the future of FilaMan:
@@ -191,6 +216,19 @@ The Docker image starts 4 worker processes by default. Each one holds a full cop
 WEB_CONCURRENCY=1
 ```
 
+#### Other Settings
+```bash
+# Public address of FilaMan (incl. path prefix behind a reverse proxy).
+# Adds a link to the spool detail page (web_url) to API responses, e.g. for QR codes. Empty = off.
+PUBLIC_URL=https://filaman.example.com
+
+# FilaMan-DB community database used for lookup, import and submissions (default: https://db.filaman.app)
+FILAMENTDB_URL=https://db.filaman.app
+
+# Optional: comma-separated plugin tool names that plugins may expose on the built-in MCP server
+MCP_PLUGIN_READ_TOOLS=
+```
+
 **Note:** When using MySQL or PostgreSQL, backups must be managed externally by the administrator. The automatic SQLite backup is disabled in this case.
 
 ## Project Structure
@@ -199,18 +237,26 @@ WEB_CONCURRENCY=1
 /
 ├── backend/
 │   ├── app/
+│   │   ├── api/           # REST API (v1), auth, built-in MCP server
 │   │   ├── core/          # Config, database, security
 │   │   ├── models/        # Database models
 │   │   ├── services/      # Shared domain logic
-│   │   └── plugins/       # Printer plugins
+│   │   ├── plugins/       # Plugin system and bundled plugins (e.g. FilamentDB Import)
+│   │   ├── slicer_link/   # Slicer-Link script
+│   │   └── utils/         # Helpers
 │   ├── alembic/           # Database migrations
 │   └── tests/             # Backend tests
 ├── frontend/
 │   ├── src/
 │   │   ├── pages/         # Astro pages
 │   │   ├── layouts/       # Page layouts
-│   │   └── components/    # UI components
+│   │   ├── components/    # UI components
+│   │   ├── lib/           # Client logic and helpers
+│   │   ├── i18n/          # Translations (en, de, fr)
+│   │   ├── types/         # TypeScript types
+│   │   └── changelog.json # In-app changelog
 │   └── dist/              # Production build
+├── plugin-catalog/        # Curated plugin catalog
 └── docs/                  # Project documentation
 ```
 
@@ -220,9 +266,11 @@ WEB_CONCURRENCY=1
 - FastAPI
 - SQLAlchemy 2.0 + Alembic
 - Python 3.11+
+- Gunicorn/Uvicorn behind nginx (Docker image)
 
 **Frontend:**
 - Astro + Tailwind CSS
+- TypeScript, translations in `src/i18n`
 - Static Docker build; Node server output for source builds
 
 ## License

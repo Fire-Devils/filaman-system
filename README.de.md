@@ -14,7 +14,7 @@ Leere Spulen gehören nicht in den Müll! Wir unterstützen die [Recycling Fabri
 FilaMan ist ein umfassendes System zur Verwaltung von 3D-Druck-Filamenten. Es hilft dir dabei, den Überblick über deine Filamentspulen, Hersteller, Farben und den aktuellen Bestand zu behalten. Zudem bietet es Schnittstellen zu Druckern und AMS (Automatic Material System) Einheiten.
 
 ### Dokumentation
-Das vollständige Handbuch ist verfügbar unter **[docu.filaman.app](https://docu.filaman.app)**.
+Das vollständige Handbuch ist verfügbar unter **[docu.filaman.app](https://docu.filaman.app)**. Es gibt es auf Deutsch und Englisch, mit Screenshots.
 
 Informationen zur Suche, Installation und Einreichung von Plugins stehen im [Plugin-Katalog](plugin-catalog/README.md).
 
@@ -22,6 +22,9 @@ Informationen zur Suche, Installation und Einreichung von Plugins stehen im [Plu
 Um das volle Potenzial dieses Systems auszuschöpfen, empfehlen wir unser zugehöriges Hardware-Projekt:
 **[FilaMan-System-ESP32](https://github.com/Fire-Devils/FilaMan-System-ESP32)**
 Mit dieser ESP32-basierten smarten Waage samt RFID-Integration kannst du deine Spulen auflegen, das Restgewicht automatisch messen und die Daten via RFID-Tag direkt mit dieser Software synchronisieren!
+
+- **Firmware-Updates per WLAN:** Waagen-Firmware unter Admin > Geräte hochladen oder importieren; die Waagen holen sie sich selbst vom FilaMan-Server. Siehe [Firmware-Updates der Waage](https://docu.filaman.app/Docs/De/21-Firmware-Updates).
+- **„Spule voll“ an der Waage:** Eine volle Spule wiegen und die Touch-Taste lang drücken: Das Leergewicht wird berechnet und das Restgewicht auf das Nenngewicht gesetzt. Siehe [Waage: Einrichtung und Bedienung](https://docu.filaman.app/Docs/De/28-Waage).
 
 ### 🏠 Home Assistant Integration
 Für Nutzer von Home Assistant gibt es ein eigenes Add-on-Repository:
@@ -43,18 +46,40 @@ auch in Bambu Studio bereit. Damit erhalten eigene und Drittanbieter-Filamente
 nahezu denselben nahtlosen Ablauf wie eine originale Bambu RFID-Spule.
 
 ## Features
+
+**Bestand**
 - **Spulen-Verwaltung:** Restgewicht, geschätzte Restlänge und Restmenge in Prozent, Lagerort und Status verfolgen.
 - **Filament- und Spulendetails:** Einheitliche, responsive Seiten mit Schnellaktionen und Bearbeitung direkt auf der Detailseite.
 - **Standard-Filamenteigenschaften:** Temperaturbereiche, Trocknungsempfehlungen, Druckeinstellungen und Abmessungen neben typisierten Zusatzfeldern.
-- **Kataloge und Import:** Filamentdaten in FilaManDB suchen und vorhandenen Bestand aus Spoolman importieren.
+- **Material-Voreinstellungen:** Düsen- und Betttemperatur, Flussrate, Trocknung, Trocknungsintervall und Dichte je Material hinterlegen; neue Filamente übernehmen sie in leere Felder.
+- **Farbbibliothek:** Wiederverwendbare Farben mit Transparenz und visuellem Farbfilter; doppelte Farben lassen sich vergleichen und zusammenführen (auch bei abweichenden HEX-Werten), alle Filament-Zuordnungen bleiben erhalten.
+- **Feuchte und Abrasiv:** Erfasst, wann eine Spule geöffnet oder getrocknet wurde, und zeigt einen materialabhängigen Feuchtestatus; abrasive Filamente werden markiert, mit Warnungen bei nicht gehärteten Düsen.
+- **Kaufwert und Restwert:** Der Kaufpreis jeder Spule anteilig nach Restgewicht, angezeigt im Dashboard, in der Herstelleransicht, auf der Spulendetailseite und als Spalte in der Spulenliste.
 - **Zwei RFID-Tags:** Zwei RFID-Tag-UIDs pro Spule speichern, sodass eine Spule mit Tags auf beiden Seiten über jede Seite als derselbe Bestandseintrag erkannt wird.
-- **Mandantenfähigkeit:** Multi-User-Unterstützung mit Rollensystem.
+
+**Kataloge und Community**
+- **Kataloge und Import:** Filamentdaten in FilaManDB suchen und vorhandenen Bestand aus Spoolman importieren.
+- **FilaMan-DB Community:** Hersteller, Filamente und Druckprofile nach einer Vorschau an die Community-Datenbank senden, eigene Einträge gesammelt abgleichen und mit „Auf Aktualisierungen prüfen“ verknüpfte Filamente mit den aktuellen Daten vergleichen.
+- **Druckprofile:** Je Filament und Druckermodell: Temperaturen, Geschwindigkeit, Flow/Pressure Advance, Retraction und Lüfter, dazu Community-Druckprofile zum Übernehmen.
+
+**Druck und Auswertung**
+- **Druckjobs, Projekte und Slicer-Link:** Drucke mit Projekten und Kosten erfassen und Filament von den Spulen abbuchen; ein Skript für PrusaSlicer, OrcaSlicer, BambuStudio und Cura meldet geslicte Jobs, der Verbrauch wird erst nach deiner Bestätigung gebucht.
+- **Analyse:** Verbrauch und Kosten nach Monat, Material und Hersteller, dazu Einkäufe, Druckstatistiken und Top-Projekte.
+- **Druckbare Labels und Etiketten-Designer:** Spulen- und Filament-Labels mit QR-Codes, freiem millimetergenauem Designer, gruppierten und durchsuchbaren Feld-Tokens sowie Etikettenbogen-Ausgabe drucken und exportieren.
+- **AMS-Ansicht:** Live-Übersicht der AMS-Einheiten und Slots je Drucker mit Farbe, Material und Restmenge; Kiosk-Modus für ein Wand-Display.
+
+**Integrationen und Erweiterbarkeit**
 - **Drucker-Integration:** Plugin-System zur Anbindung von 3D-Druckern und AMS-Einheiten.
 - **Bambuddy Integration:** Spulenbestand und AMS-Zuweisungen synchronisieren, Filamentverbrauch erfassen und eigene Bambu Cloud Slicer-Profile automatisch anwenden.
-- **Druckbare Labels:** Spulen- und Filament-Labels mit QR-Codes, eigenen Layouts, gruppierten und durchsuchbaren Feld-Tokens sowie Etikettenbogen-Ausgabe drucken und exportieren.
-- **Datenbank-Support:** Kompatibel mit SQLite (Standard), MySQL und PostgreSQL.
-- **Responsive UI:** Modernes Design (Hell, Dunkel und Brand-Theme).
+- **Plugin-Katalog und Plugin-Schaltflächen:** Plugins aus einem kuratierten Katalog suchen und installieren; Plugins können eigene Schaltflächen im Filament-Editor, in der Filamentliste und in der Farbbibliothek anbieten.
+- **KI-Zugang (MCP):** KI-Assistenten wie Claude, Cursor, VS Code, Codex oder Gemini können FilaMan über den eingebauten MCP-Server abfragen und, wenn erlaubt, Spulen, Filamente und Lagerorte pflegen.
+- **ESP32-Waage:** Firmware-Updates per WLAN vom FilaMan-Server und eine Funktion „Spule voll“ an der Waage (siehe oben).
+
+**Plattform**
+- **Mandantenfähigkeit:** Multi-User-Unterstützung mit Rollensystem.
 - **OIDC (OAuth2) Login:** Single Sign-On (SSO) über OpenID Connect für bestehende Benutzer.
+- **Datenbank-Support:** Kompatibel mit SQLite (Standard), MySQL und PostgreSQL.
+- **Responsive UI:** Modernes Design (Hell, Dunkel und Brand-Theme); verfügbar auf Deutsch, Englisch und Französisch.
 
 ## 🗺️ Roadmap
 Wir haben spannende Pläne für die Zukunft von FilaMan:
@@ -193,6 +218,19 @@ Das Docker-Image startet standardmäßig 4 Worker-Prozesse. Jeder hält eine vol
 WEB_CONCURRENCY=1
 ```
 
+#### Weitere Einstellungen
+```bash
+# Öffentliche Adresse von FilaMan (inkl. Pfadpräfix hinter einem Reverse Proxy).
+# Fügt API-Antworten einen Link zur Spulendetailseite (web_url) hinzu, z. B. für QR-Codes. Leer = aus.
+PUBLIC_URL=https://filaman.example.com
+
+# FilaMan-DB Community-Datenbank für Suche, Import und Einreichungen (Standard: https://db.filaman.app)
+FILAMENTDB_URL=https://db.filaman.app
+
+# Optional: kommagetrennte Tool-Namen von Plugins, die auf dem eingebauten MCP-Server bereitgestellt werden dürfen
+MCP_PLUGIN_READ_TOOLS=
+```
+
 **Hinweis:** Bei Verwendung von MySQL oder PostgreSQL muss das Backup vom Administrator extern verwaltet werden. Das automatische SQLite-Backup ist in diesem Fall deaktiviert.
 
 ## Projektstruktur
@@ -201,18 +239,26 @@ WEB_CONCURRENCY=1
 /
 ├── backend/
 │   ├── app/
+│   │   ├── api/           # REST-API (v1), Auth, eingebauter MCP-Server
 │   │   ├── core/          # Konfiguration, Datenbank, Sicherheit
 │   │   ├── models/        # Datenbankmodelle
 │   │   ├── services/      # Gemeinsame Fachlogik
-│   │   └── plugins/       # Drucker-Plugins
+│   │   ├── plugins/       # Plugin-System und mitgelieferte Plugins (z. B. FilamentDB Import)
+│   │   ├── slicer_link/   # Slicer-Link-Skript
+│   │   └── utils/         # Hilfsfunktionen
 │   ├── alembic/           # Datenbank-Migrationen
 │   └── tests/             # Backend-Tests
 ├── frontend/
 │   ├── src/
 │   │   ├── pages/         # Astro-Seiten
 │   │   ├── layouts/       # Seiten-Layouts
-│   │   └── components/    # UI-Komponenten
+│   │   ├── components/    # UI-Komponenten
+│   │   ├── lib/           # Client-Logik und Hilfsfunktionen
+│   │   ├── i18n/          # Übersetzungen (en, de, fr)
+│   │   ├── types/         # TypeScript-Typen
+│   │   └── changelog.json # Changelog in der App
 │   └── dist/              # Produktions-Build
+├── plugin-catalog/        # Kuratierter Plugin-Katalog
 └── docs/                  # Projektdokumentation
 ```
 
@@ -222,9 +268,11 @@ WEB_CONCURRENCY=1
 - FastAPI
 - SQLAlchemy 2.0 + Alembic
 - Python 3.11+
+- Gunicorn/Uvicorn hinter nginx (Docker-Image)
 
 **Frontend:**
 - Astro + Tailwind CSS
+- TypeScript, Übersetzungen in `src/i18n`
 - Statischer Docker-Build; Node-Server-Ausgabe bei Quellcode-Builds
 
 ## Lizenz
