@@ -1,6 +1,6 @@
-/** Abschnitt „FilaMan-DB Community“ in den Systemeinstellungen: Token setzen, testen, entfernen. */
+/** Abschnitt „FilaMan-DB Community“ in den eigenen Einstellungen: Token setzen, testen, entfernen. */
 
-import { api } from './api'
+import { ApiError, api } from './api'
 import { contribErrorMessage, resetContribContext } from './filamentdb-contrib'
 import { t } from './i18n'
 import type { AppDialogs } from './form-dialog'
@@ -18,7 +18,9 @@ export function tokenStatusText(status: TokenStatus): string {
     : t('fdbContrib.settings.saved')
 }
 
-export async function initFdbTokenSettings(root: HTMLElement): Promise<void> {
+/** Blendet den Abschnitt nur ein, wenn der User die Berechtigung hat (sonst 403). */
+export async function initFdbTokenSettings(wrap: HTMLElement): Promise<void> {
+  const root = (wrap.querySelector('#fdb-token-section') as HTMLElement | null) ?? wrap
   const input = root.querySelector('[data-fdb-token-input]') as HTMLInputElement
   const statusEl = root.querySelector('[data-fdb-token-status]') as HTMLElement
   const messageEl = root.querySelector('[data-fdb-token-message]') as HTMLElement
@@ -48,7 +50,10 @@ export async function initFdbTokenSettings(root: HTMLElement): Promise<void> {
 
   try {
     show(await api.get<TokenStatus>('/filamentdb/token'))
+    wrap.hidden = false
   } catch (error) {
+    if (error instanceof ApiError && (error.status === 403 || error.code === 'filamentdb_token_user_required')) return
+    wrap.hidden = false
     message(contribErrorMessage(error), true)
   }
 

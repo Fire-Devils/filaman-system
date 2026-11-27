@@ -66,24 +66,32 @@ it out.
 ## FilaMan-DB community (`filamentdb:contribute`)
 
 `filamentdb:contribute` guards everything that sends to, rates on or reports to
-the FilaMan-DB with the stored API token: `POST /filamentdb/contributions/preview`,
+the FilaMan-DB with the API token of the calling user: `POST /filamentdb/contributions/preview`,
 `/submit`, `/refresh`, and `PUT .../print-profiles/{id}/rating`,
-`POST .../print-profiles/{id}/report`. Each uses it as a dependency
+`POST .../print-profiles/{id}/report`, plus managing the own token
+(`/filamentdb/token`). Each uses it as a dependency
 (`principal=RequirePermission("filamentdb:contribute")`) in the function head.
-It is seeded for the `admin` role only; grant it to other roles in the role
-editor. Because `seed_permissions()` inserts at startup, no migration is needed
-to add the key.
+It is seeded for the `user` and `admin` roles; `seed_role_permissions()` adds
+the missing assignment at startup, so existing installations get it without a
+migration. Custom roles and the `viewer` role must be granted it in the role
+editor.
 
 Neighbouring rules:
 
-- The token itself (set, test, remove: `/filamentdb/token`) is a system setting
-  and needs `admin:system`. It is never returned, only "saved" plus the display
-  name. It is stored Fernet-encrypted with a key of its own (`FILAMAN_ENC_KEY`,
-  else the file `DATA_DIR/.filaman_enc.key`), not `OIDC_ENC_KEY`.
+- The token is personal: every user stores their own (`users.filamentdb_token_enc`,
+  set, test, remove: `/filamentdb/token`, needs `filamentdb:contribute`), and all
+  sending, rating and reporting runs with the token of the calling user. API keys
+  and devices without a user get `filamentdb_token_user_required`. The token is
+  never returned, only "saved" plus the display name. It is stored
+  Fernet-encrypted with a key of its own (`FILAMAN_ENC_KEY`, else the file
+  `DATA_DIR/.filaman_enc.key`), not `OIDC_ENC_KEY`. The background refresh
+  checks each user's submissions with that user's token and skips users
+  without a (readable) token.
 - Adopting a community print profile (`POST .../print-profiles/{id}/import`)
   creates a local profile and needs `filaments:update`.
 - Reading stays open: `GET /filamentdb/contributions`, `/contributions/status`
-  and the community profile search use `PrincipalDep`.
+  and the community profile search use `PrincipalDep`. The contribution list
+  shows the caller's own submissions; holders of `admin:system` see all.
 
 ## API keys are self-service
 

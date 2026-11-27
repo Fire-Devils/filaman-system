@@ -229,8 +229,15 @@ async def plugin_row(db_session):
 
 
 @pytest.mark.asyncio
-async def test_printer_models_unavailable_without_plugin(auth_client):
+async def test_printer_models_unavailable_without_plugin(auth_client, plugin_row, db_session, monkeypatch):
+    plugin_row.is_active = False
+    await db_session.commit()
     filamentdb_proxy.clear_printer_models_cache()
+
+    async def no_network(*args, **kwargs):
+        raise AssertionError("must not call the FilaMan-DB without the plugin")
+
+    monkeypatch.setattr(filamentdb_proxy, "_proxy_get", no_network)
     client, _ = auth_client
     response = await client.get("/api/v1/filamentdb/printer-models")
     assert response.status_code == 200

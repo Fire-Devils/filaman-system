@@ -24,7 +24,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.app_secret import AppSecretError, decrypt_app_secret
 from app.models import (
-    AppSettings,
     Color,
     Filament,
     FilamentColor,
@@ -32,6 +31,7 @@ from app.models import (
     FilamentPrinterProfile,
     Manufacturer,
     Printer,
+    User,
 )
 from app.services.filamentdb_contrib_client import FilamentDBError, fdb_request
 from app.services.print_profile_validation import find_implausible_values
@@ -110,17 +110,17 @@ def _err(status: int, code: str, message: str, **extra: Any) -> FilamentDBError:
 # ── Token ────────────────────────────────────────────────────────────────
 
 
-async def get_settings_row(db: AsyncSession) -> AppSettings | None:
-    return await db.scalar(select(AppSettings).where(AppSettings.id == 1))
+async def get_user(db: AsyncSession, user_id: int | None) -> User | None:
+    if user_id is None:
+        return None
+    return await db.get(User, user_id)
 
 
-async def get_token(db: AsyncSession) -> str | None:
-    """Klartext-Token oder ``None``. Nicht entschlüsselbar → eigene Fehlermeldung."""
-    row = await get_settings_row(db)
-    if row is None or not row.filamentdb_token_enc:
+def _decrypt_user_token(user: User) -> str | None:
+    if not user.filamentdb_token_enc:
         return None
     try:
-        return decrypt_app_secret(row.filamentdb_token_enc)
+        return decrypt_app_secret(user.filamentdb_token_enc)
     except AppSecretError as exc:
         raise _err(
             400,
@@ -129,8 +129,16 @@ async def get_token(db: AsyncSession) -> str | None:
         ) from exc
 
 
-async def require_token(db: AsyncSession) -> str:
-    token = await get_token(db)
+async def get_token(db: AsyncSession, user_id: int | None) -> str | None:
+    """Klartext-Token des Users oder ``None``. Nicht entschlüsselbar → eigene Fehlermeldung."""
+    user = await get_user(db, user_id)
+    if user is None:
+        return None
+    return _decrypt_user_token(user)
+
+
+async def require_token(db: AsyncSession, user_id: int | None) -> str:
+    token = await get_token(db, user_id)
     if not token:
         raise _err(400, "filamentdb_token_missing", "No FilaMan-DB token saved")
     return token
@@ -396,10 +404,9 @@ async def build(db: AsyncSession, entity_type: str, local_id: int) -> Build:
 # ── Vorschau ─────────────────────────────────────────────────────────────
 
 
-async def check_matches(db: AsyncSession, b: Build) -> list[dict[str, Any]]:
+async def check_matches(db: AsyncSession, b: Build, token: str) -> list[dict[str, Any]]:
     if not b.can_check or b.mode != "create":
         return []
-    token = await require_token(db)
     data = await fdb_request(
         "POST", "/contribute/check", token=token, json={"type": b.entity_type, "data": b.payload}
     )
@@ -416,10 +423,12 @@ async def check_matches(db: AsyncSession, b: Build) -> list[dict[str, Any]]:
     ]
 
 
-async def preview(db: AsyncSession, entity_type: str, local_id: int) -> dict[str, Any]:
+async def preview(
+    db: AsyncSession, user_id: int | None, entity_type: str, local_id: int
+) -> dict[str, Any]:
+    token = await require_token(db, user_id)
     b = await build(db, entity_type, local_id)
-    await require_token(db)
-    matches = await check_matches(db, b) if not b.blockers else []
+    matches = await check_matches(db, b, token) if not b.blockers else []
     return {
         "type": entity_type,
         "local_id": local_id,
@@ -484,6 +493,24 @@ async def _upsert_row(
     return row
 
 
+def _take_over(row: FilamentDBContribution, user_id: int | None) -> None:
+    """Sendet ein anderer User erneut, ist das eine neue Einreichung unter seinem Konto.
+
+    Verknüpfte und freigegebene Zeilen bleiben unverändert (die DB-Daten stehen
+    schon). Bei allen anderen werden die alten Remote-IDs verworfen, damit der
+    Abgleich nicht mit dem Token des neuen Users nach fremden Einreichungen fragt.
+    """
+    if user_id is None or row.created_by == user_id:
+        return
+    if row.status in ("linked", "approved"):
+        return
+    row.created_by = user_id
+    if row.remote_submission_id is not None:
+        row.remote_submission_id = None
+        row.remote_entity_id = None
+        row.last_checked_at = None
+
+
 async def link(
     db: AsyncSession, user_id: int | None, entity_type: str, local_id: int, match_id: int
 ) -> FilamentDBContribution:
@@ -535,10 +562,11 @@ async def _submit_row(
     if b.blockers:
         _raise_blockers(b)
     row = await _upsert_row(db, entity_type, local_id, user_id)
+    _take_over(row, user_id)
 
     if as_dependency and entity_type == "manufacturer":
         # Derselbe Hersteller existiert schon in der DB: verknüpfen statt einreichen.
-        matches = await check_matches(db, b)
+        matches = await check_matches(db, b, token)
         if matches and float(matches[0].get("score") or 0) >= AUTO_LINK_SCORE:
             await _apply_link(db, entity_type, local_id, int(matches[0]["id"]))
             row.status = "linked"
@@ -620,8 +648,14 @@ async def submit(
     if action == "link":
         if not match_id:
             raise _err(422, "match_required", "match_id is required to link")
+        # match_id kommt vom Client: nur übernehmen, was die DB für genau dieses Objekt vorschlägt.
+        token = await require_token(db, user_id)
+        b = await build(db, entity_type, local_id)
+        matches = await check_matches(db, b, token)
+        if match_id not in {m["id"] for m in matches}:
+            raise _err(400, "filamentdb_match_invalid", "match_id is not a match for this object")
         return await link(db, user_id, entity_type, local_id, match_id)
-    token = await require_token(db)
+    token = await require_token(db, user_id)
     row = await _submit_row(
         db, token, user_id, entity_type, local_id, shown_matches=shown_matches
     )
@@ -641,12 +675,15 @@ _REMOTE_STATUS = {
 }
 
 
-async def advance_waiting(db: AsyncSession, token: str) -> None:
-    """Sendet wartende Beiträge, deren Voraussetzungen inzwischen erfüllt sind."""
+async def advance_waiting(db: AsyncSession, token: str, user_id: int) -> None:
+    """Sendet wartende Beiträge dieses Users, deren Voraussetzungen erfüllt sind."""
     for _ in range(4):
         waiting = (
             await db.scalars(
-                select(FilamentDBContribution).where(FilamentDBContribution.status == "waiting")
+                select(FilamentDBContribution).where(
+                    FilamentDBContribution.status == "waiting",
+                    FilamentDBContribution.created_by == user_id,
+                )
             )
         ).all()
         progressed = False
@@ -684,14 +721,11 @@ async def advance_waiting(db: AsyncSession, token: str) -> None:
             break
 
 
-async def refresh(db: AsyncSession) -> list[FilamentDBContribution]:
-    """Stand der offenen Einreichungen abfragen und wartende Beiträge nachsenden."""
-    token = await get_token(db)
-    if not token:
-        return []
+async def _refresh_user(db: AsyncSession, user_id: int, token: str) -> list[FilamentDBContribution]:
     open_rows = (
         await db.scalars(
             select(FilamentDBContribution).where(
+                FilamentDBContribution.created_by == user_id,
                 FilamentDBContribution.status.in_(("pending", "changes_requested")),
                 FilamentDBContribution.remote_submission_id.is_not(None),
             )
@@ -720,18 +754,61 @@ async def refresh(db: AsyncSession) -> list[FilamentDBContribution]:
                     await _apply_link(db, row.entity_type, row.local_id, row.remote_entity_id)
                 except FilamentDBError as exc:
                     row.last_error = exc.message
-    await advance_waiting(db, token)
-    await db.commit()
-    return open_rows
+    await advance_waiting(db, token, user_id)
+    return list(open_rows)
+
+
+async def refresh(db: AsyncSession, user_id: int | None) -> list[FilamentDBContribution]:
+    """Stand der offenen Einreichungen eines Users abfragen, wartende nachsenden.
+
+    Ohne ``user_id`` (Hintergrund-Job) wird jeder User mit eigenen Beiträgen mit
+    seinem eigenen Token abgeglichen; wer keinen (lesbaren) Token hat, wird
+    übersprungen.
+    """
+    if user_id is not None:
+        token = await get_token(db, user_id)
+        if not token:
+            return []
+        rows = await _refresh_user(db, user_id, token)
+        await db.commit()
+        return rows
+
+    owners = (
+        await db.scalars(
+            select(FilamentDBContribution.created_by)
+            .where(
+                FilamentDBContribution.created_by.is_not(None),
+                FilamentDBContribution.status.in_(("pending", "changes_requested", "waiting")),
+            )
+            .distinct()
+        )
+    ).all()
+    result: list[FilamentDBContribution] = []
+    for owner_id in owners:
+        try:
+            token = await get_token(db, owner_id)
+        except FilamentDBError as exc:
+            logger.info("FilaMan-DB refresh skipped for user %s: %s", owner_id, exc.message)
+            continue
+        if not token:
+            logger.info("FilaMan-DB refresh skipped for user %s: no token saved", owner_id)
+            continue
+        try:
+            result.extend(await _refresh_user(db, owner_id, token))
+            await db.commit()
+        except FilamentDBError as exc:
+            await db.rollback()
+            logger.info("FilaMan-DB refresh for user %s failed: %s", owner_id, exc.message)
+    return result
 
 
 async def run_refresh_once() -> None:
-    """Hintergrund-Job (alle 30 min): eigene Session, ohne Token passiert nichts."""
+    """Hintergrund-Job (alle 30 min): eigene Session, jeder User mit seinem Token."""
     from app.core.database import async_session_maker
 
     async with async_session_maker() as db:
         try:
-            await refresh(db)
+            await refresh(db, None)
         except FilamentDBError as exc:
             await db.rollback()
             logger.info("FilaMan-DB refresh skipped: %s", exc.message)
@@ -762,6 +839,13 @@ async def _label(db: AsyncSession, entity_type: str, local_id: int) -> str | Non
     return f"{profile.profile_name} ({fil.designation})" if fil else profile.profile_name
 
 
+async def _user_label(db: AsyncSession, user_id: int | None) -> str | None:
+    user = await get_user(db, user_id)
+    if user is None:
+        return None
+    return user.display_name or user.email
+
+
 async def serialize(db: AsyncSession, row: FilamentDBContribution) -> dict[str, Any]:
     dep = await db.get(FilamentDBContribution, row.depends_on_id) if row.depends_on_id else None
     return {
@@ -783,6 +867,8 @@ async def serialize(db: AsyncSession, row: FilamentDBContribution) -> dict[str, 
             if dep
             else None
         ),
+        "created_by": row.created_by,
+        "created_by_name": await _user_label(db, row.created_by),
         "last_error": row.last_error,
         "last_checked_at": row.last_checked_at,
         "created_at": row.created_at,

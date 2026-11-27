@@ -21,9 +21,10 @@ from app.models import (
     SpoolStatus,
 )
 from app.services import filamentdb_contrib_client as client_mod
-from tests.test_rbac import viewer_auth_client, viewer_user  # noqa: F401
+from tests.test_rbac import _create_session, viewer_auth_client, viewer_user  # noqa: F401
 
 TOKEN = "fdb_" + "a" * 40
+TOKEN2 = "fdb_" + "b" * 40
 BASE = "/api/v1/filamentdb"
 
 
@@ -93,9 +94,10 @@ class FakeDB:
             return httpx.Response(code, json={"detail": detail})
         auth = request.headers.get("authorization")
         if path == "/token/whoami":
-            if auth != f"Bearer {TOKEN}":
+            if auth not in (f"Bearer {TOKEN}", f"Bearer {TOKEN2}"):
                 return httpx.Response(401, json={"detail": {"code": "invalid_token", "message": "no"}})
-            return httpx.Response(200, json={"user_id": 1, "display_name": "Maker", "scopes": ["contribute", "rate"]})
+            name = "Maker" if auth == f"Bearer {TOKEN}" else "Second"
+            return httpx.Response(200, json={"user_id": 1, "display_name": name, "scopes": ["contribute", "rate"]})
         if path == "/materials":
             return httpx.Response(200, json={"items": self.materials})
         if path == "/contribute/check":
@@ -216,9 +218,9 @@ async def test_token_set_never_returned_and_testable(auth_client, fake_db, db_se
 
     status = await client.get(f"{BASE}/token")
     assert status.json()["saved"] is True and TOKEN not in status.text
-    from app.models import AppSettings
+    from app.models import User
 
-    stored = (await db_session.scalar(select(AppSettings))).filamentdb_token_enc
+    stored = (await db_session.scalar(select(User).where(User.is_superadmin.is_(True)))).filamentdb_token_enc
     assert stored and TOKEN not in stored  # verschlüsselt
 
     assert (await client.post(f"{BASE}/token/test", headers=_h(csrf))).json()["display_name"] == "Maker"
@@ -227,6 +229,130 @@ async def test_token_set_never_returned_and_testable(auth_client, fake_db, db_se
     assert removed.json() == {"saved": False, "display_name": None, "scopes": None}
     again = await client.post(f"{BASE}/token/test", headers=_h(csrf))
     assert again.status_code == 400 and again.json()["detail"]["code"] == "filamentdb_token_missing"
+
+
+@pytest.mark.asyncio
+async def test_token_is_stored_per_user(auth_client, normal_user, fake_db, db_session):
+    from app.models import User
+
+    client, csrf = auth_client
+    await _save_token(client, csrf)
+    admin_status = (await client.get(f"{BASE}/contributions/status")).json()
+    assert admin_status["token_saved"] is True
+
+    # User B (Rolle user): sieht den Token von A nicht und hat einen eigenen.
+    client_b, csrf_b = await _create_session(client, db_session, normal_user.id)
+    assert (await client_b.get(f"{BASE}/token")).json()["saved"] is False
+    assert (await client_b.get(f"{BASE}/contributions/status")).json()["token_saved"] is False
+    ref = {"type": "manufacturer", "local_id": 1}
+    miss = await client_b.post(f"{BASE}/contributions/preview", json=ref, headers=_h(csrf_b))
+    assert miss.status_code == 400 and miss.json()["detail"]["code"] == "filamentdb_token_missing"
+    miss = await client_b.post(f"{BASE}/token/test", headers=_h(csrf_b))
+    assert miss.json()["detail"]["code"] == "filamentdb_token_missing"
+
+    put = await client_b.put(f"{BASE}/token", json={"token": TOKEN2}, headers=_h(csrf_b))
+    assert put.status_code == 200 and put.json()["display_name"] == "Second"
+    assert (await client_b.get(f"{BASE}/token")).json()["display_name"] == "Second"
+
+    # A bleibt unberührt.
+    client_a, _ = await _create_session(client, db_session, (
+        await db_session.scalar(select(User).where(User.is_superadmin.is_(True)))
+    ).id)
+    assert (await client_a.get(f"{BASE}/token")).json()["display_name"] == "Maker"
+    users = {u.email: u for u in (await db_session.scalars(select(User))).all()}
+    assert users["test-user@example.com"].filamentdb_token_enc != users["test-admin@example.com"].filamentdb_token_enc
+
+
+@pytest.mark.asyncio
+async def test_submit_uses_callers_token_and_list_is_scoped(
+    auth_client, normal_user, fake_db, entities, db_session, monkeypatch
+):
+    client, csrf = auth_client
+    seen: list[str | None] = []
+    orig = fake_db.handler
+
+    def spy(request):
+        seen.append(request.headers.get("authorization"))
+        return orig(request)
+
+    monkeypatch.setattr(client_mod, "_TRANSPORT", httpx.MockTransport(spy))
+    await _save_token(client, csrf)
+    sent_a = await _submit(client, csrf, "manufacturer", entities["mfr"].id)
+    assert sent_a.status_code == 200
+    assert f"Bearer {TOKEN}" in seen and f"Bearer {TOKEN2}" not in seen
+
+    client_b, csrf_b = await _create_session(client, db_session, normal_user.id)
+    await client_b.put(f"{BASE}/token", json={"token": TOKEN2}, headers=_h(csrf_b))
+    # Fremde, noch offene Einreichung ist für B nicht sichtbar.
+    assert (await client_b.get(f"{BASE}/contributions")).json()["items"] == []
+    seen.clear()
+    resent = await _submit(client_b, csrf_b, "manufacturer", entities["mfr"].id)
+    assert resent.status_code == 200, resent.text
+    assert set(seen) == {f"Bearer {TOKEN2}"}
+    # Neue Einreichung unter dem Konto von B.
+    assert resent.json()["created_by"] == normal_user.id
+    assert resent.json()["remote_submission_id"] != sent_a.json()["remote_submission_id"]
+    assert len(fake_db.sent("POST", "/contribute")) == 2
+    assert len((await client_b.get(f"{BASE}/contributions")).json()["items"]) == 1
+
+
+@pytest.mark.asyncio
+async def test_refresh_skips_users_without_token(auth_client, normal_user, fake_db, entities, db_session):
+    from app.services import filamentdb_contribution_service as svc
+
+    client, csrf = auth_client
+    await _save_token(client, csrf)
+    resp = await _submit(client, csrf, "manufacturer", entities["mfr"].id)
+    sub_id = resp.json()["remote_submission_id"]
+    # Beitrag eines Users ohne Token (oder mit nicht entschlüsselbarem Token).
+    other = FilamentDBContribution(
+        entity_type="filament", local_id=entities["fil"].id, status="pending",
+        remote_submission_id=999, created_by=normal_user.id,
+    )
+    db_session.add(other)
+    await db_session.commit()
+    fake_db.approve(sub_id, 42)
+
+    await svc.refresh(db_session, None)
+    await db_session.refresh(other)
+    assert other.status == "pending" and other.last_checked_at is None
+    mine = await db_session.scalar(
+        select(FilamentDBContribution).where(FilamentDBContribution.entity_type == "manufacturer")
+    )
+    assert mine.status == "approved"
+    asked = [b for m, p, b in fake_db.requests if p == "/me/submissions"]
+    assert len(asked) == 1
+
+
+@pytest.mark.asyncio
+async def test_admin_sees_all_contributions_with_sender(
+    auth_client, normal_user, fake_db, entities, db_session
+):
+    client, csrf = auth_client
+    db_session.add(
+        FilamentDBContribution(
+            entity_type="filament", local_id=entities["fil"].id, status="pending",
+            remote_submission_id=5, created_by=normal_user.id,
+        )
+    )
+    await db_session.commit()
+    items = (await client.get(f"{BASE}/contributions")).json()["items"]
+    assert len(items) == 1 and items[0]["created_by_name"] == "Test User"
+    assert (await client.get(f"{BASE}/contributions")).json()["all_users"] is True
+    client_b, _ = await _create_session(client, db_session, normal_user.id)
+    own = (await client_b.get(f"{BASE}/contributions")).json()
+    assert own["all_users"] is False and len(own["items"]) == 1
+
+
+@pytest.mark.asyncio
+async def test_api_key_principal_without_user_cannot_manage_token(auth_client, fake_db, monkeypatch):
+    from types import SimpleNamespace
+
+    from app.api.v1 import filamentdb_contributions as mod
+
+    with pytest.raises(Exception) as exc:
+        await mod._own_user(None, SimpleNamespace(user_id=None))
+    assert exc.value.detail["code"] == "filamentdb_token_user_required"
 
 
 @pytest.mark.asyncio
@@ -248,7 +374,7 @@ async def test_undecryptable_token_asks_for_reentry(auth_client, fake_db, monkey
 
 
 @pytest.mark.asyncio
-async def test_token_endpoints_need_admin_system(viewer_auth_client, fake_db):  # noqa: F811
+async def test_token_endpoints_need_contribute_permission(viewer_auth_client, fake_db):  # noqa: F811
     client, csrf = viewer_auth_client
     assert (await client.get(f"{BASE}/token")).status_code == 403
     assert (await client.put(f"{BASE}/token", json={"token": TOKEN}, headers=_h(csrf))).status_code == 403
@@ -280,6 +406,21 @@ async def test_viewer_cannot_contribute_rate_report_or_import(viewer_auth_client
     assert (await client.get(f"{BASE}/contributions")).status_code == 200
     assert (await client.get(f"{BASE}/contributions/status")).status_code == 200
     assert fake_db.requests == []
+
+
+def test_user_role_holds_contribute_permission():
+    from app.core.seeds import ADMIN_PERMISSIONS, USER_PERMISSIONS, VIEWER_PERMISSIONS
+
+    assert "filamentdb:contribute" in USER_PERMISSIONS
+    assert "filamentdb:contribute" in ADMIN_PERMISSIONS
+    assert "filamentdb:contribute" not in VIEWER_PERMISSIONS
+
+
+@pytest.mark.asyncio
+async def test_user_role_can_manage_own_token(normal_user, client, fake_db, db_session):
+    cl, csrf = await _create_session(client, db_session, normal_user.id)
+    assert (await cl.get(f"{BASE}/token")).status_code == 200
+    assert (await cl.put(f"{BASE}/token", json={"token": TOKEN}, headers=_h(csrf))).status_code == 200
 
 
 # ─── Vorschau ─────────────────────────────────────────────────────────────
@@ -389,6 +530,11 @@ async def test_submit_manufacturer_then_refresh_links_it(auth_client, fake_db, e
 async def test_link_sends_nothing_and_sets_local_ids(auth_client, fake_db, entities, db_session):
     client, csrf = auth_client
     await _save_token(client, csrf)
+    fake_db.matches = {
+        "manufacturer": [{"id": 11, "score": 0.8}],
+        "filament": [{"id": 12, "score": 0.8}],
+        "printer_model": [{"id": 13, "score": 0.8}],
+    }
     for type_, local, match in (
         ("manufacturer", entities["mfr"].id, 11),
         ("filament", entities["fil"].id, 12),
@@ -406,6 +552,32 @@ async def test_link_sends_nothing_and_sets_local_ids(auth_client, fake_db, entit
 
     missing = await _submit(client, csrf, "filament", entities["fil"].id, action="link")
     assert missing.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_link_rejects_match_id_not_proposed_by_db(auth_client, fake_db, entities):
+    client, csrf = auth_client
+    await _save_token(client, csrf)
+    fake_db.matches = {"manufacturer": [{"id": 11, "score": 0.8}]}
+    bad = await _submit(client, csrf, "manufacturer", entities["mfr"].id, action="link", match_id=999)
+    assert bad.status_code == 400 and bad.json()["detail"]["code"] == "filamentdb_match_invalid"
+
+
+@pytest.mark.asyncio
+async def test_link_needs_update_permission_of_target(normal_user, client, fake_db, entities, db_session):
+    cl, csrf = await _create_session(client, db_session, normal_user.id)
+    await cl.put(f"{BASE}/token", json={"token": TOKEN}, headers=_h(csrf))
+    fake_db.matches = {"manufacturer": [{"id": 11, "score": 0.8}]}
+    for type_, local in (
+        ("manufacturer", entities["mfr"].id),
+        ("filament", entities["fil"].id),
+        ("print_profile", entities["profile"].id),
+        ("printer_model", entities["printer"].id),
+    ):
+        resp = await _submit(cl, csrf, type_, local, action="link", match_id=11)
+        assert resp.status_code == 403, (type_, resp.text)
+    await db_session.refresh(entities["mfr"])
+    assert "filamentdb_id" not in (entities["mfr"].custom_fields or {})
 
 
 @pytest.mark.asyncio

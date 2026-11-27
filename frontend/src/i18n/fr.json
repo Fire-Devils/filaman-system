@@ -2800,7 +2800,9 @@
     },
     "errors": {
       "filamentdb_token_missing": "Aucun jeton FilaMan-DB n'est enregistré.",
-      "filamentdb_token_invalid": "Le jeton FilaMan-DB est invalide ou expiré. Saisissez-le à nouveau dans les paramètres système.",
+      "filamentdb_token_invalid": "Le jeton FilaMan-DB est invalide ou expiré. Saisissez-le à nouveau dans les paramètres du profil.",
+      "filamentdb_token_user_required": "Le jeton FilaMan-DB appartient à un compte utilisateur et n'est pas disponible avec une clé API ou un appareil.",
+      "filamentdb_match_invalid": "Le résultat choisi ne correspond pas à cet objet. Recharge l'aperçu.",
       "filamentdb_token_undecryptable": "Le jeton enregistré est illisible (clé modifiée). Saisissez-le à nouveau.",
       "filamentdb_insufficient_scope": "Le jeton n'a pas l'autorisation requise.",
       "daily_limit_reached": "La limite quotidienne de FilaMan-DB est atteinte. Réessayez demain.",
@@ -2810,7 +2812,7 @@
       "own_profile": "Vous ne pouvez pas noter vos propres profils.",
       "generic": "Cela n'a pas fonctionné."
     },
-    "noToken": "Tu n'as pas encore enregistré de jeton FilaMan-DB. Inscris-toi sur {link} et crée un jeton sous « Mon compte → Jetons API ». Un administrateur le saisit ensuite dans les paramètres système.",
+    "noToken": "Tu n'as pas encore enregistré de jeton FilaMan-DB. Inscris-toi sur {link} et crée un jeton sous « Mon compte → Jetons API ». Saisis-le ensuite dans les paramètres de ton profil.",
     "community": {
       "title": "Profils d'impression de la communauté",
       "empty": "Il n'y a pas encore de profil communautaire pour cette imprimante.",
@@ -2833,7 +2835,7 @@
     },
     "settings": {
       "title": "Communauté FilaMan-DB",
-      "intro": "Avec un jeton API de votre compte FilaMan-DB, FilaMan envoie fabricants, filaments, modèles d'imprimante et profils d'impression à la base communautaire et récupère les profils de la communauté.",
+      "intro": "Avec un jeton API de ton compte FilaMan-DB, tu envoies fabricants, filaments, modèles d'imprimante et profils d'impression à la base communautaire, et tu notes et signales les profils de la communauté. Le jeton n'appartient qu'à toi.",
       "tokenHelp": "Tu as besoin d'un compte sur FilaMan-DB. Inscris-toi là-bas et crée un jeton sous « Mon compte → Jetons API » :",
       "tokenLabel": "Jeton API",
       "tokenPlaceholder": "fdb_…",
@@ -2851,12 +2853,13 @@
     },
     "list": {
       "title": "Mes soumissions",
-      "subtitle": "Tout ce que cette instance FilaMan a envoyé à FilaMan-DB.",
+      "subtitle": "Tout ce que tu as envoyé à FilaMan-DB.",
       "refresh": "Actualiser",
       "empty": "Rien de soumis pour l'instant.",
       "type": "Type",
       "object": "Objet",
       "status": "Statut",
+      "sender": "Envoyé par",
       "checked": "Dernière vérification",
       "note": "Remarque",
       "failed": "La liste n'a pas pu être chargée.",
