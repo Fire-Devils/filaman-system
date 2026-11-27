@@ -289,7 +289,7 @@ async def test_catalog_currency_import_and_update_remain_readable(
     await db_session.flush()
     service = FilamentDBImportService(db_session)
     record = {"id": 71, "manufacturer_id": 5, "material_id": 6,
-              "designation": "Currency PLA", "currency": currency}
+              "designation": "Currency PLA", "currency": currency, "price": 20}
     args = ([record], {6: "PLA"}, {5: manufacturer.id}, {}, {}, "filament")
     await service._import_filaments(*args, ImportResult())
     await db_session.commit()
@@ -338,7 +338,7 @@ async def test_catalog_update_preserves_unrelated_custom_fields(db_session, curr
     await db_session.commit()
     await FilamentDBImportService(db_session)._import_filaments(
         [{"id": 71, "manufacturer_id": 5, "material_id": 6,
-          "designation": "Custom PLA", "currency": currency,
+          "designation": "Custom PLA", "currency": currency, "price": 20,
           "datasheet_url": "https://example.test/catalog.pdf",
           "temp_nozzle_min": 190 if native else "Unavailable", "temp_nozzle_max": 220,
           "temp_bed": 60 if native else "Unavailable",
@@ -386,6 +386,7 @@ async def test_import_and_update_use_standard_temperature_ranges(db_session):
         "ams_compatible": "ams,ams-2-pro",
         "build_plates": "pei,textured-pei",
         "currency": "EUR",
+        "price": 20,
         "shop_url": "https://example.com/pla",
     }
 
@@ -1503,3 +1504,53 @@ async def test_link_filaments_sets_only_filamentdb_id_and_validates(db_session):
     assert (f["exact"].designation, f["exact"].material_type) == before
     assert not f["foreign"].custom_fields
     assert f["holder"].custom_fields == {"filamentdb_id": 83, "note": "keep"}
+
+
+def test_standard_fields_currency_only_with_price():
+    from app.services.filamentdb_field_mapping import standard_filamentdb_fields
+
+    assert "price_currency" not in standard_filamentdb_fields({"currency": "EUR"})
+    assert "price_currency" not in standard_filamentdb_fields({"currency": "EUR", "price": None})
+    fields = standard_filamentdb_fields({"currency": "usd", "price": 20})
+    assert fields["price_currency"] == "USD"
+
+
+@pytest.mark.asyncio
+async def test_currency_without_price_is_neither_diffed_nor_imported(db_session):
+    manufacturer = Manufacturer(name="NoPrice Manufacturer")
+    db_session.add(manufacturer)
+    await db_session.flush()
+    db_session.add(
+        Filament(
+            manufacturer_id=manufacturer.id, designation="NoPrice PLA", material_type="PLA",
+            diameter_mm=1.75, color_mode="single", price_currency="USD",
+            custom_fields={"filamentdb_id": 81},
+        )
+    )
+    await db_session.flush()
+    record = {"id": 81, "manufacturer_id": 5, "material_id": 6, "designation": "NoPrice PLA",
+              "diameter_mm": 1.75, "color_mode": "single", "currency": "EUR", "price": None}
+    service = FilamentDBImportService(db_session)
+    service._fetch_sync_data = AsyncMock(
+        return_value=SyncSnapshot(
+            snapshot_id="noprice", synced_at=None,
+            data={"manufacturers": [{"id": 5, "name": manufacturer.name}],
+                  "materials": [{"id": 6, "key": "PLA"}], "filaments": [record]},
+        )
+    )
+    [result] = (await service.diff_filaments([81])).results
+    assert "price_currency" not in {c["field"] for c in result["changes"]}
+
+    other = Manufacturer(name="NoPrice Import")
+    db_session.add(other)
+    await db_session.flush()
+    record2 = {**record, "id": 82, "designation": "NoPrice Import PLA"}
+    await service._import_filaments(
+        [record2], {6: "PLA"}, {5: other.id}, {}, {}, "filament", ImportResult()
+    )
+    await db_session.commit()
+    imported = await db_session.scalar(
+        select(Filament).where(Filament.designation == "NoPrice Import PLA")
+    )
+    assert imported.price_currency is None
+    assert "currency" not in (imported.custom_fields or {})
