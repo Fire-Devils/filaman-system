@@ -1,12 +1,16 @@
+import math
+from collections import defaultdict
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Query
 from pydantic import BaseModel, Field
 from sqlalchemy import case, func, or_, select
+from sqlalchemy.orm import joinedload
 
 from app.api.deps import DBSession, PrincipalDep
+from app.api.v1.analytics import _add_months, _aware, _month_key, _month_start, get_analytics_summary
 from app.api.v1.schemas import InventoryValuation
-from app.models import Filament, Location, Manufacturer, Spool, SpoolStatus
+from app.models import Filament, Location, Manufacturer, Spool, SpoolEvent, SpoolStatus
 from app.services.material_presets import load_presets, match_preset
 from app.services.spool_metrics import remaining_value_expression
 from app.services.spool_moisture import EXCLUDED_STATUS_KEYS, compute_moisture
@@ -523,4 +527,161 @@ async def get_dashboard_stats(
         moisture_attention=moisture_attention,
         filament_types=filament_types,
         **totals,
+    )
+
+
+class HistoryMonth(BaseModel):
+    month: str
+    spend: float
+    consumption_g: float
+    spool_count: int
+    total_weight_g: float
+    stock_value: float
+
+
+class DashboardHistoryResponse(BaseModel):
+    months: list[HistoryMonth]
+
+
+def _usable_number(value) -> bool:
+    return isinstance(value, (int, float)) and math.isfinite(value)
+
+
+def _spool_capacity_g(spool: Spool) -> float | None:
+    """Net filament weight of a full spool; same order as the SQL remaining percent."""
+    filament = spool.filament
+    raw = filament.raw_material_weight_g if filament else None
+    gross, tare = spool.initial_total_weight_g, spool.empty_spool_weight_g
+    if _usable_number(gross) and _usable_number(tare) and gross > tare >= 0:
+        return gross - tare
+    if _usable_number(raw) and raw > 0:
+        return raw
+    return None
+
+
+def _weight_delta(event) -> float:
+    """Signed weight change an event applied to remaining_weight_g, 0 if unknown."""
+    event_type, delta, meta = event.event_type, event.delta_weight_g, event.meta
+    if event_type in ("print_consumption", "manual_adjust") and _usable_number(delta):
+        return float(delta)
+    if event_type == "spool_full" and isinstance(meta, dict):
+        old, new = meta.get("old_remaining_g"), meta.get("new_remaining_g")
+        if _usable_number(old) and _usable_number(new):
+            return float(new) - float(old)
+    return 0.0
+
+
+@router.get("/history", response_model=DashboardHistoryResponse)
+async def get_dashboard_history(
+    db: DBSession,
+    principal: PrincipalDep,
+    months: int = Query(12, ge=1, le=36),
+):
+    """Monthly series for the dashboard charts, oldest month first.
+
+    spend and consumption_g reuse the analytics summary. The stock series are
+    rebuilt backwards from the current state (there are no snapshots), so they
+    are approximations:
+
+    - spool_count: a spool exists from its purchase_date / stocked_in_at /
+      created_at (same fallback as spend). It stops counting while its status
+      is "archived", replayed from the status events (to_status_id). A spool
+      that is archived without any status event counts as archived from its
+      updated_at. Deleted spools (events cascade) are unknown and missing.
+    - total_weight_g: current remaining weight minus the weight deltas of
+      print_consumption / relative manual_adjust events and the
+      old->new remaining of spool_full events after the month end.
+      Measurements and absolute adjustments carry no delta, so weight changes
+      they caused are not rewound; clamping to zero loses its excess too.
+      Results are clamped to 0..capacity. Archived spools do not count.
+    - stock_value: purchase_price pro rata by the weight at month end divided
+      by the spool capacity (same rule as the remaining-value tile, only
+      spools with a price and a known capacity).
+    """
+    today = datetime.now(timezone.utc).date()
+    first = _add_months(_month_start(today), -(months - 1))
+    summary = await get_analytics_summary(db, principal, date_from=first, date_to=today)
+    spend = {m.month: m.total for m in summary.purchases.by_month}
+    consumed = {m.month: m.weight_g for m in summary.consumption_by_month}
+
+    archived_id = await db.scalar(select(SpoolStatus.id).where(SpoolStatus.key == "archived"))
+    spools = (
+        (
+            await db.execute(
+                select(Spool).options(joinedload(Spool.filament), joinedload(Spool.status))
+            )
+        )
+        .scalars()
+        .unique()
+        .all()
+    )
+
+    events_by_spool: dict[int, list] = defaultdict(list)
+    rows = await db.execute(
+        select(SpoolEvent)
+        .where(
+            (SpoolEvent.event_type.in_(("print_consumption", "manual_adjust", "spool_full")))
+            | SpoolEvent.to_status_id.is_not(None)
+        )
+        .order_by(SpoolEvent.event_at, SpoolEvent.id)
+    )
+    for event in rows.scalars():
+        events_by_spool[event.spool_id].append(event)
+
+    month_starts = [_add_months(first, i) for i in range(months)]
+    ends = [
+        datetime.combine(_add_months(start, 1), datetime.min.time(), tzinfo=timezone.utc)
+        for start in month_starts
+    ]
+    count = [0] * months
+    weight = [0.0] * months
+    value = [0.0] * months
+
+    for spool in spools:
+        added = _aware(spool.purchase_date or spool.stocked_in_at or spool.created_at)
+        events = events_by_spool.get(spool.id, [])
+        status_events = [
+            (_aware(e.event_at), e.to_status_id) for e in events if e.to_status_id is not None
+        ]
+        if archived_id is not None and spool.status_id == archived_id and not any(
+            status == archived_id for _, status in status_events
+        ):
+            status_events.append((_aware(spool.updated_at), archived_id))
+            status_events.sort(key=lambda item: item[0])
+        deltas = [(_aware(e.event_at), _weight_delta(e)) for e in events if _weight_delta(e)]
+        capacity = _spool_capacity_g(spool)
+        current = spool.remaining_weight_g
+        if not _usable_number(current):
+            current = capacity if spool.status and spool.status.key == "new" and capacity else 0.0
+        price = spool.purchase_price if _usable_number(spool.purchase_price) else None
+
+        for i, end in enumerate(ends):
+            if added >= end:
+                continue
+            status = None
+            for at, to_status in status_events:
+                if at >= end:
+                    break
+                status = to_status
+            if archived_id is not None and status == archived_id:
+                continue
+            count[i] += 1
+            at_end = current - sum(d for at, d in deltas if at >= end)
+            at_end = max(0.0, at_end if capacity is None else min(at_end, capacity))
+            weight[i] += at_end
+            if price is not None and capacity:
+                value[i] += price * at_end / capacity
+
+    return DashboardHistoryResponse(
+        months=[
+            HistoryMonth(
+                month=_month_key(start),
+                spend=spend.get(_month_key(start), 0.0),
+                consumption_g=consumed.get(_month_key(start), 0.0),
+                spool_count=count[i],
+                total_weight_g=round(weight[i], 2),
+                stock_value=round(value[i], 2),
+            )
+            for i, start in enumerate(month_starts)
+        ]
     )

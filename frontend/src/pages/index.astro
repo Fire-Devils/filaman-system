@@ -14,8 +14,10 @@ import FormDialog from '../components/FormDialog.astro'
           <button id="widget-menu-btn" class="fm-btn fm-btn-outline" type="button" data-i18n="dashboard.customize">Customize</button>
           <div id="widget-menu-list" class="dashboard-widget-list"></div>
         </div>
+        <button id="widget-edit-done" class="fm-btn fm-btn-primary hidden" type="button" data-i18n="dashboard.arrangeDone">Done</button>
       </div>
     </div>
+    <p id="widget-edit-hint" class="dashboard-edit-hint hidden" data-i18n="dashboard.arrangeHint">Drag the handle of a widget to move it. Arrow keys on the handle also work.</p>
     <div class="dashboard-metrics">
       <a class="fm-card dashboard-metric" href="/spools">
         <svg width="32" height="32" class="db-icon" aria-hidden="true"><use href="/icons.svg?v=2#icon-spools" /></svg>
@@ -51,22 +53,20 @@ import FormDialog from '../components/FormDialog.astro'
       </div>
     </div>
 
-    <div class="dashboard-overview">
-      <FormSection widget="spoolStatus" titleKey="dashboard.spoolStatus" title="Spool status">
+    <div id="dashboard-widgets" class="dashboard-widgets">
+      <FormSection widget="spoolStatus" titleKey="dashboard.spoolStatus" title="Spool status" class="dashboard-wide">
         <div id="spool-status" class="dashboard-status"><p data-i18n="common.loading">Loading...</p></div>
       </FormSection>
-      <FormSection widget="locationStats" titleKey="dashboard.locationStats" title="Locations">
+      <FormSection widget="locationStats" titleKey="dashboard.locationStats" title="Locations" class="dashboard-wide">
         <div id="location-stats" class="dashboard-locations"><p data-i18n="common.loading">Loading...</p></div>
       </FormSection>
-    </div>
-    <div class="dashboard-details">
-      <FormSection widget="lowStockSpools" id="low-stock-title" titleKey="dashboard.lowStockSpools" title="Low-stock spools" class="dashboard-low-stock">
+      <FormSection widget="lowStockSpools" id="low-stock-title" titleKey="dashboard.lowStockSpools" title="Low-stock spools" class="dashboard-low-stock dashboard-wide">
         <div id="low-stock-spools" class="dashboard-table dashboard-list" role="region" aria-labelledby="low-stock-title" tabindex="0"><p data-i18n="common.loading">Loading...</p></div>
       </FormSection>
-      <FormSection widget="lowStockFilaments" id="low-stock-filaments-title" titleKey="dashboard.lowStockFilaments" title="Low stock filaments" class="dashboard-low-stock">
+      <FormSection widget="lowStockFilaments" id="low-stock-filaments-title" titleKey="dashboard.lowStockFilaments" title="Low stock filaments" class="dashboard-low-stock dashboard-wide">
         <div id="low-stock-filaments" class="dashboard-table dashboard-list" role="region" aria-labelledby="low-stock-filaments-title" tabindex="0"><p data-i18n="common.loading">Loading...</p></div>
       </FormSection>
-      <FormSection widget="moistureAttention" id="moisture-attention-title" titleKey="moisture.dashboardTitle" title="Drying recommended" class="dashboard-low-stock">
+      <FormSection widget="moistureAttention" id="moisture-attention-title" titleKey="moisture.dashboardTitle" title="Drying recommended" class="dashboard-low-stock dashboard-wide">
         <div id="moisture-attention" class="dashboard-table dashboard-list" role="region" aria-labelledby="moisture-attention-title" tabindex="0"><p data-i18n="common.loading">Loading...</p></div>
       </FormSection>
       <FormSection widget="manufacturersWithSpools" id="manufacturers-title" titleKey="nav.manufacturers" title="Manufacturers">
@@ -74,6 +74,26 @@ import FormDialog from '../components/FormDialog.astro'
       </FormSection>
       <FormSection widget="filamentStats" id="filament-stats-title" titleKey="dashboard.filamentStats" title="Filament statistics">
         <div id="filament-stats" class="dashboard-table dashboard-list" role="region" aria-labelledby="filament-stats-title" tabindex="0"><p data-i18n="common.loading">Loading...</p></div>
+      </FormSection>
+      <FormSection widget="chartSpend" titleKey="dashboard.chartSpend" title="Spending per month" class="dashboard-wide dashboard-chart-card">
+        <Fragment slot="actions"><div class="dashboard-chart-range" data-chart-range></div></Fragment>
+        <div id="chart-spend" class="dashboard-chart"><p data-i18n="common.loading">Loading...</p></div>
+      </FormSection>
+      <FormSection widget="chartConsumption" titleKey="dashboard.chartConsumption" title="Consumption per month" class="dashboard-wide dashboard-chart-card">
+        <Fragment slot="actions"><div class="dashboard-chart-range" data-chart-range></div></Fragment>
+        <div id="chart-consumption" class="dashboard-chart"><p data-i18n="common.loading">Loading...</p></div>
+      </FormSection>
+      <FormSection widget="chartStockValue" titleKey="dashboard.chartStockValue" title="Stock value" class="dashboard-wide dashboard-chart-card">
+        <Fragment slot="actions"><div class="dashboard-chart-range" data-chart-range></div></Fragment>
+        <div id="chart-stock-value" class="dashboard-chart"><p data-i18n="common.loading">Loading...</p></div>
+      </FormSection>
+      <FormSection widget="chartSpoolCount" titleKey="dashboard.chartSpoolCount" title="Number of spools" class="dashboard-wide dashboard-chart-card">
+        <Fragment slot="actions"><div class="dashboard-chart-range" data-chart-range></div></Fragment>
+        <div id="chart-spool-count" class="dashboard-chart"><p data-i18n="common.loading">Loading...</p></div>
+      </FormSection>
+      <FormSection widget="chartTotalWeight" titleKey="dashboard.chartTotalWeight" title="Total remaining weight" class="dashboard-wide dashboard-chart-card">
+        <Fragment slot="actions"><div class="dashboard-chart-range" data-chart-range></div></Fragment>
+        <div id="chart-total-weight" class="dashboard-chart"><p data-i18n="common.loading">Loading...</p></div>
       </FormSection>
     </div>
   </div>
@@ -96,7 +116,7 @@ import FormDialog from '../components/FormDialog.astro'
     .dashboard-header { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin: 0 0 20px; }
     .dashboard-title { font: 700 var(--page-title-size) var(--font-serif); margin: 0; }
     .dashboard-widget-menu { position: relative; }
-    .dashboard-widget-list { display: none; position: absolute; right: 0; top: calc(100% + 4px); z-index: 200; min-width: 200px; max-height: 400px; overflow-y: auto; padding: 8px 0; background: var(--bg-elevated); border: 1px solid var(--border); border-radius: var(--radius-sm); box-shadow: 0 4px 12px rgba(0,0,0,0.15); }
+    .dashboard-widget-list { display: none; position: absolute; right: 0; top: calc(100% + 4px); z-index: 200; min-width: 220px; max-height: min(70vh, 560px); overflow-y: auto; padding: 8px 0; background: var(--bg-elevated); border: 1px solid var(--border); border-radius: var(--radius-sm); box-shadow: 0 4px 12px rgba(0,0,0,0.15); }
     .dashboard-metrics { display: grid; grid-template-columns: var(--dashboard-columns); gap: 12px; }
     .dashboard-metric { display: flex; align-items: center; gap: 14px; min-width: 0; padding: 16px; color: var(--text); text-decoration: none; text-align: left; }
     button.dashboard-metric { width: 100%; font: inherit; cursor: pointer; }
@@ -114,9 +134,26 @@ import FormDialog from '../components/FormDialog.astro'
     #stat-low-spools { color: var(--error-text); }
     #stat-empty-spools { color: var(--text-muted); }
     .dashboard-scope { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
-    .dashboard-overview, .dashboard-details { display: grid; grid-template-columns: var(--dashboard-columns); gap: var(--section-gap); column-gap: 12px; align-items: start; margin-top: var(--section-gap); }
-    .dashboard-overview > :global(.fm-section), .dashboard-details > :global(.dashboard-low-stock) { grid-column: span 2; }
-    .dashboard-details > :global(.fm-section) > :global(.fm-section-body) { padding-inline-end: calc(var(--section-padding) / 2); }
+    .dashboard-widgets { display: grid; grid-template-columns: var(--dashboard-columns); gap: var(--section-gap); column-gap: 12px; align-items: start; margin-top: var(--section-gap); }
+    .dashboard-widgets > :global(.dashboard-wide) { grid-column: span 2; }
+    .dashboard-widgets :global(.fm-section-body:has(> .dashboard-list)) { padding-inline-end: calc(var(--section-padding) / 2); }
+    .dashboard-widgets.is-masonry { display: flex; align-items: flex-start; }
+    .dashboard-widgets :global(.dashboard-masonry-col) { flex: 1 1 0; min-width: 0; display: grid; align-content: start; gap: var(--section-gap); }
+    .dashboard-widgets :global(.dashboard-masonry-col > .dashboard-wide) { grid-column: auto; }
+    .dashboard-edit-hint { margin: 0 0 12px; color: var(--text-muted); font-size: .85rem; }
+    .dashboard-widgets :global(.dashboard-drag-handle) { display: none; flex-shrink: 0; align-items: center; justify-content: center; width: 28px; height: 28px; margin-inline-end: 6px; padding: 0; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--bg-elevated); color: var(--text-muted); font-size: 1rem; line-height: 1; cursor: grab; touch-action: none; user-select: none; }
+    .dashboard-widgets :global(.dashboard-drag-handle:focus-visible) { outline: 2px solid var(--accent); outline-offset: 2px; }
+    .dashboard-widgets.is-editing :global(.dashboard-drag-handle) { display: inline-flex; }
+    .dashboard-widgets.is-editing :global([data-widget]) { outline: 2px dashed var(--accent); outline-offset: -2px; }
+    .dashboard-widgets :global(.fm-section-header:has(> .dashboard-drag-handle)) { justify-content: flex-start; }
+    .dashboard-widgets :global(.fm-section-header > .dashboard-chart-range) { margin-inline-start: auto; }
+    .dashboard-widgets :global(.dashboard-dragging) { position: fixed; z-index: 300; margin: 0; pointer-events: none; opacity: .92; box-shadow: 0 12px 32px rgba(0,0,0,.28); }
+    .dashboard-widgets :global(.dashboard-drop-placeholder) { box-sizing: border-box; border: 2px dashed var(--accent); border-radius: var(--radius-sm); background: color-mix(in srgb, var(--accent) 8%, transparent); }
+    .dashboard-chart { min-width: 0; }
+    .dashboard-chart :global(.dashboard-chart-svg) { display: block; max-width: 100%; height: auto; overflow: visible; }
+    .dashboard-chart :global(p) { margin: 0; color: var(--text-muted); font-size: .85rem; }
+    .dashboard-chart-range { display: flex; flex-shrink: 0; gap: 4px; }
+    .dashboard-chart-range :global(button) { white-space: nowrap; }
     .dashboard-stack { display: grid; gap: var(--section-gap); min-width: 0; }
     .dashboard-table { --table-cell-padding: 4px 8px; min-width: 0; overflow-x: auto; }
     .dashboard-table :global(.fm-table) { width: 100%; font-size: .85rem; }
@@ -153,13 +190,12 @@ import FormDialog from '../components/FormDialog.astro'
     .dashboard-changelog-version { margin: 0; color: var(--text-muted); font-size: .85rem; }
     @container detail-page (max-width: 65rem) {
       .dashboard-metrics { grid-template-columns: repeat(4, minmax(0, 1fr)); }
-      .dashboard-overview, .dashboard-details { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-      .dashboard-overview > :global(.fm-section) { grid-column: auto; }
-      .dashboard-details > :global(.dashboard-low-stock) { grid-column: 1 / -1; }
+      .dashboard-widgets { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     }
     @container detail-page (max-width: 52rem) { .dashboard-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
     @container detail-page (max-width: 43rem) {
-      .dashboard-overview, .dashboard-details { grid-template-columns: minmax(0, 1fr); }
+      .dashboard-widgets { grid-template-columns: minmax(0, 1fr); }
+      .dashboard-widgets > :global(.dashboard-wide) { grid-column: auto; }
       .dashboard-list { max-height: 22rem; }
       .dashboard-locations :global(ul) { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     }
@@ -178,6 +214,8 @@ import FormDialog from '../components/FormDialog.astro'
     import { isMoistureLevel, moistureBadgeClass, moistureLabelKey } from '../lib/moisture'
     import { mountPanel } from '../lib/panel-navigation'
     import { mountSpoolLinkBanner } from '../lib/spool-link-banner'
+    import { applyWidgetOrder, layoutGrid, layoutMasonry, masonryColumnCount, startWidgetDrag, type DashboardLayout } from '../lib/dashboard-layout'
+    import { hasChartData, renderChartSvg, type ChartPoint } from '../lib/dashboard-charts'
 
     mountPanel('dashboard', async (panelSignal) => {
     interface ProblemSpool {
@@ -254,20 +292,54 @@ import FormDialog from '../components/FormDialog.astro'
       applyFilamentScope()
     }
 
-    // Widget visibility is stored per user on the server (/me/preferences);
-    // the hidden list means new widgets are visible by default.
+    // Widget visibility, order and layout are stored per user on the server
+    // (/me/preferences); the hidden list means new widgets are visible by default,
+    // widgets missing from the saved order are appended in markup order.
     let hiddenWidgets = new Set<string>()
+    let widgetOrder: string[] = []
+    let dashboardLayout: DashboardLayout = 'grid'
+    let arranging = false
+    let dragging = false
+
+    const widgetsContainer = document.getElementById('dashboard-widgets')!
+    const widgetCards = new Map(Array.from(widgetsContainer.querySelectorAll<HTMLElement>('[data-widget]'))
+      .map(card => [card.dataset.widget!, card] as const))
+    const baseWidgetIds = [...widgetCards.keys()]
 
     function widgetTitle(card: HTMLElement): string {
       return card.querySelector('h2')?.textContent?.trim() || card.dataset.widget || ''
     }
+
+    function orderedCards(): HTMLElement[] {
+      return applyWidgetOrder(baseWidgetIds, widgetOrder).map(id => widgetCards.get(id)!)
+    }
+
+    function renderLayout(items: HTMLElement[] = orderedCards()) {
+      widgetsContainer.classList.toggle('is-masonry', dashboardLayout === 'masonry')
+      if (dashboardLayout === 'masonry') layoutMasonry(widgetsContainer, items, masonryColumnCount(widgetsContainer.clientWidth))
+      else layoutGrid(widgetsContainer, items)
+    }
+
+    // Masonry heights change with data, visibility and width: re-distribute once per frame.
+    let layoutFrame = 0
+    function scheduleLayout() {
+      if (dashboardLayout !== 'masonry' || dragging || panelSignal.aborted) return
+      cancelAnimationFrame(layoutFrame)
+      layoutFrame = requestAnimationFrame(() => { if (!dragging && !panelSignal.aborted) renderLayout() })
+    }
+    if (typeof ResizeObserver !== 'undefined') {
+      const observer = new ResizeObserver(() => { scheduleLayout(); renderCharts() })
+      observer.observe(widgetsContainer)
+      panelSignal.addEventListener('abort', () => observer.disconnect(), { once: true })
+    }
+    panelSignal.addEventListener('abort', () => cancelAnimationFrame(layoutFrame), { once: true })
 
     function applyWidgetVisibility() {
       const cards = document.querySelectorAll<HTMLElement>('[data-widget]')
       cards.forEach(card => {
         card.style.display = hiddenWidgets.has(card.dataset.widget!) ? 'none' : ''
       })
-      document.querySelectorAll<HTMLInputElement>('#widget-menu-list input').forEach(box => {
+      document.querySelectorAll<HTMLInputElement>('#widget-menu-list input[data-widget-id]').forEach(box => {
         box.checked = !hiddenWidgets.has(box.dataset.widgetId!)
       })
       // Collapse the 2-column block when one side has nothing left to show.
@@ -282,40 +354,178 @@ import FormDialog from '../components/FormDialog.astro'
           (col as HTMLElement).style.display = visible.includes(col) ? '' : 'none'
         })
       }
+      scheduleLayout()
+    }
+
+    async function savePreferences(patch: Record<string, unknown>, rollback: () => void) {
+      try {
+        await api.patch('/me/preferences', patch)
+      } catch (error) {
+        if (panelSignal.aborted) return
+        console.error('Failed to save dashboard preferences:', error)
+        rollback()
+      }
     }
 
     async function saveHiddenWidgets(previous: Set<string>) {
       applyWidgetVisibility()
-      try {
-        await api.patch('/me/preferences', { dashboard_hidden_widgets: [...hiddenWidgets] })
-      } catch (error) {
-        if (panelSignal.aborted) return
-        console.error('Failed to save dashboard preferences:', error)
+      await savePreferences({ dashboard_hidden_widgets: [...hiddenWidgets] }, () => {
         hiddenWidgets = previous
         applyWidgetVisibility()
-      }
+      })
     }
 
     function setWidgetVisible(id: string, visible: boolean) {
       const previous = new Set(hiddenWidgets)
       if (visible) hiddenWidgets.delete(id)
       else hiddenWidgets.add(id)
+      if (visible && chartSpecs.some(chart => chart.id === id)) void loadHistory()
       return saveHiddenWidgets(previous)
+    }
+
+    function syncLayoutMenu() {
+      document.querySelectorAll<HTMLInputElement>('#widget-menu-list input[name="dashboard-layout"]').forEach(radio => {
+        radio.checked = radio.value === dashboardLayout
+      })
+    }
+
+    function setLayout(next: DashboardLayout) {
+      const previous = dashboardLayout
+      if (next === previous) return
+      dashboardLayout = next
+      syncLayoutMenu()
+      renderLayout()
+      renderCharts()
+      void savePreferences({ dashboard_layout: next }, () => {
+        dashboardLayout = previous
+        syncLayoutMenu()
+        renderLayout()
+      })
+    }
+
+    function setArranging(on: boolean) {
+      arranging = on
+      widgetsContainer.classList.toggle('is-editing', on)
+      document.getElementById('widget-edit-done')!.classList.toggle('hidden', !on)
+      document.getElementById('widget-edit-hint')!.classList.toggle('hidden', !on)
+    }
+
+    function sameOrder(ids: string[]) {
+      const current = applyWidgetOrder(baseWidgetIds, widgetOrder)
+      return ids.length === current.length && ids.every((id, i) => id === current[i])
+    }
+
+    function commitOrder(ids: string[]) {
+      if (sameOrder(ids)) { renderLayout(); return }
+      const previous = widgetOrder
+      widgetOrder = ids
+      renderLayout()
+      void savePreferences({ dashboard_widget_order: ids }, () => {
+        widgetOrder = previous
+        renderLayout()
+      })
+    }
+
+    function moveWidget(id: string, direction: -1 | 1) {
+      const ids = applyWidgetOrder(baseWidgetIds, widgetOrder)
+      const visible = ids.filter(widget => !hiddenWidgets.has(widget))
+      const neighbour = visible[visible.indexOf(id) + direction]
+      if (neighbour === undefined || !ids.includes(id)) return
+      ids.splice(ids.indexOf(id), 1)
+      ids.splice(ids.indexOf(neighbour) + (direction > 0 ? 1 : 0), 0, id)
+      commitOrder(ids)
+    }
+
+    function menuHeading(text: string): HTMLElement {
+      const heading = document.createElement('div')
+      heading.style.cssText = 'padding: 6px 12px 2px; font-size: 0.7rem; letter-spacing: 0.04em; text-transform: uppercase; color: var(--text-muted);'
+      heading.textContent = text
+      return heading
+    }
+
+    function menuRow(...content: (Node | string)[]): HTMLLabelElement {
+      const label = document.createElement('label')
+      label.style.cssText = 'display: flex; gap: 8px; align-items: center; padding: 4px 12px; cursor: pointer; font-size: 0.85rem; white-space: nowrap; user-select: none;'
+      label.append(...content)
+      return label
+    }
+
+    function addDragHandle(card: HTMLElement) {
+      const header = card.querySelector('.fm-section-header')
+      if (!header) return
+      const handle = document.createElement('button')
+      handle.type = 'button'
+      handle.className = 'dashboard-drag-handle'
+      handle.textContent = '⠿'
+      handle.title = t('dashboard.dragHandle')
+      handle.setAttribute('aria-label', handle.title)
+      handle.addEventListener('pointerdown', event => {
+        if (!arranging || dragging) return
+        dragging = true
+        startWidgetDrag(event, card, {
+          getItems: orderedCards,
+          relayout: items => renderLayout(items),
+          commit: (ids, cancelled) => {
+            dragging = false
+            if (cancelled) renderLayout()
+            else commitOrder(ids)
+            renderCharts()
+          },
+          signal: panelSignal,
+        })
+      })
+      handle.addEventListener('keydown', event => {
+        const direction = event.key === 'ArrowUp' || event.key === 'ArrowLeft' ? -1
+          : event.key === 'ArrowDown' || event.key === 'ArrowRight' ? 1 : 0
+        if (!direction) return
+        event.preventDefault()
+        moveWidget(card.dataset.widget!, direction)
+        handle.focus()
+      })
+      header.prepend(handle)
     }
 
     function buildWidgetControls() {
       const menu = document.getElementById('widget-menu-list')!
-      document.querySelectorAll<HTMLElement>('[data-widget]').forEach(card => {
-        const id = card.dataset.widget!
-        const label = document.createElement('label')
-        label.style.cssText = 'display: flex; gap: 8px; align-items: center; padding: 4px 12px; cursor: pointer; font-size: 0.85rem; white-space: nowrap; user-select: none;'
+
+      menu.append(menuHeading(t('dashboard.layoutLabel')))
+      for (const [value, labelKey] of [['grid', 'dashboard.layoutGrid'], ['masonry', 'dashboard.layoutMasonry']] as const) {
+        const radio = document.createElement('input')
+        radio.type = 'radio'
+        radio.name = 'dashboard-layout'
+        radio.value = value
+        radio.checked = value === dashboardLayout
+        radio.addEventListener('change', () => { if (radio.checked) setLayout(value) })
+        menu.append(menuRow(radio, t(labelKey)))
+      }
+
+      const arrangeDiv = document.createElement('div')
+      arrangeDiv.style.cssText = 'padding: 6px 12px 2px;'
+      const arrangeBtn = document.createElement('button')
+      arrangeBtn.type = 'button'
+      arrangeBtn.id = 'widget-arrange-btn'
+      arrangeBtn.className = 'fm-btn fm-btn-outline'
+      arrangeBtn.style.cssText = 'width: 100%; font-size: 0.8rem; padding: 4px 8px;'
+      arrangeBtn.textContent = t('dashboard.arrange')
+      arrangeBtn.addEventListener('click', () => {
+        setArranging(!arranging)
+        menu.style.display = 'none'
+      })
+      arrangeDiv.append(arrangeBtn)
+      menu.append(arrangeDiv)
+      document.getElementById('widget-edit-done')!.addEventListener('click', () => setArranging(false))
+
+      const widgetsHeading = menuHeading(t('dashboard.widgetsLabel'))
+      widgetsHeading.style.cssText += ' border-top: 1px solid var(--border); margin-top: 6px; padding-top: 8px;'
+      menu.append(widgetsHeading)
+      widgetCards.forEach((card, id) => {
         const menuBox = document.createElement('input')
         menuBox.type = 'checkbox'
         menuBox.className = 'fm-checkbox'
         menuBox.dataset.widgetId = id
         menuBox.addEventListener('change', () => setWidgetVisible(id, menuBox.checked))
-        label.append(menuBox, widgetTitle(card))
-        menu.append(label)
+        menu.append(menuRow(menuBox, widgetTitle(card)))
+        addDragHandle(card)
       })
 
       const resetDiv = document.createElement('div')
@@ -326,9 +536,24 @@ import FormDialog from '../components/FormDialog.astro'
       resetBtn.style.cssText = 'width: 100%; font-size: 0.8rem; padding: 4px 8px;'
       resetBtn.textContent = t('dashboard.resetWidgets')
       resetBtn.addEventListener('click', () => {
-        const previous = hiddenWidgets
+        const previous = { hidden: hiddenWidgets, order: widgetOrder, layout: dashboardLayout }
         hiddenWidgets = new Set<string>()
-        void saveHiddenWidgets(previous)
+        widgetOrder = []
+        dashboardLayout = 'grid'
+        setArranging(false)
+        applyWidgetVisibility()
+        syncLayoutMenu()
+        renderLayout()
+        renderCharts()
+        void loadHistory()
+        void savePreferences({ dashboard_hidden_widgets: [], dashboard_widget_order: [], dashboard_layout: 'grid' }, () => {
+          hiddenWidgets = previous.hidden
+          widgetOrder = previous.order
+          dashboardLayout = previous.layout
+          applyWidgetVisibility()
+          syncLayoutMenu()
+          renderLayout()
+        })
       })
       resetDiv.append(resetBtn)
       menu.append(resetDiv)
@@ -345,12 +570,21 @@ import FormDialog from '../components/FormDialog.astro'
     async function initWidgetVisibility() {
       buildWidgetControls()
       try {
-        const prefs = await api.get<{ dashboard_hidden_widgets: string[] }>('/me/preferences')
+        const prefs = await api.get<{
+          dashboard_hidden_widgets: string[]
+          dashboard_widget_order?: string[]
+          dashboard_layout?: DashboardLayout
+        }>('/me/preferences')
         hiddenWidgets = new Set(prefs.dashboard_hidden_widgets)
+        widgetOrder = prefs.dashboard_widget_order ?? []
+        dashboardLayout = prefs.dashboard_layout === 'masonry' ? 'masonry' : 'grid'
       } catch (error) {
         if (!isAbortError(error)) console.error('Failed to load dashboard preferences:', error)
       }
-      if (!panelSignal.aborted) applyWidgetVisibility()
+      if (panelSignal.aborted) return
+      applyWidgetVisibility()
+      syncLayoutMenu()
+      renderLayout()
     }
 
     function formatWeight(g: number): string {
@@ -714,13 +948,130 @@ import FormDialog from '../components/FormDialog.astro'
       }
     }
 
+    // History charts: only fetched while at least one chart widget is visible.
+    interface HistoryMonth {
+      month: string; spend: number; consumption_g: number
+      spool_count: number; total_weight_g: number; stock_value: number
+    }
+    const HISTORY_RANGES = [6, 12, 24]
+    let historyMonths = 12
+    try {
+      const saved = Number(localStorage.getItem('dashboard-history-months'))
+      if (HISTORY_RANGES.includes(saved)) historyMonths = saved
+    } catch { /* storage unavailable */ }
+    let historyData: HistoryMonth[] | null = null
+    let historyVersion = 0
+    let historyRequestId = 0
+
+    const compactNumber = (value: number) =>
+      new Intl.NumberFormat(getLang() || 'en', { notation: 'compact', maximumFractionDigits: 1 }).format(value)
+    const formatMoney = (value: number) => formatPrice(value, getCurrency())
+    const formatCount = (value: number) => String(Math.round(value))
+    const chartSpecs: {
+      id: string; mount: string; kind: 'columns' | 'area'; color: string; integer?: boolean
+      value: (month: HistoryMonth) => number; format: (value: number) => string; axis: (value: number) => string
+    }[] = [
+      { id: 'chartSpend', mount: 'chart-spend', kind: 'columns', color: 'var(--accent)', value: m => m.spend, format: formatMoney, axis: compactNumber },
+      { id: 'chartConsumption', mount: 'chart-consumption', kind: 'columns', color: 'var(--accent-3)', value: m => m.consumption_g, format: formatWeight, axis: formatWeight },
+      { id: 'chartStockValue', mount: 'chart-stock-value', kind: 'area', color: 'var(--accent)', value: m => m.stock_value, format: formatMoney, axis: compactNumber },
+      { id: 'chartSpoolCount', mount: 'chart-spool-count', kind: 'area', color: 'var(--info-text)', integer: true, value: m => m.spool_count, format: formatCount, axis: formatCount },
+      { id: 'chartTotalWeight', mount: 'chart-total-weight', kind: 'area', color: 'var(--success-text)', value: m => m.total_weight_g, format: formatWeight, axis: formatWeight },
+    ]
+
+    function monthLabel(key: string, long = false): string {
+      const [year, month] = key.split('-').map(Number)
+      const date = new Date(Date.UTC(year, month - 1, 1))
+      const lang = getLang() || 'en'
+      if (long) return date.toLocaleDateString(lang, { month: 'long', year: 'numeric', timeZone: 'UTC' })
+      const short = date.toLocaleDateString(lang, { month: 'short', timeZone: 'UTC' })
+      return month === 1 ? `${short} ’${String(year).slice(2)}` : short
+    }
+
+    function renderCharts() {
+      if (historyData === null) return
+      for (const chart of chartSpecs) {
+        if (hiddenWidgets.has(chart.id)) continue
+        const mount = document.getElementById(chart.mount)
+        if (!mount) continue
+        const width = Math.round(mount.clientWidth) || 480
+        const key = `${historyVersion}:${width}`
+        if (mount.dataset.chartKey === key) continue
+        mount.dataset.chartKey = key
+        const points: ChartPoint[] = historyData.map(month => ({
+          label: monthLabel(month.month),
+          value: chart.value(month),
+          tip: t('dashboard.chartMonthTip', { month: monthLabel(month.month, true), value: chart.format(chart.value(month)) }),
+        }))
+        mount.innerHTML = hasChartData(points)
+          ? renderChartSvg(points, {
+            kind: chart.kind, width, color: chart.color, integer: chart.integer,
+            formatAxis: chart.axis, ariaLabel: widgetTitle(widgetCards.get(chart.id)!),
+          })
+          : `<p>${t('dashboard.chartNoData')}</p>`
+      }
+    }
+
+    async function loadHistory() {
+      if (chartSpecs.every(chart => hiddenWidgets.has(chart.id))) return
+      const requestId = ++historyRequestId
+      try {
+        await currencyReady
+        const data = await api.get<{ months?: HistoryMonth[] }>(`/dashboard/history?months=${historyMonths}`)
+        if (panelSignal.aborted || requestId !== historyRequestId) return
+        historyData = data.months ?? []
+        historyVersion++
+        renderCharts()
+      } catch (error) {
+        if (panelSignal.aborted || isAbortError(error)) return
+        console.error('Failed to load dashboard history:', error)
+        if (historyData !== null) return
+        for (const chart of chartSpecs) {
+          const mount = document.getElementById(chart.mount)
+          if (mount) mount.innerHTML = `<p>${t('dashboard.chartLoadError')}</p>`
+        }
+      }
+    }
+
+    function initHistoryRange() {
+      document.querySelectorAll<HTMLElement>('[data-chart-range]').forEach(group => {
+        group.setAttribute('role', 'group')
+        group.setAttribute('aria-label', t('dashboard.chartRange'))
+        for (const months of HISTORY_RANGES) {
+          const pill = document.createElement('button')
+          pill.type = 'button'
+          pill.className = 'fm-scope-pill'
+          pill.dataset.months = String(months)
+          pill.textContent = t('dashboard.chartMonths', { count: months })
+          pill.addEventListener('click', () => {
+            if (historyMonths === months) return
+            historyMonths = months
+            try { localStorage.setItem('dashboard-history-months', String(months)) } catch { /* storage unavailable */ }
+            syncHistoryRange()
+            void loadHistory()
+          })
+          group.append(pill)
+        }
+      })
+      syncHistoryRange()
+    }
+
+    function syncHistoryRange() {
+      document.querySelectorAll<HTMLButtonElement>('[data-chart-range] .fm-scope-pill').forEach(pill => {
+        const active = Number(pill.dataset.months) === historyMonths
+        pill.classList.toggle('active', active)
+        pill.setAttribute('aria-pressed', String(active))
+      })
+    }
+
     async function init() {
       await initI18n()
       if (panelSignal.aborted) return
       currencyReady = initCurrency()
       initFilamentScopePills()
+      initHistoryRange()
       const preferencesReady = initWidgetVisibility()
       startLocationPolling()
+      void preferencesReady.then(() => loadHistory())
       await Promise.all([loadDashboardData(), preferencesReady])
       if (!panelSignal.aborted) showChangelogIfNeeded()
     }
@@ -775,7 +1126,7 @@ import FormDialog from '../components/FormDialog.astro'
       const { event } = (e as CustomEvent<{ event?: string }>).detail ?? {}
       if (event === 'resync' || event === 'spools_changed' || event === 'filaments_changed') {
         if (_dashboardReloadTimer) clearTimeout(_dashboardReloadTimer)
-        _dashboardReloadTimer = setTimeout(() => loadDashboardData(), 300)
+        _dashboardReloadTimer = setTimeout(() => { void loadDashboardData(); void loadHistory() }, 300)
       }
     }, { signal: panelSignal })
     })

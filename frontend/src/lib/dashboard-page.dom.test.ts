@@ -4,6 +4,8 @@ import { afterEach, expect, it, vi } from 'vitest'
 import { bindFormDialog } from './form-dialog'
 import { escapeHtml } from './extra-fields'
 import { hasPermission } from './auth'
+import * as layoutLib from './dashboard-layout'
+import * as chartsLib from './dashboard-charts'
 
 async function openDrilldown() {
   document.querySelector<HTMLButtonElement>('#problem-spools')!.click()
@@ -14,9 +16,14 @@ function archiveButton(kind: 'single' | 'bulk') {
   return document.querySelector<HTMLButtonElement>(kind === 'bulk' ? '#btn-archive-all' : '#modal-content [data-archive-spool]')!
 }
 
+const historyMonths = [
+  { month: '2026-01', spend: 10, consumption_g: 0, spool_count: 1, total_weight_g: 1000, stock_value: 20 },
+  { month: '2026-02', spend: 0, consumption_g: 250, spool_count: 2, total_weight_g: 1750, stock_value: 30 },
+]
+
 async function boot(canArchive = false, poll = async () => Response.json([
   { location_id: 9, location_name: "Dry <box>", spool_count: 5, total_weight_g: 3000 },
-]), summaryReady?: Promise<void>, currencyReady?: Promise<void>, valuation: { remaining_value: number | null; unknown_spool_count: number } = { remaining_value: 1.2, unknown_spool_count: 0 }) {
+]), summaryReady?: Promise<void>, currencyReady?: Promise<void>, valuation: { remaining_value: number | null; unknown_spool_count: number } = { remaining_value: 1.2, unknown_spool_count: 0 }, prefs: Record<string, unknown> = { dashboard_hidden_widgets: [] }) {
   const fetch = vi.fn(async (path: string, init?: RequestInit) => {
     if (path === '/api/v1/dashboard/locations') return poll()
     if (init?.method) return Response.json({ detail: 'Not permitted' }, { status: 403 })
@@ -36,7 +43,14 @@ async function boot(canArchive = false, poll = async () => Response.json([
     items: [{ id: 3, remaining_weight_g: 50, filament: { designation: '<img src=x onerror=alert(1)>', material_type: 'PLA' } }],
     total: 1,
   }))
+  const api = {
+    get: vi.fn(async (path: string) => path === '/me'
+      ? { is_superadmin: false, permissions: canArchive ? ['spool_events:create_status'] : [] }
+      : path.startsWith('/dashboard/history') ? { months: historyMonths } : prefs),
+    patch: vi.fn(async (_path: string, _body: unknown) => {}),
+  }
   const dependencies = {
+    ...layoutLib, ...chartsLib,
     t: (key: string) => key, initI18n: async () => {}, getLang: () => 'en',
     formatPrice: (value: number) => `€${value}`, getCurrency: () => 'EUR', initCurrency: async () => currencyReady,
     VERSION: '', changelogData: { versions: [] },
@@ -45,16 +59,11 @@ async function boot(canArchive = false, poll = async () => Response.json([
     hasPermission,
     mountSpoolLinkBanner: async () => ({ refresh: async () => {} }),
     bindFormDialog, escapeHtml, fetch,
-    api: {
-      get: async (path: string) => path === '/me'
-        ? { is_superadmin: false, permissions: canArchive ? ['spool_events:create_status'] : [] }
-        : { dashboard_hidden_widgets: [] },
-      patch: async () => {},
-    },
+    api,
   }
   await bootAstroPage('index', dependencies)
   if (!summaryReady) await vi.waitFor(() => expect(document.querySelector('#stat-total-spools')!.textContent).toBe('1'))
-  return Object.assign(fetch, { fetchAllPages })
+  return Object.assign(fetch, { fetchAllPages, api })
 }
 afterEach(() => {
   window.dispatchEvent(new Event("pagehide"))
@@ -303,4 +312,75 @@ it('shows an unknown total instead of zero when every spool lacks a valuation', 
   await vi.waitFor(() => expect(document.querySelector('#stat-remaining-value-box')!.getAttribute('title')).toBe('dashboard.remainingValueHint\ninventoryValue.incomplete'))
   expect(document.querySelector('#stat-remaining-value')!.textContent).toBe('—')
   expect(document.querySelector('#stat-total-value')!.textContent).toBe('€3')
+})
+
+it('applies the saved widget order, hides widgets and keeps unknown widgets at the end', async () => {
+  await boot(false, undefined, undefined, undefined, undefined, {
+    dashboard_hidden_widgets: ['spoolStatus'],
+    dashboard_widget_order: ['filamentStats', 'ghostWidget', 'locationStats'],
+    dashboard_layout: 'grid',
+  })
+  const ids = [...document.querySelectorAll<HTMLElement>('#dashboard-widgets > [data-widget]')].map(card => card.dataset.widget)
+  expect(ids.slice(0, 2)).toEqual(['filamentStats', 'locationStats'])
+  expect(ids).not.toContain('ghostWidget')
+  expect(ids.slice(2, 5)).toEqual(['spoolStatus', 'lowStockSpools', 'lowStockFilaments'])
+  expect(document.querySelector<HTMLElement>('[data-widget="spoolStatus"]')!.style.display).toBe('none')
+  expect(document.querySelectorAll('#dashboard-widgets > [data-widget]').length).toBe(12)
+})
+
+it('distributes widgets over masonry columns by height and keeps left-to-right order', async () => {
+  const heights: Record<string, number> = { spoolStatus: 100, locationStats: 300, lowStockSpools: 100, lowStockFilaments: 100 }
+  vi.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockImplementation(function (this: HTMLElement) {
+    return heights[this.dataset.widget ?? ''] ?? 50
+  })
+  vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(700)
+  await boot(false, undefined, undefined, undefined, undefined, { dashboard_hidden_widgets: [], dashboard_layout: 'masonry' })
+  const columns = [...document.querySelectorAll('#dashboard-widgets > .dashboard-masonry-col')]
+  expect(document.querySelector('#dashboard-widgets')!.classList.contains('is-masonry')).toBe(true)
+  expect(columns.length).toBe(2)
+  const firstFour = [...document.querySelectorAll<HTMLElement>('[data-widget]')]
+  const column = (id: string) => columns.findIndex(col => col.contains(document.querySelector(`[data-widget="${id}"]`)))
+  // 100 -> left, 300 -> right, then the next two stack into the shorter left column.
+  expect([column('spoolStatus'), column('locationStats'), column('lowStockSpools'), column('lowStockFilaments')]).toEqual([0, 1, 0, 0])
+  expect(firstFour.length).toBe(12)
+})
+
+it('saves order and layout through the menu and resets all three together', async () => {
+  const fetch = await boot(false, undefined, undefined, undefined, undefined, {
+    dashboard_hidden_widgets: ['spoolStatus'], dashboard_widget_order: ['filamentStats'], dashboard_layout: 'masonry',
+  })
+  const radio = document.querySelector<HTMLInputElement>('input[name="dashboard-layout"][value="grid"]')!
+  radio.checked = true
+  radio.dispatchEvent(new Event('change'))
+  expect(fetch.api.patch).toHaveBeenLastCalledWith('/me/preferences', { dashboard_layout: 'grid' })
+  expect(document.querySelector('#dashboard-widgets')!.classList.contains('is-masonry')).toBe(false)
+
+  document.querySelector<HTMLButtonElement>('#widget-arrange-btn')!.click()
+  expect(document.querySelector('#dashboard-widgets')!.classList.contains('is-editing')).toBe(true)
+  expect(document.querySelector('#widget-edit-done')!.classList.contains('hidden')).toBe(false)
+  const handle = document.querySelector<HTMLButtonElement>('[data-widget="filamentStats"] .dashboard-drag-handle')!
+  handle.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }))
+  const order = (fetch.api.patch.mock.calls.at(-1)![1] as { dashboard_widget_order: string[] }).dashboard_widget_order
+  expect(order.slice(0, 3)).toEqual(['spoolStatus', 'locationStats', 'filamentStats'])
+
+  const reset = [...document.querySelectorAll<HTMLButtonElement>('#widget-menu-list button')].find(b => b.textContent === 'dashboard.resetWidgets')!
+  reset.click()
+  expect(fetch.api.patch).toHaveBeenLastCalledWith('/me/preferences', { dashboard_hidden_widgets: [], dashboard_widget_order: [], dashboard_layout: 'grid' })
+  expect(document.querySelector('#dashboard-widgets')!.classList.contains('is-editing')).toBe(false)
+  expect(document.querySelector<HTMLElement>('#dashboard-widgets > [data-widget]')!.dataset.widget).toBe('spoolStatus')
+})
+
+it('loads history only while a chart is visible and draws chart widgets', async () => {
+  const hiddenCharts = ['chartSpend', 'chartConsumption', 'chartStockValue', 'chartSpoolCount', 'chartTotalWeight']
+  const none = await boot(false, undefined, undefined, undefined, undefined, { dashboard_hidden_widgets: hiddenCharts })
+  await new Promise(resolve => setTimeout(resolve, 0))
+  expect(none.api.get.mock.calls.map(([path]) => path).filter(path => path.startsWith('/dashboard/history'))).toEqual([])
+  document.body.replaceChildren()
+
+  const some = await boot(false, undefined, undefined, undefined, undefined, { dashboard_hidden_widgets: hiddenCharts.slice(1) })
+  await vi.waitFor(() => expect(document.querySelector('#chart-spend svg')).not.toBeNull())
+  expect(some.api.get).toHaveBeenCalledWith('/dashboard/history?months=12')
+  expect(document.querySelectorAll('#chart-spend rect[fill="var(--accent)"]').length).toBe(2)
+  expect(document.querySelector('#chart-spend title')!.textContent).toContain('dashboard.chartMonthTip')
+  expect(document.querySelector('#chart-spend')!.closest('[data-widget]')!.querySelectorAll('[data-chart-range] button').length).toBe(3)
 })
