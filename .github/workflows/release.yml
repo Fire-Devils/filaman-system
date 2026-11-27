@@ -162,6 +162,34 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+      # Das Image ist jetzt auf ghcr.io: das Home-Assistant-Add-on direkt auf diese
+      # Version heben, statt auf den täglichen Sync zu warten. Braucht das Secret
+      # HA_ADDON_DISPATCH_TOKEN (fine-grained PAT, nur Fire-Devils/filaman-ha-app,
+      # Actions: Read and write). Fehlt es oder schlägt der Aufruf fehl, bleibt der
+      # Release grün; der tägliche Sync holt das Update dann nach.
+      - name: Trigger Home Assistant add-on sync
+        if: success()
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ secrets.HA_ADDON_DISPATCH_TOKEN }}
+          RELEASE_TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          set -eu
+          if [ -z "${GH_TOKEN:-}" ]; then
+            echo "::notice::HA_ADDON_DISPATCH_TOKEN not set — the daily add-on sync will pick up ${RELEASE_TAG}"
+            exit 0
+          fi
+          case "$RELEASE_TAG" in
+            v[0-9]*.[0-9]*.[0-9]*) ;;
+            *) echo "::warning::unexpected tag ${RELEASE_TAG} — not triggering the add-on sync"; exit 0 ;;
+          esac
+          gh workflow run sync-app-version.yml \
+            --repo Fire-Devils/filaman-ha-app \
+            --ref main \
+            -f tag="$RELEASE_TAG"
+          echo "Add-on sync for ${RELEASE_TAG} started: https://github.com/Fire-Devils/filaman-ha-app/actions/workflows/sync-app-version.yml" \
+            >>"$GITHUB_STEP_SUMMARY"
+
       - name: Notify Discord
         if: success()
         env:
