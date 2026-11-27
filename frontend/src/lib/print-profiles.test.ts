@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest'
 import de from '../i18n/de.json'
 import en from '../i18n/en.json'
 import fr from '../i18n/fr.json'
-import { ALL_PROFILE_FIELDS, PROFILE_GROUPS, buildProfilePayload, hasProfileModel, printerLacksModel, printerWithoutModelNotice, profileCoreSummary, profilePrinterLabel } from './print-profiles'
+import { ALL_PROFILE_FIELDS, canSuggestPlate, mergePlateOptions, PROFILE_GROUPS, buildProfilePayload, hasProfileModel, printerLacksModel, printerWithoutModelNotice, profileCoreSummary, profilePrinterLabel } from './print-profiles'
 
 function leafPaths(value: unknown, prefix = ''): string[] {
   if (typeof value === 'string') return [prefix]
@@ -84,5 +84,28 @@ describe('print profile translations', () => {
     for (const group of PROFILE_GROUPS) expect(keys).toContain(`groups.${group.id}`)
     const printerKeys = ['modelSearch', 'modelNotListedHint', 'printerManufacturer', 'printerModel', 'modelDidYouMean']
     for (const catalog of [de, en, fr]) for (const key of printerKeys) expect(catalog.printers).toHaveProperty(key)
+  })
+})
+
+describe('build plate suggestions', () => {
+  it('merges DB plates first, then local ones, without case-insensitive duplicates', () => {
+    expect(mergePlateOptions(['Textured PEI', 'Cool Plate'], ['textured pei', ' Glass ', null, 'Engineering', 'glass', ''])).toEqual([
+      'Textured PEI', 'Cool Plate', 'Engineering', 'Glass',
+    ])
+  })
+
+  it('works with no DB list (DB unavailable)', () => {
+    expect(mergePlateOptions([], ['B', 'a'])).toEqual(['a', 'B'])
+  })
+
+  it('offers to suggest only unknown plates and only to contributors', () => {
+    const db = ['Textured PEI']
+    const ok = { available: true, canContribute: true }
+    expect(canSuggestPlate('Glass', db, ok)).toBe(true)
+    expect(canSuggestPlate(' textured pei ', db, ok)).toBe(false)
+    expect(canSuggestPlate('', db, ok)).toBe(false)
+    expect(canSuggestPlate('Glass', db, { available: false, canContribute: true })).toBe(false)
+    expect(canSuggestPlate('Glass', db, { available: true, canContribute: false })).toBe(false)
+    expect(canSuggestPlate('x'.repeat(101), db, ok)).toBe(false)
   })
 })

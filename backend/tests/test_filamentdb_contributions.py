@@ -1023,3 +1023,68 @@ async def test_hex_only_color_names_are_not_sent(auth_client, fake_db, entities,
     assert "color_name" not in payload
     assert payload["colors"][0]["color_name"] == "Rot"
     assert payload["colors"][1] == {"hex_code": "#eeff00", "position": 2}
+
+
+@pytest.mark.asyncio
+async def test_import_same_community_profile_twice_is_409(auth_client, fake_db, entities, db_session):
+    client, csrf = auth_client
+    fake_db.profiles[7] = {"id": 7, "nozzle_temp_c": 210}
+    body = {"filament_id": entities["fil"].id, "printer_id": entities["printer"].id}
+    first = await client.post(f"{BASE}/print-profiles/7/import", json=body, headers=_h(csrf))
+    assert first.status_code == 201, first.text
+    second = await client.post(f"{BASE}/print-profiles/7/import", json=body, headers=_h(csrf))
+    assert second.status_code == 409
+    assert second.json()["detail"]["code"] == "already_imported"
+
+    # Wurde das lokale Profil gelöscht, ist die Übernahme wieder möglich.
+    created = await db_session.get(FilamentPrinterProfile, first.json()["id"])
+    await db_session.delete(created)
+    await db_session.commit()
+    third = await client.post(f"{BASE}/print-profiles/7/import", json=body, headers=_h(csrf))
+    assert third.status_code == 201, third.text
+
+
+@pytest.mark.asyncio
+async def test_suggest_build_plate_submits_when_no_duplicate(auth_client, fake_db):
+    client, csrf = auth_client
+    await _save_token(client, csrf)
+    resp = await client.post(f"{BASE}/build-plates/suggest", json={"name": " Textured PEI "}, headers=_h(csrf))
+    assert resp.status_code == 200, resp.text
+    assert resp.json() == {"status": "submitted"}
+    assert fake_db.sent("POST", "/contribute/check")[-1] == {
+        "type": "build_plate",
+        "data": {"name": "Textured PEI"},
+    }
+    sent = fake_db.sent("POST", "/contribute")
+    assert len(sent) == 1 and sent[0]["type"] == "build_plate" and sent[0]["data"] == {"name": "Textured PEI"}
+
+
+@pytest.mark.asyncio
+async def test_suggest_build_plate_reports_strong_duplicate(auth_client, fake_db):
+    client, csrf = auth_client
+    await _save_token(client, csrf)
+    fake_db.matches["build_plate"] = [{"type": "build_plate", "id": 4, "label": "Textured PEI", "score": 0.97}]
+    resp = await client.post(f"{BASE}/build-plates/suggest", json={"name": "textured pei"}, headers=_h(csrf))
+    assert resp.status_code == 200
+    assert resp.json() == {"status": "duplicate", "match": {"id": 4, "name": "Textured PEI", "score": 0.97}}
+    assert fake_db.sent("POST", "/contribute") == []
+
+    fake_db.matches["build_plate"] = [{"type": "build_plate", "id": 5, "label": "Other", "score": 0.4}]
+    weak = await client.post(f"{BASE}/build-plates/suggest", json={"name": "Glass"}, headers=_h(csrf))
+    assert weak.json() == {"status": "submitted"}
+
+
+@pytest.mark.asyncio
+async def test_suggest_build_plate_validation_and_permission(auth_client, fake_db):
+    client, csrf = auth_client
+    await _save_token(client, csrf)
+    for bad in ("", "x" * 101):
+        resp = await client.post(f"{BASE}/build-plates/suggest", json={"name": bad}, headers=_h(csrf))
+        assert resp.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_suggest_build_plate_needs_contribute_permission(viewer_auth_client, fake_db):  # noqa: F811
+    viewer, viewer_csrf = viewer_auth_client
+    denied = await viewer.post(f"{BASE}/build-plates/suggest", json={"name": "A"}, headers=_h(viewer_csrf))
+    assert denied.status_code == 403

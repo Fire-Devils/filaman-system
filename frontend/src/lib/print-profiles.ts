@@ -7,7 +7,7 @@ import { ApiError, api } from './api'
 import { getMe, hasPermission } from './auth'
 import { escapeHtml } from './extra-fields'
 import { bindFormDialog } from './form-dialog'
-import { mountContributeControl } from './filamentdb-contrib'
+import { contribErrorMessage, loadContribContext, mountContributeControl } from './filamentdb-contrib'
 import { t } from './i18n'
 import { createPrinterModelPicker, findPrinterModelElements, renderPrinterModelFields, type PrinterModelPicker, type PrinterModelValue } from './printer-model-picker'
 
@@ -163,6 +163,42 @@ export function printerLacksModel(printer: PrinterOption | undefined): boolean {
   return !hasProfileModel({ id: printer.filamentdb_printer_model_id, manufacturer: printer.printer_manufacturer, model: printer.printer_model })
 }
 
+/** Plattennamen für die Vorschlagsliste: FilaMan-DB zuerst, dann lokal genutzte; ohne Doppelte (Groß/Klein egal). */
+export function mergePlateOptions(dbNames: string[], localNames: Array<string | null | undefined>): string[] {
+  const seen = new Set<string>()
+  const unique = (names: Array<string | null | undefined>) => names
+    .map(name => (name ?? '').trim())
+    .filter(name => {
+      const key = name.toLowerCase()
+      if (!name || seen.has(key)) return false
+      seen.add(key)
+      return true
+    })
+  const fromDb = unique(dbNames)
+  const fromLocal = unique(localNames).sort((a, b) => a.localeCompare(b))
+  return [...fromDb, ...fromLocal]
+}
+
+/** Kann der Nutzer die getippte Platte vorschlagen? Nur wenn sie in der DB-Liste fehlt. */
+export function canSuggestPlate(value: string, dbNames: string[], options: { available: boolean; canContribute: boolean }): boolean {
+  const trimmed = value.trim()
+  if (!options.available || !options.canContribute || !trimmed || trimmed.length > 100) return false
+  const key = trimmed.toLowerCase()
+  return !dbNames.some(name => name.trim().toLowerCase() === key)
+}
+
+export const PLATE_LIST_ID = 'pp-build-plate-list'
+
+function renderPlateField(field: ProfileField, text: string, id: string, label: string, unit: string): string {
+  return `<div class="pp-field"><label for="${id}" class="fm-label">${label}${unit}</label>
+    <input type="text" id="${id}" class="fm-input" maxlength="${field.maxLength ?? 100}" list="${PLATE_LIST_ID}" autocomplete="off" data-pp-field="${field.key}" value="${escapeHtml(text)}" />
+    <datalist id="${PLATE_LIST_ID}"></datalist>
+    <div class="pp-plate-suggest hidden" data-pp-plate-suggest-row>
+      <button type="button" class="fm-btn fm-btn-outline fm-btn-sm" data-pp-plate-suggest>${escapeHtml(t('printProfiles.suggestPlate'))}</button>
+      <span class="pp-muted" data-pp-plate-result role="status"></span>
+    </div></div>`
+}
+
 function renderField(field: ProfileField, value: unknown): string {
   const id = `pp-${field.key}`
   const label = escapeHtml(t(`printProfiles.fields.${field.key}`))
@@ -176,6 +212,8 @@ function renderField(field: ProfileField, value: unknown): string {
   } else if (field.kind === 'tristate') {
     const sel = (v: string) => (text === v ? ' selected' : '')
     control = `<select id="${id}" class="fm-select" data-pp-field="${field.key}"><option value=""${sel('')}>${escapeHtml(t('printProfiles.unset'))}</option><option value="true"${sel('true')}>${escapeHtml(t('common.yes'))}</option><option value="false"${sel('false')}>${escapeHtml(t('common.no'))}</option></select>`
+  } else if (field.key === 'build_plate') {
+    return renderPlateField(field, text, id, label, unit)
   } else {
     control = `<input type="text" id="${id}" class="fm-input" maxlength="${field.maxLength ?? 50}" data-pp-field="${field.key}" value="${escapeHtml(text)}" />`
   }
@@ -248,6 +286,21 @@ export async function initPrintProfiles(options: PrintProfilesOptions): Promise<
   let profiles: PrintProfile[] = []
   let printers: PrinterOption[] = []
   let editingId: number | null = null
+  let dbPlates: string[] = []
+  let platesAvailable = false
+  let canContribute = false
+
+  async function loadPlates() {
+    try {
+      const data = await api.get<{ available: boolean; items: Array<{ name: string }> }>('/filamentdb/build-plates')
+      platesAvailable = !!data.available
+      dbPlates = data.items.map(item => item.name)
+    } catch {
+      platesAvailable = false
+      dbPlates = []
+    }
+    canContribute = (await loadContribContext()).canContribute
+  }
 
   async function load() {
     try {
@@ -322,11 +375,49 @@ export async function initPrintProfiles(options: PrintProfilesOptions): Promise<
     refreshPrinterState()
   }
 
+  function setupPlateField() {
+    const input = formBody.querySelector('[data-pp-field="build_plate"]') as HTMLInputElement | null
+    const list = formBody.querySelector(`#${PLATE_LIST_ID}`)
+    const row = formBody.querySelector('[data-pp-plate-suggest-row]') as HTMLElement | null
+    const button = formBody.querySelector('[data-pp-plate-suggest]') as HTMLButtonElement | null
+    const result = formBody.querySelector('[data-pp-plate-result]') as HTMLElement | null
+    if (!input || !list || !row || !button || !result) return
+    const options = mergePlateOptions(dbPlates, profiles.map(p => p.build_plate as string | null))
+    list.innerHTML = options.map(name => `<option value="${escapeHtml(name)}"></option>`).join('')
+    const refresh = () => {
+      row.classList.toggle('hidden', !canSuggestPlate(input.value, dbPlates, { available: platesAvailable, canContribute }))
+    }
+    input.addEventListener('input', () => { result.textContent = ''; refresh() })
+    button.addEventListener('click', async () => {
+      button.disabled = true
+      result.classList.remove('fm-alert-error')
+      try {
+        const answer = await api.post<{ status: string; match?: { name?: string | null } }>('/filamentdb/build-plates/suggest', { name: input.value.trim() })
+        result.textContent = answer.status === 'duplicate'
+          ? t('printProfiles.plateExists', { name: answer.match?.name ?? input.value.trim() })
+          : t('printProfiles.plateSubmitted')
+        // Bekannte Platte: gleich den Namen aus der FilaMan-DB übernehmen.
+        if (answer.status === 'duplicate' && answer.match?.name) {
+          input.value = answer.match.name
+          row.classList.toggle('hidden', !canSuggestPlate(input.value, dbPlates, { available: platesAvailable, canContribute }))
+          row.classList.remove('hidden')
+        }
+      } catch (error) {
+        result.textContent = contribErrorMessage(error)
+        result.classList.add('fm-alert-error')
+      } finally {
+        button.disabled = false
+      }
+    })
+    refresh()
+  }
+
   function openForm(profile: PrintProfile | null) {
     editingId = profile?.id ?? null
     if (title) title.textContent = t(profile ? 'printProfiles.editTitle' : 'printProfiles.addTitle')
     formBody.innerHTML = renderProfileForm(profile, printers)
     setupFormBehavior(profile)
+    setupPlateField()
     dialog.showModal()
   }
 
@@ -384,6 +475,6 @@ export async function initPrintProfiles(options: PrintProfilesOptions): Promise<
     }
   })
 
-  await load()
+  await Promise.all([load(), loadPlates()])
   return { reload: load }
 }

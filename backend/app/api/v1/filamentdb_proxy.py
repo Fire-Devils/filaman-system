@@ -121,6 +121,59 @@ async def list_printer_models(db: DBSession, _principal: PrincipalDep):
     return {"available": True, "items": items}
 
 
+_BUILD_PLATES_TTL = 3600.0  # 1 Stunde
+_build_plates_cache: dict[str, Any] = {"at": 0.0, "url": None, "items": None}
+
+
+def clear_build_plates_cache() -> None:
+    _build_plates_cache.update(at=0.0, url=None, items=None)
+
+
+@router.get("/build-plates")
+async def list_build_plates(db: DBSession, _principal: PrincipalDep):
+    """Druckplatten der FilaMan-DB (1 h im Speicher gecacht, Stale-Fallback).
+
+    Ohne aktives Plugin oder bei nicht erreichbarer DB (und ohne Cache) kommt
+    ``{"available": false, "items": []}`` statt eines Fehlers.
+    """
+    plugin = (
+        await db.execute(
+            select(InstalledPlugin).where(
+                InstalledPlugin.plugin_key == "filamentdb_import",
+            )
+        )
+    ).scalar_one_or_none()
+    if plugin is None or not plugin.is_active:
+        return {"available": False, "items": []}
+
+    base = settings.filamentdb_url.rstrip("/")
+    cache = _build_plates_cache
+    now = time.monotonic()
+    if (
+        cache["items"] is not None
+        and cache["url"] == base
+        and now - cache["at"] < _BUILD_PLATES_TTL
+    ):
+        return {"available": True, "items": cache["items"]}
+
+    try:
+        raw_items = await _proxy_get_all_items("/build-plates")
+    except HTTPException:
+        if cache["items"] is not None and cache["url"] == base:
+            return {"available": True, "items": cache["items"]}
+        return {"available": False, "items": []}
+
+    items = [
+        {"id": item.get("id"), "name": item.get("name")}
+        for item in raw_items
+        if isinstance(item.get("id"), int)
+        and isinstance(item.get("name"), str)
+        and item["name"].strip()
+    ]
+    cache.update(at=now, url=base, items=items)
+    return {"available": True, "items": items}
+
+
 def _api_url(path: str) -> str:
     return f"{settings.filamentdb_url.rstrip('/')}/api/v1{path}"
 

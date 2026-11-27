@@ -10,7 +10,11 @@ vi.mock('./auth', async importOriginal => ({
   ...await importOriginal<typeof import('./auth')>(),
   getMe: vi.fn(async () => ({ is_superadmin: true, permissions: [] })),
 }))
-vi.mock('./filamentdb-contrib', () => ({ mountContributeControl: vi.fn(async () => undefined) }))
+vi.mock('./filamentdb-contrib', () => ({
+  mountContributeControl: vi.fn(async () => undefined),
+  loadContribContext: vi.fn(async () => ({ canContribute: false, pluginActive: true, tokenSaved: false, needsToken: true })),
+  contribErrorMessage: vi.fn(() => 'error'),
+}))
 
 import { initPrintProfiles } from './print-profiles'
 

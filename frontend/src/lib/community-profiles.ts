@@ -8,12 +8,14 @@ import { getMe, hasPermission } from './auth'
 import { contribErrorMessage, loadContribContext } from './filamentdb-contrib'
 import { escapeHtml } from './extra-fields'
 import { t } from './i18n'
-import { profileCoreSummary, type PrintProfile } from './print-profiles'
+import { bindFormDialog } from './form-dialog'
+import { printerOptionLabel, profileCoreSummary, type PrintProfile } from './print-profiles'
 
 export interface CommunityProfile {
   id: number
   author_display_name?: string | null
   is_own?: boolean
+  printer_model_id?: number | null
   rating_avg?: number | null
   rating_count?: number | null
   my_rating?: number | null
@@ -29,12 +31,50 @@ interface CommunityPrinter {
   filamentdb_printer_model_id?: number | null
 }
 
+export type ModelMismatch = 'unlinked' | 'mismatch' | null
+
+/**
+ * Passt das Druckermodell des Community-Profils zum Zieldrucker?
+ * 'unlinked': Drucker hat kein FilaMan-DB-Modell, 'mismatch': anderes Modell,
+ * null: passt oder das Profil nennt kein Modell (dann gibt es nichts zu warnen).
+ */
+export function profileModelMismatch(
+  profile: Pick<CommunityProfile, 'printer_model_id'>,
+  printer: { filamentdb_printer_model_id?: number | null } | undefined,
+): ModelMismatch {
+  const profileModel = Number(profile.printer_model_id) || 0
+  if (!profileModel || !printer) return null
+  const printerModel = Number(printer.filamentdb_printer_model_id) || 0
+  if (!printerModel) return 'unlinked'
+  return printerModel === profileModel ? null : 'mismatch'
+}
+
+/** "Hersteller Modell" aus dem Profil (flache Felder oder verschachteltes Modellobjekt). */
+export function profileModelLabel(profile: CommunityProfile): string {
+  const nested = profile.printer_model
+  if (nested && typeof nested === 'object') {
+    const ref = nested as { manufacturer?: unknown; model?: unknown }
+    return [ref.manufacturer, ref.model].filter(part => typeof part === 'string' && part).join(' ')
+  }
+  return [profile.printer_manufacturer, nested].filter(part => typeof part === 'string' && part).join(' ')
+}
+
+/** "Erstellt für Bambu Lab X1C, Düse 0.4 mm"; leer, wenn das Profil nichts davon nennt. */
+export function profileOriginText(profile: CommunityProfile): string {
+  const model = profileModelLabel(profile)
+  const nozzle = Number(profile.nozzle_diameter_mm)
+  if (model && nozzle > 0) return t('fdbContrib.community.createdForNozzle', { model, nozzle: String(nozzle) })
+  if (model) return t('fdbContrib.community.createdFor', { model })
+  if (nozzle > 0) return t('fdbContrib.community.createdForNozzleOnly', { nozzle: String(nozzle) })
+  return ''
+}
+
 export function starsText(avg: number | null | undefined): string {
   const filled = Math.max(0, Math.min(5, Math.round(avg ?? 0)))
   return '★'.repeat(filled) + '☆'.repeat(5 - filled)
 }
 
-export function renderCommunityCard(profile: CommunityProfile, options: { canRate: boolean; canAdopt: boolean }): string {
+export function renderCommunityCard(profile: CommunityProfile, options: { canRate: boolean; canAdopt: boolean; showOrigin?: boolean }): string {
   const e = escapeHtml
   const author = profile.author_display_name ? t('fdbContrib.community.by', { author: profile.author_display_name }) : t('fdbContrib.community.by', { author: t('fdbContrib.community.anonymous') })
   const count = profile.rating_count ?? 0
@@ -51,8 +91,9 @@ export function renderCommunityCard(profile: CommunityProfile, options: { canRat
     actions += `<span class="fdb-rate" role="group" aria-label="${e(t('fdbContrib.community.rate'))}">${stars}</span> `
     actions += `<button type="button" class="fm-btn fm-btn-outline fm-btn-sm" data-cp-report="${Number(profile.id)}">${e(t('fdbContrib.community.report'))}</button>`
   }
+  const origin = options.showOrigin ? profileOriginText(profile) : ''
   return `<article class="fm-card pp-card" data-cp-card="${Number(profile.id)}">
-    <header><h3>${rating} ${own}</h3><span class="pp-muted">${e(author)}</span></header>
+    <header><h3>${rating} ${own}</h3><span class="pp-muted">${e(author)}</span>${origin ? `<span class="pp-muted" data-cp-origin>${e(origin)}</span>` : ''}</header>
     <dl>${rows || `<p class="pp-muted">${e(t('printProfiles.noCore'))}</p>`}</dl>
     <div class="pp-card-actions">${actions}</div>
     <p class="pp-muted" data-cp-message role="status"></p></article>`
@@ -79,14 +120,16 @@ export async function initCommunityProfiles(options: CommunityProfilesOptions): 
   const profilesById = new Map<number, CommunityProfile>()
   const printersById = new Map<number, CommunityPrinter>()
 
+  let allPrinters: CommunityPrinter[] = []
   let printers: CommunityPrinter[] = []
   try {
-    printers = (await api.get<{ items: CommunityPrinter[] }>('/printers?page_size=200')).items
-      .filter(p => p.filamentdb_printer_model_id)
+    allPrinters = (await api.get<{ items: CommunityPrinter[] }>('/printers?page_size=200')).items
+    printers = allPrinters.filter(p => p.filamentdb_printer_model_id)
   } catch {
     list.innerHTML = `<p class="pp-muted">${escapeHtml(t('fdbContrib.community.loadFailed'))}</p>`
     return
   }
+  setupCommunitySearch({ mount, filamentId, filamentdbId, printers: allPrinters, canAdopt, onAdopted: options.onAdopted })
   if (!printers.length) {
     list.innerHTML = `<p class="pp-muted">${escapeHtml(t('fdbContrib.community.noPrinters'))}</p>`
     return
@@ -148,4 +191,181 @@ export async function initCommunityProfiles(options: CommunityProfilesOptions): 
       message(card, contribErrorMessage(error), true)
     }
   })
+}
+
+export const SEARCH_PAGE_SIZE = 20
+export const SEARCH_MAX_RESULTS = 200
+
+interface SearchPage {
+  items: CommunityProfile[]
+  total?: number
+}
+
+interface PrinterModelOption {
+  id: number
+  manufacturer?: string | null
+  model?: string | null
+}
+
+interface SearchSetup {
+  mount: HTMLElement
+  filamentId: number
+  filamentdbId: number
+  printers: CommunityPrinter[]
+  canAdopt: boolean
+  onAdopted?: () => void
+}
+
+/** Kann noch eine Seite nachgeladen werden? Gedeckelt, damit die Liste nicht ausufert. */
+export function hasMoreResults(loaded: number, total: number | undefined): boolean {
+  return loaded < SEARCH_MAX_RESULTS && typeof total === 'number' && loaded < total
+}
+
+function renderSearchDialog(models: PrinterModelOption[]): string {
+  const e = escapeHtml
+  const options = [`<option value="">${e(t('fdbContrib.community.allModels'))}</option>`]
+    .concat(models
+      .map(m => ({ id: m.id, label: [m.manufacturer, m.model].filter(Boolean).join(' ') }))
+      .sort((a, b) => a.label.localeCompare(b.label))
+      .map(m => `<option value="${Number(m.id)}">${e(m.label)}</option>`)).join('')
+  return `<p class="pp-muted" style="margin: 0 0 8px;">${e(t('fdbContrib.community.searchHint'))}</p>
+    <form class="cp-search-form" data-cs-form>
+      <div class="pp-field"><label for="cs-model" class="fm-label">${e(t('fdbContrib.community.searchModel'))}</label>
+        <select id="cs-model" class="fm-select" data-cs-model>${options}</select></div>
+      <div class="pp-field"><label for="cs-nozzle" class="fm-label">${e(t('fdbContrib.community.searchNozzle'))} <span class="pp-unit">mm</span></label>
+        <input type="number" id="cs-nozzle" class="fm-input" step="0.05" min="0.1" max="2" data-cs-nozzle /></div>
+      <div class="pp-field cp-search-submit"><button type="submit" class="fm-btn fm-btn-primary">${e(t('fdbContrib.community.searchRun'))}</button></div>
+    </form>
+    <div class="pp-cards" data-cs-results></div>
+    <p class="pp-muted" data-cs-status role="status"></p>
+    <div class="cp-search-more hidden" data-cs-more><button type="button" class="fm-btn fm-btn-outline fm-btn-sm" data-cs-load-more>${e(t('fdbContrib.community.loadMore'))}</button></div>
+    <div class="cp-adopt-panel hidden" data-cs-adopt></div>`
+}
+
+/** Dialog "Weitere Profile suchen": beliebiges Druckermodell, Übernahme mit Modellwarnung. */
+function setupCommunitySearch(setup: SearchSetup): void {
+  const { mount, filamentId, filamentdbId, printers } = setup
+  const button = mount.querySelector('[data-cp-search-open]') as HTMLElement | null
+  const dialog = document.getElementById('community-search-dialog') as HTMLDialogElement | null
+  const body = dialog?.querySelector('[data-cs-body]') as HTMLElement | null
+  if (!button || !dialog || !body) return
+  button.classList.remove('hidden')
+  const controller = bindFormDialog(dialog)
+  const found = new Map<number, CommunityProfile>()
+  let page = 0
+  let total: number | undefined
+  let loaded = 0
+  let built = false
+
+  async function open() {
+    if (!built) {
+      built = true
+      let models: PrinterModelOption[] = []
+      try {
+        models = (await api.get<{ items: PrinterModelOption[] }>('/filamentdb/printer-models')).items
+      } catch { /* Suche geht auch ohne Modellliste */ }
+      body!.innerHTML = renderSearchDialog(models)
+      wire()
+    }
+    controller.open()
+  }
+  button.addEventListener('click', () => void open())
+
+  function wire() {
+    const form = body!.querySelector('[data-cs-form]') as HTMLFormElement
+    const results = body!.querySelector('[data-cs-results]') as HTMLElement
+    const statusEl = body!.querySelector('[data-cs-status]') as HTMLElement
+    const more = body!.querySelector('[data-cs-more]') as HTMLElement
+    const panel = body!.querySelector('[data-cs-adopt]') as HTMLElement
+
+    async function fetchPage(reset: boolean) {
+      const modelId = Number((body!.querySelector('[data-cs-model]') as HTMLSelectElement).value)
+      const nozzle = Number((body!.querySelector('[data-cs-nozzle]') as HTMLInputElement).value)
+      if (reset) {
+        page = 0
+        loaded = 0
+        total = undefined
+        found.clear()
+        results.innerHTML = ''
+        panel.classList.add('hidden')
+      }
+      const params = new URLSearchParams({ filament_id: String(filamentdbId), page: String(page + 1), page_size: String(SEARCH_PAGE_SIZE) })
+      if (modelId > 0) params.set('printer_model_id', String(modelId))
+      if (nozzle > 0) params.set('nozzle_diameter_mm', String(nozzle))
+      statusEl.classList.remove('fm-alert-error')
+      statusEl.textContent = t('fdbContrib.community.searching')
+      try {
+        const data = await api.get<SearchPage>(`/filamentdb/print-profiles?${params}`)
+        page += 1
+        data.items.forEach(item => found.set(item.id, item))
+        loaded += data.items.length
+        total = data.total
+        results.insertAdjacentHTML('beforeend', data.items.map(item => renderCommunityCard(item, { canRate: false, canAdopt: setup.canAdopt, showOrigin: true })).join(''))
+        statusEl.textContent = loaded
+          ? t('fdbContrib.community.resultCount', { shown: String(loaded), total: String(total ?? loaded) })
+          : t('fdbContrib.community.searchEmpty')
+        more.classList.toggle('hidden', data.items.length < SEARCH_PAGE_SIZE || !hasMoreResults(loaded, total))
+      } catch (error) {
+        statusEl.textContent = contribErrorMessage(error)
+        statusEl.classList.add('fm-alert-error')
+        more.classList.add('hidden')
+      }
+    }
+
+    form.addEventListener('submit', (event) => { event.preventDefault(); void fetchPage(true) })
+    body!.querySelector('[data-cs-load-more]')?.addEventListener('click', () => void fetchPage(false))
+
+    function openAdopt(profile: CommunityProfile) {
+      const e = escapeHtml
+      const preferred = printers.find(p => profileModelMismatch(profile, p) === null) ?? printers[0]
+      const options = printers.map(p => `<option value="${p.id}"${p.id === preferred?.id ? ' selected' : ''}>${e(printerOptionLabel(p))}</option>`).join('')
+      panel.innerHTML = `<h3>${e(t('fdbContrib.community.adoptTitle'))}</h3>
+        <p class="pp-muted">${e(profileOriginText(profile))}</p>
+        <div class="pp-field"><label for="cs-printer" class="fm-label">${e(t('fdbContrib.community.adoptPrinter'))}</label>
+          <select id="cs-printer" class="fm-select" data-cs-printer>${options}</select></div>
+        <div class="fm-alert-error hidden" data-cs-warning role="alert"></div>
+        <p class="fm-alert-error hidden" data-cs-adopt-error role="alert"></p>
+        <p class="pp-muted" data-cs-adopt-ok role="status"></p>
+        <div class="pp-actions"><button type="button" class="fm-btn fm-btn-outline" data-cs-adopt-cancel>${e(t('common.cancel'))}</button>
+          <button type="button" class="fm-btn fm-btn-primary" data-cs-adopt-confirm>${e(t('fdbContrib.community.adopt'))}</button></div>`
+      panel.classList.remove('hidden')
+      const select = panel.querySelector('[data-cs-printer]') as HTMLSelectElement
+      const warning = panel.querySelector('[data-cs-warning]') as HTMLElement
+      const errorBox = panel.querySelector('[data-cs-adopt-error]') as HTMLElement
+      const ok = panel.querySelector('[data-cs-adopt-ok]') as HTMLElement
+      const confirm = panel.querySelector('[data-cs-adopt-confirm]') as HTMLButtonElement
+      const selected = () => printers.find(p => String(p.id) === select.value)
+      const refresh = () => {
+        const mismatch = profileModelMismatch(profile, selected())
+        const text = mismatch ? t(`fdbContrib.community.warn_${mismatch}`, { model: profileModelLabel(profile) }) : ''
+        warning.textContent = text
+        warning.classList.toggle('hidden', !text)
+      }
+      select.addEventListener('change', refresh)
+      refresh()
+      panel.querySelector('[data-cs-adopt-cancel]')?.addEventListener('click', () => panel.classList.add('hidden'))
+      confirm.addEventListener('click', async () => {
+        const printer = selected()
+        if (!printer) return
+        confirm.disabled = true
+        errorBox.classList.add('hidden')
+        try {
+          await api.post(`/filamentdb/print-profiles/${profile.id}/import`, { filament_id: filamentId, printer_id: printer.id })
+          ok.textContent = t('fdbContrib.community.adopted')
+          setup.onAdopted?.()
+        } catch (error) {
+          errorBox.textContent = contribErrorMessage(error)
+          errorBox.classList.remove('hidden')
+          confirm.disabled = false
+        }
+      })
+    }
+
+    body!.addEventListener('click', (event) => {
+      const adopt = (event.target as HTMLElement).closest('[data-cp-adopt]') as HTMLElement | null
+      if (!adopt) return
+      const profile = found.get(Number(adopt.dataset.cpAdopt))
+      if (profile) openAdopt(profile)
+    })
+  }
 }
