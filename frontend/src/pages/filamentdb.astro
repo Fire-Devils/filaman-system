@@ -17,7 +17,10 @@ const features = ['match', 'import', 'submit', 'profiles', 'rate', 'sync'] as co
     <section class="fdbp-hero">
       <div>
         <span class="fdbp-tag" data-i18n="fdbConnect.page.heroTag">FilaMan-DB · db.filaman.app</span>
-        <h1 data-i18n="fdbConnect.page.heroTitle">Building the best filament database together</h1>
+        <header class="fdbp-hero-heading">
+          <h1 data-i18n="fdbConnect.page.heroTitle">Building the best filament database together</h1>
+          <div class="fm-list-controls" data-help-slot></div>
+        </header>
         <p data-i18n="fdbConnect.page.heroText"></p>
         <div class="fdbp-cta">
           <a class="fm-btn fm-btn-fdb" href="#setup" data-i18n="fdbConnect.page.ctaConnect">Connect now</a>
@@ -143,15 +146,18 @@ const features = ['match', 'import', 'submit', 'profiles', 'rate', 'sync'] as co
   </div>
 
   <style is:global>
-    .fdbp { display: grid; gap: var(--section-gap, 24px); max-width: var(--content-max-width, 1110px); }
+    .fdbp { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--section-gap, 24px); max-width: var(--content-max-width, 1110px); overflow-wrap: anywhere; }
     .fdbp > section { border-radius: var(--radius-lg); border: 1px solid var(--border); background: var(--bg-elevated); }
-    .fdbp-hero { display: grid; grid-template-columns: 1.1fr 1fr; gap: 32px; align-items: center; padding: 40px;
+    .fdbp-hero { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); gap: 32px; align-items: center; padding: 40px;
       background: linear-gradient(120deg, color-mix(in srgb, var(--accent) 14%, var(--bg-elevated)), color-mix(in srgb, var(--accent-2) 8%, var(--bg-elevated))) !important; }
-    .fdbp-hero h1 { margin: 0 0 12px; font-size: 2rem; line-height: 1.15; font-family: var(--font-serif); }
+    .fdbp-hero-heading { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: start; gap: var(--control-gap); margin-bottom: 12px; }
+    .fdbp-hero h1 { margin: 0; font-size: 2rem; line-height: 1.15; font-family: var(--font-serif); }
     .fdbp-hero p { margin: 0 0 20px; color: var(--text-muted); }
     .fdbp-hero-art { width: 100%; height: auto; }
     .fdbp-tag { display: block; margin-bottom: 8px; font-size: .7rem; letter-spacing: .1em; text-transform: uppercase; color: var(--accent-3); }
     .fdbp-cta, .fdbp-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+    .fdbp-cta .fm-btn-outline { display: inline-flex; align-items: center; gap: var(--inline-gap); }
+    .fdbp-cta .fm-btn-outline svg { flex: none; }
     .fdbp-sec { padding: 28px 32px; }
     .fdbp-sec h2 { margin: 0 0 6px; font-size: 1.2rem; }
     .fdbp-sub { margin: 0 0 20px; max-width: 70ch; color: var(--text-muted); font-size: .9rem; }
@@ -192,15 +198,19 @@ const features = ['match', 'import', 'submit', 'profiles', 'rate', 'sync'] as co
     .fdbp-faq:last-child { border-bottom: 1px solid var(--border); }
     .fdbp-faq summary { cursor: pointer; font-size: .9rem; font-weight: 600; }
     .fdbp-faq p { margin: 8px 0 0; color: var(--text-muted); font-size: .86rem; }
-    @media (max-width: 900px) {
+    @container detail-page (max-width: 48rem) {
       .fdbp-hero, .fdbp-steps { grid-template-columns: 1fr; }
       .fdbp-state, .fdbp-grid, .fdbp-trust { grid-template-columns: 1fr 1fr; }
       .fdbp-flow { grid-template-columns: 1fr 1fr; row-gap: 20px; }
       .fdbp-flow li:nth-child(odd)::before { display: none; }
     }
-    @media (max-width: 560px) {
+    @container detail-page (max-width: 34rem) {
       .fdbp-hero, .fdbp-sec { padding: 20px 16px; }
+      .fdbp-hero { gap: 16px; }
+      .fdbp-hero h1 { font-size: 1.5rem; }
       .fdbp-state, .fdbp-grid, .fdbp-trust, .fdbp-flow { grid-template-columns: 1fr; }
+      .fdbp-flow li { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: start; gap: 2px 12px; padding: 0; text-align: start; }
+      .fdbp-flow-n { grid-row: span 2; width: 32px; height: 32px; margin: 0; }
       .fdbp-flow li::before { display: none; }
     }
   </style>
