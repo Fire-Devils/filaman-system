@@ -95,6 +95,9 @@ import FormDialog from '../components/FormDialog.astro'
         <Fragment slot="actions"><div class="dashboard-chart-range" data-chart-range></div></Fragment>
         <div id="chart-total-weight" class="dashboard-chart"><p data-i18n="common.loading">Loading...</p></div>
       </FormSection>
+      <FormSection widget="chartMaterials" titleKey="dashboard.chartMaterials" title="Filament types" class="dashboard-chart-card">
+        <div id="chart-materials" class="dashboard-chart"><p data-i18n="common.loading">Loading...</p></div>
+      </FormSection>
     </div>
   </div>
 
@@ -154,6 +157,13 @@ import FormDialog from '../components/FormDialog.astro'
     .dashboard-chart :global(p) { margin: 0; color: var(--text-muted); font-size: .85rem; }
     .dashboard-chart-range { display: flex; flex-shrink: 0; gap: 4px; }
     .dashboard-chart-range :global(button) { white-space: nowrap; }
+    :global(.dashboard-donut) { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 16px; }
+    :global(.dashboard-donut .dashboard-donut-svg) { flex: 0 0 auto; }
+    :global(.dashboard-donut-legend) { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; font-size: .82rem; min-width: 0; flex: 1 1 10rem; }
+    :global(.dashboard-donut-legend li) { display: flex; align-items: center; gap: 8px; min-width: 0; }
+    :global(.dashboard-donut-legend .dot) { width: 10px; height: 10px; border-radius: 50%; flex: 0 0 auto; }
+    :global(.dashboard-donut-legend .name) { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    :global(.dashboard-donut-legend .num) { font-family: monospace; color: var(--text-muted); white-space: nowrap; }
     .dashboard-stack { display: grid; gap: var(--section-gap); min-width: 0; }
     .dashboard-table { --table-cell-padding: 4px 8px; min-width: 0; overflow-x: auto; }
     .dashboard-table :global(.fm-table) { width: 100%; font-size: .85rem; }
@@ -215,7 +225,7 @@ import FormDialog from '../components/FormDialog.astro'
     import { mountPanel } from '../lib/panel-navigation'
     import { mountSpoolLinkBanner } from '../lib/spool-link-banner'
     import { applyWidgetOrder, layoutGrid, layoutMasonry, masonryColumnCount, startWidgetDrag, type DashboardLayout } from '../lib/dashboard-layout'
-    import { hasChartData, renderChartSvg, type ChartPoint } from '../lib/dashboard-charts'
+    import { buildDonutSlices, hasChartData, renderChartSvg, renderDonutSvg, type ChartPoint } from '../lib/dashboard-charts'
 
     mountPanel('dashboard', async (panelSignal) => {
     interface ProblemSpool {
@@ -851,6 +861,8 @@ import FormDialog from '../components/FormDialog.astro'
             `</tbody></table>`
         }
 
+        renderMaterialsChart(dashboardData.filament_stats ?? [])
+
         const mfrContainer = document.getElementById('manufacturers-with-spools')!
         if (dashboardData.manufacturers_with_spools.length === 0) {
           mfrContainer.innerHTML = `<p style="color: var(--text-muted);">${t('dashboard.noData')}</p>`
@@ -977,6 +989,30 @@ import FormDialog from '../components/FormDialog.astro'
       { id: 'chartSpoolCount', mount: 'chart-spool-count', kind: 'area', color: 'var(--info-text)', integer: true, value: m => m.spool_count, format: formatCount, axis: formatCount },
       { id: 'chartTotalWeight', mount: 'chart-total-weight', kind: 'area', color: 'var(--success-text)', value: m => m.total_weight_g, format: formatWeight, axis: formatWeight },
     ]
+
+    function renderMaterialsChart(stats: { filament_type: string; spool_count: number; total_weight_g: number }[]) {
+      const mount = document.getElementById('chart-materials')
+      if (!mount) return
+      const counts = new Map(stats.map(f => [f.filament_type, f.spool_count]))
+      const slices = buildDonutSlices(
+        stats.map(f => ({ name: f.filament_type, value: f.total_weight_g, detail: `${f.spool_count} ${t('dashboard.spools')}` })),
+        { otherLabel: t('dashboard.chartMaterialsOther'), otherDetail: () => '' },
+      )
+      if (slices.length === 0) { mount.innerHTML = `<p>${t('dashboard.chartNoData')}</p>`; return }
+      const total = slices.reduce((sum, s) => sum + s.value, 0)
+      const pct = (s: { percent: number }) => `${s.percent.toFixed(1)} %`
+      const svg = renderDonutSvg(slices, {
+        ariaLabel: t('dashboard.chartMaterials'), centerValue: formatWeight(total), centerLabel: t('dashboard.chartMaterialsCenter'),
+        tip: s => [s.name, formatWeight(s.value), s.other ? '' : `${counts.get(s.name) ?? 0} ${t('dashboard.spools')}`, pct(s)].filter(Boolean).join(' · '),
+      })
+      const legend = slices.map(s => {
+        const name = s.other
+          ? `<span class="name" title="${escapeHtml(s.name)}">${escapeHtml(s.name)}</span>`
+          : `<a class="name" href="/spools?material=${escapeHtml(encodeURIComponent(s.name))}" title="${escapeHtml(s.name)}">${escapeHtml(s.name)}</a>`
+        return `<li><span class="dot" style="background:${s.color}"></span>${name}<span class="num">${formatWeight(s.value)}</span><span class="num">${pct(s)}</span></li>`
+      }).join('')
+      mount.innerHTML = `<div class="dashboard-donut">${svg}<ul class="dashboard-donut-legend">${legend}</ul></div>`
+    }
 
     function monthLabel(key: string, long = false): string {
       const [year, month] = key.split('-').map(Number)

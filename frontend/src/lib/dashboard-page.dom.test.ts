@@ -325,7 +325,7 @@ it('applies the saved widget order, hides widgets and keeps unknown widgets at t
   expect(ids).not.toContain('ghostWidget')
   expect(ids.slice(2, 5)).toEqual(['spoolStatus', 'lowStockSpools', 'lowStockFilaments'])
   expect(document.querySelector<HTMLElement>('[data-widget="spoolStatus"]')!.style.display).toBe('none')
-  expect(document.querySelectorAll('#dashboard-widgets > [data-widget]').length).toBe(12)
+  expect(document.querySelectorAll('#dashboard-widgets > [data-widget]').length).toBe(13)
 })
 
 it('distributes widgets over masonry columns by height and keeps left-to-right order', async () => {
@@ -342,7 +342,7 @@ it('distributes widgets over masonry columns by height and keeps left-to-right o
   const column = (id: string) => columns.findIndex(col => col.contains(document.querySelector(`[data-widget="${id}"]`)))
   // 100 -> left, 300 -> right, then the next two stack into the shorter left column.
   expect([column('spoolStatus'), column('locationStats'), column('lowStockSpools'), column('lowStockFilaments')]).toEqual([0, 1, 0, 0])
-  expect(firstFour.length).toBe(12)
+  expect(firstFour.length).toBe(13)
 })
 
 it('saves order and layout through the menu and resets all three together', async () => {

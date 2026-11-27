@@ -82,3 +82,90 @@ export function renderChartSvg(points: readonly ChartPoint[], options: ChartOpti
 
   return `<svg class="dashboard-chart-svg" viewBox="0 0 ${width} ${height}" width="${width}" height="${height}" role="img" aria-label="${escapeHtml(options.ariaLabel)}">${grid}${marks}${labels}</svg>`
 }
+
+export interface DonutInput {
+  name: string
+  value: number
+  /** Extra tooltip text after the name, e.g. weight and spool count. */
+  detail: string
+}
+
+export interface DonutSlice extends DonutInput {
+  percent: number
+  color: string
+  /** True for the merged remainder slice. */
+  other?: boolean
+}
+
+export interface DonutOptions {
+  /** Merged slice name. */
+  otherLabel: string
+  /** Builds the tooltip for the merged slice. */
+  otherDetail?: (value: number) => string
+  /** Max single slices before the rest is merged. */
+  maxSlices?: number
+  colors?: readonly string[]
+  otherColor?: string
+}
+
+export const DONUT_COLORS = [
+  'var(--accent)', 'var(--info-text)', 'var(--warning-text)', 'var(--error-text)', 'var(--success-text)', 'var(--accent-2)',
+] as const
+
+/** Largest slices first, zero entries dropped, remainder merged into one "other" slice. */
+export function buildDonutSlices(items: readonly DonutInput[], options: DonutOptions): DonutSlice[] {
+  const { maxSlices = 6, colors = DONUT_COLORS, otherColor = 'var(--text-muted)' } = options
+  const sorted = items.filter(i => i.value > 0).sort((a, b) => b.value - a.value)
+  const total = sorted.reduce((sum, i) => sum + i.value, 0)
+  if (total <= 0) return []
+  const head = sorted.slice(0, maxSlices)
+  const rest = sorted.slice(maxSlices)
+  const slices: DonutSlice[] = head.map((item, i) => ({ ...item, percent: (item.value / total) * 100, color: colors[i % colors.length] }))
+  if (rest.length > 0) {
+    const value = rest.reduce((sum, i) => sum + i.value, 0)
+    slices.push({
+      name: options.otherLabel, value, detail: options.otherDetail ? options.otherDetail(value) : '',
+      percent: (value / total) * 100, color: otherColor, other: true,
+    })
+  }
+  return slices
+}
+
+export interface DonutSvgOptions {
+  ariaLabel: string
+  centerValue: string
+  centerLabel: string
+  size?: number
+  /** Tooltip text per slice (name, weight, spools, percent). */
+  tip: (slice: DonutSlice) => string
+}
+
+/** Donut chart as SVG; each slice is a ring segment, a single slice a full ring. */
+export function renderDonutSvg(slices: readonly DonutSlice[], options: DonutSvgOptions): string {
+  const size = options.size ?? 160
+  const c = size / 2
+  const outer = c - 2
+  const inner = outer * 0.62
+  const point = (r: number, a: number) => `${num(c + r * Math.sin(a))} ${num(c - r * Math.cos(a))}`
+  const total = slices.reduce((sum, s) => sum + s.value, 0)
+  let angle = 0
+  const segments = slices.map(slice => {
+    const sweep = total > 0 ? (slice.value / total) * Math.PI * 2 : 0
+    const attrs = `fill="${slice.color}" stroke="var(--bg-elevated)" stroke-width="1.5"`
+    let shape: string
+    if (sweep >= Math.PI * 2 - 1e-6) {
+      shape = `<path d="M ${point(outer, 0)} A ${outer} ${outer} 0 1 1 ${point(outer, Math.PI)} A ${outer} ${outer} 0 1 1 ${point(outer, 0)} Z M ${point(inner, 0)} A ${inner} ${inner} 0 1 0 ${point(inner, Math.PI)} A ${inner} ${inner} 0 1 0 ${point(inner, 0)} Z" fill-rule="evenodd" ${attrs}>`
+    } else {
+      const end = angle + sweep
+      const large = sweep > Math.PI ? 1 : 0
+      shape = `<path d="M ${point(outer, angle)} A ${outer} ${outer} 0 ${large} 1 ${point(outer, end)} L ${point(inner, end)} A ${inner} ${inner} 0 ${large} 0 ${point(inner, angle)} Z" ${attrs}>`
+    }
+    angle += sweep
+    return `${shape}<title>${escapeHtml(options.tip(slice))}</title></path>`
+  }).join('')
+  return `<svg class="dashboard-chart-svg dashboard-donut-svg" viewBox="0 0 ${size} ${size}" width="${size}" height="${size}" role="img" aria-label="${escapeHtml(options.ariaLabel)}">`
+    + segments
+    + `<text x="${c}" y="${c + 1}" text-anchor="middle" font-size="${num(size * 0.1)}" font-weight="700" fill="var(--text)">${escapeHtml(options.centerValue)}</text>`
+    + `<text x="${c}" y="${num(c + size * 0.1)}" text-anchor="middle" font-size="${num(size * 0.065)}" fill="var(--text-muted)">${escapeHtml(options.centerLabel)}</text>`
+    + `</svg>`
+}
