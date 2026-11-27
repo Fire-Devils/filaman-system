@@ -117,15 +117,15 @@ import FormSection from '../../components/FormSection.astro'
   </FormSection>
 
   <!-- SQLite Backup Files Section -->
-  <div id="sqlite-backups-section" style="display:none"><FormSection titleKey="admin.sqliteBackups" title="SQLite Backups">
+  <div id="sqlite-backups-section" style="display:none"><FormSection titleKey="admin.sqliteBackups" title="SQLite Backups" id="sqlite-backups-title">
     <p style="color: var(--text-muted); margin-bottom: 16px; font-size: 0.875rem;" data-i18n="admin.sqliteBackupsDesc">
       Automatic SQLite database backups. These are created daily and before updates.
     </p>
     <div id="sqlite-backups-loading" style="text-align: center; padding: 24px; color: var(--text-muted);" data-i18n="common.loading">Loading...</div>
     <div id="sqlite-backups-empty" style="display: none; text-align: center; padding: 24px; color: var(--text-muted);" data-i18n="admin.sqliteBackupsEmpty">No backup files found.</div>
-    <div id="sqlite-backups-table-wrap" style="display: none; overflow-x: auto;">
-      <table class="fm-table fm-admin-table">
-        <thead>
+    <div id="sqlite-backups-table-wrap" class="fm-table-scroll" style="display: none;">
+      <table class="fm-table fm-admin-table" role="table" aria-labelledby="sqlite-backups-title">
+        <thead role="rowgroup">
           <tr>
             <th data-i18n="admin.sqliteBackupFile">File</th>
             <th data-i18n="admin.sqliteBackupDate">Date</th>
@@ -133,12 +133,31 @@ import FormSection from '../../components/FormSection.astro'
             <th style="text-align: right;" data-i18n="common.actions">Actions</th>
           </tr>
         </thead>
-        <tbody id="sqlite-backups-tbody"></tbody>
+        <tbody id="sqlite-backups-tbody" role="rowgroup"></tbody>
       </table>
     </div>
   </FormSection></div>
 
   </div>
+  <style>
+    @container detail-page (max-width: 40rem) {
+      #sqlite-backups-table-wrap { position: relative; }
+      #sqlite-backups-table-wrap table, #sqlite-backups-tbody { display: block; }
+      #sqlite-backups-table-wrap thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+      #sqlite-backups-tbody :global(tr) {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        align-items: start;
+        gap: var(--control-gap);
+        padding-block: var(--section-padding);
+        border-bottom: 1px solid var(--border);
+      }
+      #sqlite-backups-tbody :global(td) { padding: 0; border: 0; }
+      #sqlite-backups-tbody :global(td:first-child), #sqlite-backups-tbody :global(td:last-child) { grid-column: 1 / -1; }
+      #sqlite-backups-tbody :global(.sqlite-backup-meta) { color: var(--text-muted); overflow-wrap: normal; }
+      #sqlite-backups-tbody :global(.sqlite-backup-actions) { display: flex; flex-wrap: wrap; gap: var(--control-gap); margin-top: 4px; }
+    }
+  </style>
   <script>
     import { initI18n, t } from '../../lib/i18n'
     import { getAbortSignal, isAbortError } from '../../lib/abort'
@@ -466,15 +485,16 @@ import FormSection from '../../components/FormSection.astro'
 
         for (const backup of data.backups) {
           const tr = document.createElement('tr')
+          tr.setAttribute('role', 'row')
           tr.innerHTML = `
-            <td style="font-family: monospace; font-size: 0.85rem;">${backup.filename}</td>
-            <td>${formatDate(backup.created_at)}</td>
-            <td>${formatBytes(backup.size_bytes)}</td>
-            <td style="text-align: right; white-space: nowrap;">
+            <td role="cell" style="font-family: monospace; font-size: 0.85rem;">${backup.filename}</td>
+            <td role="cell" class="sqlite-backup-meta">${formatDate(backup.created_at)}</td>
+            <td role="cell" class="sqlite-backup-meta" style="white-space: nowrap;">${formatBytes(backup.size_bytes)}</td>
+            <td role="cell" class="sqlite-backup-actions" style="text-align: right; white-space: nowrap;">
               <button class="fm-btn fm-btn-sm fm-btn-outline btn-sqlite-restore" data-filename="${backup.filename}"
                 data-i18n="admin.sqliteRestore">Restore</button>
               <button class="fm-btn fm-btn-sm fm-btn-danger btn-sqlite-delete" data-filename="${backup.filename}"
-                style="margin-left: 6px;" data-i18n="common.delete">Delete</button>
+                data-i18n="common.delete">Delete</button>
             </td>
           `
           sqliteTbody.appendChild(tr)
