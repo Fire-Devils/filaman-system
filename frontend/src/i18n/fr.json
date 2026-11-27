@@ -2883,6 +2883,8 @@
     },
     "noToken": "Tu n'as pas encore enregistré de jeton FilaMan-DB. Inscris-toi sur {link} et crée un jeton sous « Mon compte → Jetons API ». Saisis-le ensuite dans les paramètres de ton profil.",
     "community": {
+      "duplicate": "Créer un doublon",
+      "duplicateHint": "Crée une autre copie de ce profil dans les profils d'impression de ce filament.",
       "adoptHint": "Copie les valeurs dans les profils d'impression de ce filament pour l'imprimante concernée.",
       "intro": "Profils d'autres utilisateurs de la FilaMan-DB. « Enregistrer comme mon profil » copie les valeurs dans les profils d'impression de ce filament pour l'imprimante concernée.",
       "title": "Profils d'impression de la communauté",

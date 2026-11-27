@@ -1205,19 +1205,49 @@ def _integer_profile_columns() -> set[str]:
     }
 
 
+async def imported_printer_ids(
+    db: AsyncSession, filament_id: int, remote_ids: list[int]
+) -> dict[int, list[int | None]]:
+    """Je Community-ID die printer_ids lokaler Profile dieses Filaments, die daraus stammen."""
+    if not remote_ids:
+        return {}
+    rows = (
+        await db.execute(
+            select(FilamentDBContribution.remote_entity_id, FilamentPrinterProfile.printer_id)
+            .join(
+                FilamentPrinterProfile,
+                FilamentPrinterProfile.id == FilamentDBContribution.local_id,
+            )
+            .where(
+                FilamentDBContribution.entity_type == "print_profile",
+                FilamentDBContribution.status == "linked",
+                FilamentDBContribution.remote_entity_id.in_(remote_ids),
+                FilamentPrinterProfile.filament_id == filament_id,
+            )
+        )
+    ).all()
+    result: dict[int, list[int | None]] = {}
+    for remote_id, printer_id in rows:
+        bucket = result.setdefault(remote_id, [])
+        if printer_id not in bucket:
+            bucket.append(printer_id)
+    return result
+
+
 async def import_community_profile(
     db: AsyncSession,
     user_id: int | None,
     remote_profile_id: int,
     filament_id: int,
     printer_id: int | None = None,
+    duplicate: bool = False,
 ) -> FilamentPrinterProfile:
     remote = await fdb_request("GET", f"/print-profiles/{remote_profile_id}")
     if not isinstance(remote, dict):
         raise _err(502, "filamentdb_error", "Unexpected answer from FilaMan-DB")
     await _get_filament(db, filament_id)
     printer = await _get_printer(db, printer_id) if printer_id else None
-    existing = (
+    existing = None if duplicate else (
         await db.execute(
             select(FilamentDBContribution.id)
             .join(

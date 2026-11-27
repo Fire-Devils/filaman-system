@@ -1082,6 +1082,30 @@ async def test_import_same_community_profile_twice_is_409(auth_client, fake_db, 
 
 
 @pytest.mark.asyncio
+async def test_import_duplicate_flag_bypasses_409(auth_client, fake_db, entities):
+    client, csrf = auth_client
+    fake_db.profiles[7] = {"id": 7, "nozzle_temp_c": 210}
+    body = {"filament_id": entities["fil"].id, "printer_id": entities["printer"].id}
+    first = await client.post(f"{BASE}/print-profiles/7/import", json=body, headers=_h(csrf))
+    assert first.status_code == 201, first.text
+    dup = await client.post(f"{BASE}/print-profiles/7/import", json={**body, "duplicate": True}, headers=_h(csrf))
+    assert dup.status_code == 201, dup.text
+    assert dup.json()["id"] != first.json()["id"]
+
+
+@pytest.mark.asyncio
+async def test_search_profiles_reports_imported_printer_ids(auth_client, fake_db, entities):
+    client, csrf = auth_client
+    fake_db.profiles[1] = {"id": 1, "nozzle_temp_c": 210}
+    url = f"{BASE}/print-profiles?filament_id=9&local_filament_id={entities['fil'].id}"
+    assert "imported_printer_ids" not in (await client.get(f"{BASE}/print-profiles?filament_id=9")).json()["items"][0]
+    assert (await client.get(url)).json()["items"][0]["imported_printer_ids"] == []
+    body = {"filament_id": entities["fil"].id, "printer_id": entities["printer"].id}
+    assert (await client.post(f"{BASE}/print-profiles/1/import", json=body, headers=_h(csrf))).status_code == 201
+    assert (await client.get(url)).json()["items"][0]["imported_printer_ids"] == [entities["printer"].id]
+
+
+@pytest.mark.asyncio
 async def test_suggest_build_plate_submits_when_no_duplicate(auth_client, fake_db):
     client, csrf = auth_client
     await _save_token(client, csrf)

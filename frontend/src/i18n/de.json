@@ -2884,6 +2884,8 @@
     },
     "noToken": "Du hast noch keinen FilaMan-DB-Token hinterlegt. Registriere dich auf {link} und erstelle unter „Mein Konto → API-Tokens“ einen Token. Trage ihn dann in deinen Profileinstellungen ein.",
     "community": {
+      "duplicate": "Duplikat erstellen",
+      "duplicateHint": "Legt eine weitere Kopie dieses Profils bei den Druckprofilen dieses Filaments an.",
       "adoptHint": "Kopiert die Werte in die Druckprofile dieses Filaments für den jeweiligen Drucker.",
       "intro": "Profile anderer Nutzer aus der FilaMan-DB. „Als eigenes Profil speichern“ kopiert die Werte in die Druckprofile dieses Filaments für den jeweiligen Drucker.",
       "title": "Community-Druckprofile",

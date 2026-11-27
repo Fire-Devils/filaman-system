@@ -15,6 +15,7 @@ export interface CommunityProfile {
   id: number
   author_display_name?: string | null
   is_own?: boolean
+  imported_printer_ids?: Array<number | null>
   printer_model_id?: number | null
   rating_avg?: number | null
   rating_count?: number | null
@@ -74,7 +75,7 @@ export function starsText(avg: number | null | undefined): string {
   return '★'.repeat(filled) + '☆'.repeat(5 - filled)
 }
 
-export function renderCommunityCard(profile: CommunityProfile, options: { canRate: boolean; canAdopt: boolean; showOrigin?: boolean }): string {
+export function renderCommunityCard(profile: CommunityProfile, options: { canRate: boolean; canAdopt: boolean; showOrigin?: boolean; duplicate?: boolean }): string {
   const e = escapeHtml
   const author = profile.author_display_name ? t('fdbContrib.community.by', { author: profile.author_display_name }) : t('fdbContrib.community.by', { author: t('fdbContrib.community.anonymous') })
   const count = profile.rating_count ?? 0
@@ -85,7 +86,10 @@ export function renderCommunityCard(profile: CommunityProfile, options: { canRat
     .map(row => `<div><dt>${e(row.label)}</dt><dd>${e(row.value)}</dd></div>`).join('')
   const own = profile.is_own ? `<span class="fdb-status fdb-status-success">${e(t('fdbContrib.community.own'))}</span>` : ''
   let actions = ''
-  if (options.canAdopt) actions += `<button type="button" class="fm-btn fm-btn-primary fm-btn-sm" data-cp-adopt="${Number(profile.id)}" title="${e(t('fdbContrib.community.adoptHint'))}">${e(t('fdbContrib.community.adopt'))}</button> `
+  if (options.canAdopt) {
+    const dup = Boolean(profile.is_own || options.duplicate)
+    actions += `<button type="button" class="fm-btn fm-btn-primary fm-btn-sm" data-cp-adopt="${Number(profile.id)}" data-cp-duplicate="${dup ? '1' : '0'}" title="${e(t(dup ? 'fdbContrib.community.duplicateHint' : 'fdbContrib.community.adoptHint'))}">${e(t(dup ? 'fdbContrib.community.duplicate' : 'fdbContrib.community.adopt'))}</button> `
+  }
   if (options.canRate && !profile.is_own) {
     const stars = [1, 2, 3, 4, 5].map(n => `<button type="button" class="fdb-star${profile.my_rating && n <= profile.my_rating ? ' fdb-star-on' : ''}" data-cp-rate="${Number(profile.id)}" data-stars="${n}" aria-label="${e(t('fdbContrib.community.stars', { n }))}">★</button>`).join('')
     actions += `<span class="fdb-rate" role="group" aria-label="${e(t('fdbContrib.community.rate'))}">${stars}</span> `
@@ -161,7 +165,7 @@ async function loadCommunitySection(options: CommunityProfilesOptions, user: Non
   const sections: string[] = []
   for (const printer of printers) {
     printersById.set(printer.id, printer)
-    const params = new URLSearchParams({ filament_id: String(filamentdbId), printer_model_id: String(printer.filamentdb_printer_model_id) })
+    const params = new URLSearchParams({ filament_id: String(filamentdbId), printer_model_id: String(printer.filamentdb_printer_model_id), local_filament_id: String(filamentId) })
     if (printer.nozzle_diameter_mm) params.set('nozzle_diameter_mm', String(printer.nozzle_diameter_mm))
     let items: CommunityProfile[] = []
     try {
@@ -171,7 +175,7 @@ async function loadCommunitySection(options: CommunityProfilesOptions, user: Non
       continue
     }
     items.forEach(item => profilesById.set(item.id, item))
-    const cards = items.map(item => renderCommunityCard(item, { canRate, canAdopt })).join('')
+    const cards = items.map(item => renderCommunityCard(item, { canRate, canAdopt, duplicate: item.imported_printer_ids?.includes(printer.id) })).join('')
     sections.push(`<section class="cp-printer" data-cp-printer="${printer.id}"><h3>${escapeHtml(t('fdbContrib.community.forPrinter', { printer: printer.name }))}</h3>
       <div class="pp-cards">${cards || `<p class="pp-muted">${escapeHtml(t('fdbContrib.community.empty'))}</p>`}</div></section>`)
   }
@@ -194,8 +198,12 @@ async function loadCommunitySection(options: CommunityProfilesOptions, user: Non
     try {
       if (adopt) {
         const printerId = Number((adopt.closest('[data-cp-printer]') as HTMLElement).dataset.cpPrinter)
-        await api.post(`/filamentdb/print-profiles/${adopt.dataset.cpAdopt}/import`, { filament_id: filamentId, printer_id: printerId })
+        const duplicate = adopt.dataset.cpDuplicate === '1'
+        await api.post(`/filamentdb/print-profiles/${adopt.dataset.cpAdopt}/import`, { filament_id: filamentId, printer_id: printerId, duplicate })
         message(card, t('fdbContrib.community.adopted'))
+        adopt.dataset.cpDuplicate = '1'
+        adopt.textContent = t('fdbContrib.community.duplicate')
+        adopt.title = t('fdbContrib.community.duplicateHint')
         options.onAdopted?.()
       } else if (rate) {
         const result = await api.put<{ rating_avg: number; rating_count: number; my_rating: number }>(
@@ -312,7 +320,7 @@ function setupCommunitySearch(setup: SearchSetup): void {
         results.innerHTML = ''
         panel.classList.add('hidden')
       }
-      const params = new URLSearchParams({ filament_id: String(filamentdbId), page: String(page + 1), page_size: String(SEARCH_PAGE_SIZE) })
+      const params = new URLSearchParams({ filament_id: String(filamentdbId), page: String(page + 1), page_size: String(SEARCH_PAGE_SIZE), local_filament_id: String(filamentId) })
       if (modelId > 0) params.set('printer_model_id', String(modelId))
       if (nozzle > 0) params.set('nozzle_diameter_mm', String(nozzle))
       statusEl.classList.remove('fm-alert-error')
@@ -350,7 +358,7 @@ function setupCommunitySearch(setup: SearchSetup): void {
         <p class="fm-alert-error hidden" data-cs-adopt-error role="alert"></p>
         <p class="pp-muted" data-cs-adopt-ok role="status"></p>
         <div class="pp-actions"><button type="button" class="fm-btn fm-btn-outline" data-cs-adopt-cancel>${e(t('common.cancel'))}</button>
-          <button type="button" class="fm-btn fm-btn-primary" data-cs-adopt-confirm>${e(t('fdbContrib.community.adopt'))}</button></div>`
+          <button type="button" class="fm-btn fm-btn-primary" data-cs-adopt-confirm>${e(t(profile.is_own ? 'fdbContrib.community.duplicate' : 'fdbContrib.community.adopt'))}</button></div>`
       panel.classList.remove('hidden')
       const select = panel.querySelector('[data-cs-printer]') as HTMLSelectElement
       const warning = panel.querySelector('[data-cs-warning]') as HTMLElement
@@ -373,7 +381,7 @@ function setupCommunitySearch(setup: SearchSetup): void {
         confirm.disabled = true
         errorBox.classList.add('hidden')
         try {
-          await api.post(`/filamentdb/print-profiles/${profile.id}/import`, { filament_id: filamentId, printer_id: printer.id })
+          await api.post(`/filamentdb/print-profiles/${profile.id}/import`, { filament_id: filamentId, printer_id: printer.id, duplicate: Boolean(profile.is_own || profile.imported_printer_ids?.includes(printer.id)) })
           ok.textContent = t('fdbContrib.community.adopted')
           setup.onAdopted?.()
         } catch (error) {

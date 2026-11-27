@@ -386,8 +386,13 @@ async def search_print_profiles(
     nozzle_diameter_mm: float | None = Query(None, gt=0),
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
+    local_filament_id: int | None = Query(None, gt=0),
 ):
-    """Öffentlich in der DB; mit gespeichertem Token kommt zusätzlich ``is_own``."""
+    """Öffentlich in der DB; mit gespeichertem Token kommt zusätzlich ``is_own``.
+
+    Mit ``local_filament_id`` enthält jedes Item ``imported_printer_ids``: die Drucker
+    (None = ohne Drucker) der lokalen Profile dieses Filaments, die aus dem Eintrag
+    übernommen wurden."""
     params: dict[str, Any] = {"filament_id": filament_id, "page": page, "page_size": page_size}
     if printer_model_id:
         params["printer_model_id"] = printer_model_id
@@ -398,7 +403,14 @@ async def search_print_profiles(
         token = await svc.get_token(db, principal.user_id)
     except FilamentDBError:
         token = None
-    return await _guard(fdb_request("GET", "/print-profiles", token=token, params=params))
+    result = await _guard(fdb_request("GET", "/print-profiles", token=token, params=params))
+    if local_filament_id and isinstance(result, dict) and isinstance(result.get("items"), list):
+        items = [i for i in result["items"] if isinstance(i, dict)]
+        ids = [i["id"] for i in items if isinstance(i.get("id"), int)]
+        imported = await svc.imported_printer_ids(db, local_filament_id, ids)
+        for item in items:
+            item["imported_printer_ids"] = imported.get(item.get("id"), [])
+    return result
 
 
 class RatingBody(BaseModel):
@@ -446,6 +458,7 @@ async def report_print_profile(
 class ImportProfileBody(BaseModel):
     filament_id: int = Field(..., gt=0)
     printer_id: int | None = Field(None, gt=0)
+    duplicate: bool = False
 
 
 @router.post("/print-profiles/{profile_id}/import", status_code=201)
@@ -458,7 +471,12 @@ async def import_print_profile(
     """Community-Profil als lokales Profil für den gewählten Drucker anlegen."""
     profile: FilamentPrinterProfile = await _guard(
         svc.import_community_profile(
-            db, principal.user_id, profile_id, data.filament_id, data.printer_id
+            db,
+            principal.user_id,
+            profile_id,
+            data.filament_id,
+            data.printer_id,
+            duplicate=data.duplicate,
         )
     )
     clear_profile_count_cache()

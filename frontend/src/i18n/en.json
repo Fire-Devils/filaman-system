@@ -2883,6 +2883,8 @@
     },
     "noToken": "You have not saved a FilaMan-DB token yet. Register at {link} and create a token under “My account → API tokens”. Then enter it in your profile settings.",
     "community": {
+      "duplicate": "Create duplicate",
+      "duplicateHint": "Creates another copy of this profile in this filament's print profiles.",
       "adoptHint": "Copies the values into this filament's print profiles for the respective printer.",
       "intro": "Profiles from other users in FilaMan-DB. \"Save as my profile\" copies the values into this filament's print profiles for the respective printer.",
       "title": "Community print profiles",

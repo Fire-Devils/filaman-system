@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { countSuffix, hasMoreResults, profileModelLabel, profileModelMismatch, profileOriginText, SEARCH_MAX_RESULTS } from './community-profiles'
+import { countSuffix, renderCommunityCard, hasMoreResults, profileModelLabel, profileModelMismatch, profileOriginText, SEARCH_MAX_RESULTS } from './community-profiles'
 
 describe('community profile model mismatch', () => {
   const profile = { printer_model_id: 5 }
@@ -62,5 +62,20 @@ describe('community profile count suffix', () => {
   it('shows nothing when the count is unknown', () => {
     expect(countSuffix(null)).toBe('')
     expect(countSuffix(undefined)).toBe('')
+  })
+})
+
+describe('community card adopt button', () => {
+  const opts = { canRate: false, canAdopt: true }
+
+  it('offers adopting for a foreign, not yet imported profile', () => {
+    const html = renderCommunityCard({ id: 3 } as never, opts)
+    expect(html).toContain('data-cp-duplicate="0"')
+    expect(html).not.toContain('data-cp-duplicate="1"')
+  })
+
+  it('offers a duplicate for own or already imported profiles', () => {
+    expect(renderCommunityCard({ id: 3, is_own: true } as never, opts)).toContain('data-cp-duplicate="1"')
+    expect(renderCommunityCard({ id: 3 } as never, { ...opts, duplicate: true })).toContain('data-cp-duplicate="1"')
   })
 })
