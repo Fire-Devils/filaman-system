@@ -6,8 +6,9 @@ import * as i18n from './i18n'
 import * as colors from './colors'
 import { escapeHtml } from './extra-fields'
 import { trackListHistory } from './inventory-scroll'
+import * as eventStyle from './spool-event-style'
 
-const dependencies = { ...filters, ...i18n, ...colors, escapeHtml, trackListHistory, initI18n: async () => {}, getAbortSignal: () => undefined, isAbortError: () => false }
+const dependencies = { ...filters, ...i18n, ...colors, ...eventStyle, escapeHtml, trackListHistory, initI18n: async () => {}, getAbortSignal: () => undefined, isAbortError: () => false }
 const boot = () => bootAstroPage('spool-log', dependencies)
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); document.body.replaceChildren(); localStorage.clear() })
 
@@ -77,6 +78,15 @@ it('labels events of permanently deleted spools', async () => {
     measured_weight_g: null, delta_weight_g: null, note: null, manufacturer_name: 'GST 3D', material_type: 'PLA', colors: [],
   }] })))
   await boot()
-  await vi.waitFor(() => expect(document.querySelector('#events-table')!.textContent).toContain('Spule gelöscht'))
+  await vi.waitFor(() => expect(document.querySelector('#events-table')!.textContent).toContain('Gel\u00f6scht'))
   expect(document.querySelector('#events-table')!.textContent).not.toContain('spool_deleted')
+})
+
+it('shows short translated labels for backend event types and the raw text for unknown ones', () => {
+  i18n.setLang('de')
+  const label = (type: string) => eventStyle.eventTypeLabel(type, i18n.t)
+  expect(['print_consumption', 'measurement', 'manual_adjust', 'move_location', 'spool_full', 'empty', 'spool_deleted', 'archived'].map(label))
+    .toEqual(['Druck', 'Wiegung', 'Korrektur', 'Umlagerung', 'Spule voll', 'Leer', 'Gelöscht', 'Archiviert'])
+  expect(label('custom_status')).toBe('custom_status')
+  expect(eventStyle.getEventTypeStyle('print_consumption')).toBe(eventStyle.getEventTypeStyle('consumption'))
 })

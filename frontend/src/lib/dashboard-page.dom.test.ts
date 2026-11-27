@@ -6,6 +6,7 @@ import { escapeHtml } from './extra-fields'
 import { hasPermission } from './auth'
 import * as layoutLib from './dashboard-layout'
 import * as chartsLib from './dashboard-charts'
+import * as widgetsLib from './dashboard-widgets'
 
 async function openDrilldown() {
   document.querySelector<HTMLButtonElement>('#problem-spools')!.click()
@@ -20,6 +21,42 @@ const historyMonths = [
   { month: '2026-01', spend: 10, consumption_g: 0, spool_count: 1, total_weight_g: 1000, stock_value: 20 },
   { month: '2026-02', spend: 0, consumption_g: 250, spool_count: 2, total_weight_g: 1750, stock_value: 30 },
 ]
+
+const widgetFixtures: Record<string, unknown> = {
+  '/dashboard/stale-spools?months=6': {
+    months: 6, total_count: 2, total_weight_g: 1500, total_value: 38, unknown_value_count: 1,
+    items: [
+      { spool_id: 11, filament_designation: 'Old <PLA>', material_type: 'PLA', color_name: 'Red', colors: ['#FF0000'], manufacturer_name: 'Maker', remaining_weight_g: 500, remaining_value: 38, last_used_at: '2025-01-05T10:00:00Z' },
+      { spool_id: 12, filament_designation: 'Never', material_type: 'PETG', color_name: null, colors: [], manufacturer_name: 'Maker', remaining_weight_g: 1000, remaining_value: null, last_used_at: null },
+    ],
+  },
+  '/dashboard/stale-spools?months=12': { months: 12, items: [], total_count: 0, total_weight_g: 0, total_value: 0, unknown_value_count: 0 },
+  '/dashboard/printer-slots': {
+    printers: [{ printer_id: 1, printer_name: 'Alpha <X1>', slots: [
+      { slot_no: 1, name: 'AMS A1', spool_id: 21, filament_designation: 'Silk', material_type: 'PLA', color_name: null, colors: ['#112233', '#445566'], manufacturer_name: 'Maker', remaining_weight_g: 640 },
+      { slot_no: 2, name: null, spool_id: null, filament_designation: null, material_type: null, color_name: null, colors: [], manufacturer_name: null, remaining_weight_g: null },
+    ] }],
+  },
+  '/spools/all-events?page=1&page_size=10&sort_by=event_at&sort_order=desc': {
+    total: 2, page: 1, page_size: 10, items: [
+      { id: 2, spool_id: 5, event_type: 'print_consumption', event_at: new Date().toISOString(), colors: [{ name: 'Red', hex_code: '#ff0000' }], measured_weight_g: null, delta_weight_g: -12.34 },
+      { id: 1, spool_id: null, event_type: 'spool_deleted', event_at: new Date(Date.now() - 7200000).toISOString(), colors: [], measured_weight_g: null, delta_weight_g: null },
+    ],
+  },
+  '/dashboard/top-consumers?days=90&limit=8': {
+    days: 90, items: [
+      { filament_id: 3, filament_designation: 'Black', material_type: 'PLA', color_name: 'Jet', colors: ['#000000'], manufacturer_name: 'Maker', consumed_g: 2000, spools_in_stock: 2 },
+      { filament_id: 4, filament_designation: 'White', material_type: 'PETG', color_name: null, colors: ['#FFFFFF'], manufacturer_name: 'Maker', consumed_g: 500, spools_in_stock: 0 },
+    ],
+  },
+  '/dashboard/stock-range?days=90': {
+    days: 90, items: [
+      { material_type: 'PLA', remaining_g: 200, consumed_g: 900, days_left: 20 },
+      { material_type: 'PETG', remaining_g: 1000, consumed_g: 90, days_left: 1000 },
+      { material_type: 'ASA', remaining_g: 800, consumed_g: 0, days_left: null },
+    ],
+  },
+}
 
 async function boot(canArchive = false, poll = async () => Response.json([
   { location_id: 9, location_name: "Dry <box>", spool_count: 5, total_weight_g: 3000 },
@@ -46,11 +83,12 @@ async function boot(canArchive = false, poll = async () => Response.json([
   const api = {
     get: vi.fn(async (path: string) => path === '/me'
       ? { is_superadmin: false, permissions: canArchive ? ['spool_events:create_status'] : [] }
-      : path.startsWith('/dashboard/history') ? { months: historyMonths } : prefs),
+      : path.startsWith('/dashboard/history') ? { months: historyMonths }
+      : path in widgetFixtures ? widgetFixtures[path] : prefs),
     patch: vi.fn(async (_path: string, _body: unknown) => {}),
   }
   const dependencies = {
-    ...layoutLib, ...chartsLib,
+    ...layoutLib, ...chartsLib, ...widgetsLib,
     t: (key: string) => key, initI18n: async () => {}, getLang: () => 'en',
     formatPrice: (value: number) => `€${value}`, getCurrency: () => 'EUR', initCurrency: async () => currencyReady,
     VERSION: '', changelogData: { versions: [] },
@@ -325,7 +363,7 @@ it('applies the saved widget order, hides widgets and keeps unknown widgets at t
   expect(ids).not.toContain('ghostWidget')
   expect(ids.slice(2, 5)).toEqual(['spoolStatus', 'lowStockSpools', 'lowStockFilaments'])
   expect(document.querySelector<HTMLElement>('[data-widget="spoolStatus"]')!.style.display).toBe('none')
-  expect(document.querySelectorAll('#dashboard-widgets > [data-widget]').length).toBe(13)
+  expect(document.querySelectorAll('#dashboard-widgets > [data-widget]').length).toBe(18)
 })
 
 it('distributes widgets over masonry columns by height and keeps left-to-right order', async () => {
@@ -342,7 +380,7 @@ it('distributes widgets over masonry columns by height and keeps left-to-right o
   const column = (id: string) => columns.findIndex(col => col.contains(document.querySelector(`[data-widget="${id}"]`)))
   // 100 -> left, 300 -> right, then the next two stack into the shorter left column.
   expect([column('spoolStatus'), column('locationStats'), column('lowStockSpools'), column('lowStockFilaments')]).toEqual([0, 1, 0, 0])
-  expect(firstFour.length).toBe(13)
+  expect(firstFour.length).toBe(18)
 })
 
 it('saves order and layout through the menu and resets all three together', async () => {
@@ -448,4 +486,120 @@ it('shows the recording hint instead of an empty stock chart while no snapshot e
   } finally {
     historyMonths.forEach((month, i) => Object.assign(month, saved[i]))
   }
+})
+
+const dataCards = ['staleSpools', 'printerSlots', 'recentActivity', 'topConsumers', 'stockRange']
+const dataPaths = Object.keys(widgetFixtures).filter(path => path !== '/dashboard/stale-spools?months=12')
+
+it('renders the five data cards from their endpoints', async () => {
+  const fetch = await boot()
+  await vi.waitFor(() => expect(document.querySelector('#stock-range tbody tr')).not.toBeNull())
+  for (const path of dataPaths) expect(fetch.api.get).toHaveBeenCalledWith(path)
+  for (const id of dataCards) expect(document.querySelectorAll(`#dashboard-widgets > [data-widget="${id}"]`)).toHaveLength(1)
+
+  const stale = document.querySelector('#stale-spools')!
+  expect(stale.querySelectorAll('tbody tr')).toHaveLength(2)
+  expect(stale.querySelector('a')!.getAttribute('href')).toBe('/spools/11')
+  expect(stale.textContent).toContain('Old <PLA> (Red)')
+  expect(stale.querySelector('img')).toBeNull()
+  expect(stale.querySelectorAll('tbody tr')[1].textContent).toContain('dashboard.staleNever')
+  expect(stale.querySelector('tfoot')!.textContent).toContain('1.5 kg')
+  expect(stale.querySelector('tfoot')!.textContent).toContain('€38')
+  expect(stale.querySelectorAll('.dash-dot')[0].getAttribute('style')).toBe('background:#FF0000')
+  expect(stale.querySelectorAll('.dash-dot')[1].classList.contains('is-empty')).toBe(true)
+
+  const slots = document.querySelector('#printer-slots')!
+  expect(slots.querySelector('.dash-group')!.textContent).toBe('Alpha <X1>')
+  expect(slots.querySelector('a')!.getAttribute('href')).toBe('/spools/21')
+  expect(slots.textContent).toContain('dashboard.slotEmpty')
+  expect(slots.textContent).toContain('640 g')
+
+  const activity = document.querySelector('#recent-activity')!
+  const rows = activity.querySelectorAll('tbody tr')
+  expect(rows[0].querySelector('a')!.getAttribute('href')).toBe('/spools/5')
+  expect(rows[0].textContent).toContain('-12.3 g')
+  expect(rows[1].textContent).toContain('spoolLog.deletedSpool')
+  expect(rows[1].querySelector('.fm-pill')!.textContent).toBe('spool_deleted')
+  for (const id of ['stale-spools', 'recent-activity', 'stock-range', 'printer-slots', 'top-consumers']) {
+    expect(document.querySelectorAll(`#${id} thead th`).length).toBeLessThanOrEqual(4)
+  }
+  expect(rows[1].querySelector('.fm-pill')!.getAttribute('style')).toContain('--error-text')
+  expect(activity.querySelector('a[href="/spool-log"]')).not.toBeNull()
+
+  const top = document.querySelector('#top-consumers')!
+  expect(top.querySelector('a')!.getAttribute('href')).toBe('/filaments/3')
+  expect([...top.querySelectorAll('.dash-bar > span')].map(bar => bar.getAttribute('style'))).toEqual(['width:100%', 'width:25%'])
+
+  const range = [...document.querySelectorAll('#stock-range tbody tr')].map(row => [...row.querySelectorAll('td')].map(cell => cell.textContent))
+  expect(range).toEqual([
+    ['PLA', '200 gdashboard.rangeConsumed', 'dashboard.rangeWeeks'],
+    ['PETG', '1.0 kgdashboard.rangeConsumed', 'dashboard.rangeOverYear'],
+    ['ASA', '800 gdashboard.rangeConsumed', 'dashboard.rangeNone'],
+  ])
+  expect(document.querySelector('#stock-range tbody tr td:last-child')!.classList.contains('is-critical')).toBe(true)
+  expect(document.querySelectorAll('#stock-range .is-critical')).toHaveLength(1)
+  expect(document.querySelector('[data-widget="stockRange"] .dashboard-widget-note')!.getAttribute('data-i18n')).toBe('dashboard.rangeNote')
+})
+
+it('switches the dead stock threshold and remembers it', async () => {
+  const fetch = await boot()
+  await vi.waitFor(() => expect(document.querySelector('#stale-spools tbody tr')).not.toBeNull())
+  expect(document.querySelector('[data-stale-range] .active')!.textContent).toBe('dashboard.staleMonths')
+  const pills = document.querySelectorAll<HTMLButtonElement>('[data-stale-range] button')
+  expect(pills).toHaveLength(3)
+  pills[2].click()
+  await vi.waitFor(() => expect(document.querySelector('#stale-spools tbody')).toBeNull())
+  expect(fetch.api.get).toHaveBeenCalledWith('/dashboard/stale-spools?months=12')
+  expect(localStorage.getItem('dashboard-stale-months')).toBe('12')
+  expect(document.querySelector('#stale-spools')!.textContent).toBe('dashboard.staleEmpty')
+})
+
+it('loads a data card only while it is visible and when it is shown again', async () => {
+  const fetch = await boot(false, undefined, undefined, undefined, undefined, { dashboard_hidden_widgets: dataCards })
+  await new Promise(resolve => setTimeout(resolve, 0))
+  const requested = () => fetch.api.get.mock.calls.map(([path]) => path)
+  for (const path of dataPaths) expect(requested()).not.toContain(path)
+  document.querySelector<HTMLButtonElement>('#widget-arrange-btn')!.click()
+  document.querySelector<HTMLButtonElement>('[data-widget="topConsumers"] .dashboard-eye-btn')!.click()
+  await vi.waitFor(() => expect(document.querySelector('#top-consumers tbody tr')).not.toBeNull())
+  expect(requested()).toContain('/dashboard/top-consumers?days=90&limit=8')
+  expect(requested()).not.toContain('/dashboard/stock-range?days=90')
+})
+
+it('reloads the data cards on spool changes', async () => {
+  const fetch = await boot()
+  await vi.waitFor(() => expect(document.querySelector('#stock-range tbody tr')).not.toBeNull())
+  const count = () => fetch.api.get.mock.calls.filter(([path]) => path === '/dashboard/stock-range?days=90').length
+  expect(count()).toBe(1)
+  window.dispatchEvent(new CustomEvent('filaman:data-changed', { detail: { event: 'spools_changed' } }))
+  await vi.waitFor(() => expect(count()).toBe(2))
+})
+
+it('links to the printers when there are none and keeps loaded data when a reload fails', async () => {
+  const error = vi.spyOn(console, 'error').mockImplementation(() => {})
+  const saved = widgetFixtures['/dashboard/printer-slots']
+  widgetFixtures['/dashboard/printer-slots'] = { printers: [] }
+  try {
+    await boot()
+    await vi.waitFor(() => expect(document.querySelector('#printer-slots a')).not.toBeNull())
+    expect(document.querySelector('#printer-slots a')!.getAttribute('href')).toBe('/printers')
+  } finally {
+    widgetFixtures['/dashboard/printer-slots'] = saved
+  }
+  document.body.replaceChildren()
+  const fetch = await boot()
+  await vi.waitFor(() => expect(document.querySelector('#top-consumers tbody tr')).not.toBeNull())
+  fetch.api.get.mockImplementation(async () => { throw new Error('boom') })
+  window.dispatchEvent(new CustomEvent('filaman:data-changed', { detail: { event: 'spools_changed' } }))
+  await vi.waitFor(() => expect(error).toHaveBeenCalled())
+  expect(document.querySelector('#top-consumers tbody tr')).not.toBeNull()
+})
+
+it('shows an error text when the first load of a card fails', async () => {
+  vi.spyOn(console, 'error').mockImplementation(() => {})
+  const fetch = await boot(false, undefined, undefined, undefined, undefined, { dashboard_hidden_widgets: ['topConsumers'] })
+  fetch.api.get.mockImplementation(async () => { throw new Error('boom') })
+  document.querySelector<HTMLButtonElement>('#widget-arrange-btn')!.click()
+  document.querySelector<HTMLButtonElement>('[data-widget="topConsumers"] .dashboard-eye-btn')!.click()
+  await vi.waitFor(() => expect(document.querySelector('#top-consumers')!.textContent).toBe('dashboard.widgetLoadError'))
 })

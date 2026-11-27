@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 
 from fastapi import APIRouter, Query
 from pydantic import BaseModel, Field
@@ -7,10 +7,23 @@ from sqlalchemy import case, func, or_, select
 from app.api.deps import DBSession, PrincipalDep
 from app.api.v1.analytics import _add_months, _month_key, _month_start, get_analytics_summary
 from app.api.v1.schemas import InventoryValuation
-from app.models import Filament, InventorySnapshot, Location, Manufacturer, Spool, SpoolStatus
+from app.models import (
+    Color,
+    Filament,
+    FilamentColor,
+    InventorySnapshot,
+    Location,
+    Manufacturer,
+    Printer,
+    PrinterSlot,
+    PrinterSlotAssignment,
+    Spool,
+    SpoolEvent,
+    SpoolStatus,
+)
 from app.services.inventory_snapshots import current_inventory
 from app.services.material_presets import load_presets, match_preset
-from app.services.spool_metrics import remaining_value_expression
+from app.services.spool_metrics import remaining_value_expression, spool_metric_expressions
 from app.services.spool_moisture import EXCLUDED_STATUS_KEYS, compute_moisture
 
 router = APIRouter(prefix="/dashboard", tags=["dashboard"])
@@ -590,3 +603,385 @@ async def get_dashboard_history(
             )
         )
     return DashboardHistoryResponse(months=result)
+
+
+# --- Extra dashboard cards: stale spools, top consumers, stock range, printer slots ---
+
+CONSUMPTION_EVENT_TYPE = "print_consumption"
+STALE_LIST_LIMIT = 100
+
+
+def _months_ago(now: datetime, months: int) -> datetime:
+    index = now.year * 12 + (now.month - 1) - months
+    year, month = index // 12, index % 12 + 1
+    # Clamp to the last day of the target month (e.g. 31 May minus 3 months).
+    last_day = (_add_months(date(year, month, 1), 1) - timedelta(days=1)).day
+    return now.replace(year=year, month=month, day=min(now.day, last_day))
+
+
+def _weight_expression(dialect: str):
+    """Remaining grams as the tiles count them (inferred weight of new spools included)."""
+    return spool_metric_expressions(dialect)["effective_remaining_weight_g"]
+
+
+async def _color_hexes(db, filament_ids: set[int]) -> dict[int, list[str]]:
+    if not filament_ids:
+        return {}
+    rows = await db.execute(
+        select(FilamentColor.filament_id, Color.hex_code)
+        .join(Color, FilamentColor.color_id == Color.id)
+        .where(FilamentColor.filament_id.in_(filament_ids))
+        .order_by(FilamentColor.filament_id, FilamentColor.position)
+    )
+    result: dict[int, list[str]] = {}
+    for filament_id, hex_code in rows.all():
+        result.setdefault(filament_id, []).append(hex_code)
+    return result
+
+
+class StaleSpool(BaseModel):
+    spool_id: int
+    filament_id: int
+    filament_designation: str
+    material_type: str
+    color_name: str | None
+    colors: list[str]
+    manufacturer_name: str
+    remaining_weight_g: float
+    remaining_value: float | None
+    last_used_at: datetime | None
+    reference_at: datetime
+
+
+class StaleSpoolsResponse(BaseModel):
+    months: int
+    items: list[StaleSpool]
+    total_count: int
+    total_weight_g: float
+    total_value: float
+    unknown_value_count: int
+
+
+@router.get("/stale-spools", response_model=StaleSpoolsResponse)
+async def get_stale_spools(
+    db: DBSession,
+    principal: PrincipalDep,
+    months: int = Query(6, ge=1, le=60),
+):
+    """Spools in stock that were not used for `months` months.
+
+    "Not used" = newest print_consumption event is older than the cutoff; spools that
+    never were used count from purchase_date, else stocked_in_at, else created_at.
+    """
+    dialect = db.get_bind().dialect.name
+    cutoff = _months_ago(datetime.now(timezone.utc), months)
+    last_use = (
+        select(SpoolEvent.spool_id.label("spool_id"), func.max(SpoolEvent.event_at).label("at"))
+        .where(SpoolEvent.event_type == CONSUMPTION_EVENT_TYPE, SpoolEvent.spool_id.is_not(None))
+        .group_by(SpoolEvent.spool_id)
+        .subquery()
+    )
+    weight = _weight_expression(dialect).label("weight")
+    value = remaining_value_expression(dialect, known_only=True).label("value")
+    reference = func.coalesce(
+        last_use.c.at, Spool.purchase_date, Spool.stocked_in_at, Spool.created_at
+    )
+    rows = (
+        await db.execute(
+            select(
+                Spool.id,
+                Filament.id,
+                Filament.designation,
+                Filament.material_type,
+                Filament.manufacturer_color_name,
+                Manufacturer.name,
+                weight,
+                value,
+                last_use.c.at,
+                reference.label("reference"),
+            )
+            .select_from(Spool)
+            .join(Filament, Spool.filament_id == Filament.id)
+            .join(Manufacturer, Filament.manufacturer_id == Manufacturer.id)
+            .join(SpoolStatus, Spool.status_id == SpoolStatus.id)
+            .outerjoin(last_use, last_use.c.spool_id == Spool.id)
+            .where(SpoolStatus.key != "archived", weight > 0, reference < cutoff)
+            .order_by(reference, Spool.id)
+        )
+    ).all()
+    shown = rows[:STALE_LIST_LIMIT]
+    colors = await _color_hexes(db, {row[1] for row in shown})
+    known = [float(row[7]) for row in rows if row[7] is not None]
+    return StaleSpoolsResponse(
+        months=months,
+        items=[
+            StaleSpool(
+                spool_id=row[0],
+                filament_id=row[1],
+                filament_designation=row[2],
+                material_type=row[3],
+                color_name=row[4],
+                colors=colors.get(row[1], []),
+                manufacturer_name=row[5],
+                remaining_weight_g=round(float(row[6]), 1),
+                remaining_value=None if row[7] is None else round(float(row[7]), 2),
+                last_used_at=row[8],
+                reference_at=row[9],
+            )
+            for row in shown
+        ],
+        total_count=len(rows),
+        total_weight_g=round(sum(float(row[6]) for row in rows), 1),
+        total_value=round(sum(known), 2),
+        unknown_value_count=len(rows) - len(known),
+    )
+
+
+def _consumption_since(days: int):
+    since = datetime.now(timezone.utc) - timedelta(days=days)
+    return (
+        SpoolEvent.event_type == CONSUMPTION_EVENT_TYPE,
+        SpoolEvent.delta_weight_g.is_not(None),
+        SpoolEvent.event_at >= since,
+    )
+
+
+class TopConsumer(BaseModel):
+    filament_id: int
+    filament_designation: str
+    material_type: str
+    color_name: str | None
+    colors: list[str]
+    manufacturer_name: str
+    consumed_g: float
+    spools_in_stock: int
+
+
+class TopConsumersResponse(BaseModel):
+    days: int
+    items: list[TopConsumer]
+
+
+@router.get("/top-consumers", response_model=TopConsumersResponse)
+async def get_top_consumers(
+    db: DBSession,
+    principal: PrincipalDep,
+    days: int = Query(90, ge=1, le=730),
+    limit: int = Query(8, ge=1, le=50),
+):
+    """Filaments with the highest print consumption in the last `days` days.
+
+    Events of permanently deleted spools still count through SpoolEvent.filament_id.
+    """
+    filament_id = func.coalesce(Spool.filament_id, SpoolEvent.filament_id)
+    consumed = func.sum(func.abs(SpoolEvent.delta_weight_g))
+    top = (
+        await db.execute(
+            select(filament_id.label("fid"), consumed.label("consumed"))
+            .select_from(SpoolEvent)
+            .outerjoin(Spool, SpoolEvent.spool_id == Spool.id)
+            .where(*_consumption_since(days))
+            .group_by(filament_id)
+            .having(filament_id.is_not(None))
+            .order_by(consumed.desc(), filament_id)
+            .limit(limit)
+        )
+    ).all()
+    ids = {row[0] for row in top}
+    if not ids:
+        return TopConsumersResponse(days=days, items=[])
+    dialect = db.get_bind().dialect.name
+    details = {
+        row[0]: row
+        for row in (
+            await db.execute(
+                select(
+                    Filament.id,
+                    Filament.designation,
+                    Filament.material_type,
+                    Filament.manufacturer_color_name,
+                    Manufacturer.name,
+                )
+                .join(Manufacturer, Filament.manufacturer_id == Manufacturer.id)
+                .where(Filament.id.in_(ids))
+            )
+        ).all()
+    }
+    weight = _weight_expression(dialect)
+    stock = dict(
+        (
+            await db.execute(
+                select(Spool.filament_id, func.count(Spool.id))
+                .select_from(Spool)
+                .join(Filament, Spool.filament_id == Filament.id)
+                .join(SpoolStatus, Spool.status_id == SpoolStatus.id)
+                .where(Spool.filament_id.in_(ids), SpoolStatus.key != "archived", weight > 0)
+                .group_by(Spool.filament_id)
+            )
+        ).all()
+    )
+    colors = await _color_hexes(db, ids)
+    return TopConsumersResponse(
+        days=days,
+        items=[
+            TopConsumer(
+                filament_id=fid,
+                filament_designation=details[fid][1],
+                material_type=details[fid][2],
+                color_name=details[fid][3],
+                colors=colors.get(fid, []),
+                manufacturer_name=details[fid][4],
+                consumed_g=round(float(total), 1),
+                spools_in_stock=int(stock.get(fid, 0)),
+            )
+            for fid, total in top
+            if fid in details
+        ],
+    )
+
+
+class StockRangeMaterial(BaseModel):
+    material_type: str
+    remaining_g: float
+    consumed_g: float
+    # Forecast: remaining / (consumed over `days` / days). None = no consumption in the window.
+    days_left: float | None
+
+
+class StockRangeResponse(BaseModel):
+    days: int
+    items: list[StockRangeMaterial]
+
+
+@router.get("/stock-range", response_model=StockRangeResponse)
+async def get_stock_range(
+    db: DBSession,
+    principal: PrincipalDep,
+    days: int = Query(90, ge=7, le=730),
+):
+    """Per material: stock, consumption of the last `days` days and the extrapolated range.
+
+    The range is a forecast (remaining weight divided by the average daily consumption),
+    shortest range first, materials without consumption last.
+    """
+    dialect = db.get_bind().dialect.name
+    weight = _weight_expression(dialect)
+    stock = dict(
+        (
+            await db.execute(
+                select(Filament.material_type, func.coalesce(func.sum(weight), 0))
+                .select_from(Spool)
+                .join(Filament, Spool.filament_id == Filament.id)
+                .join(SpoolStatus, Spool.status_id == SpoolStatus.id)
+                .where(SpoolStatus.key != "archived")
+                .group_by(Filament.material_type)
+            )
+        ).all()
+    )
+    filament_id = func.coalesce(Spool.filament_id, SpoolEvent.filament_id)
+    used = dict(
+        (
+            await db.execute(
+                select(Filament.material_type, func.sum(func.abs(SpoolEvent.delta_weight_g)))
+                .select_from(SpoolEvent)
+                .outerjoin(Spool, SpoolEvent.spool_id == Spool.id)
+                .join(Filament, Filament.id == filament_id)
+                .where(*_consumption_since(days))
+                .group_by(Filament.material_type)
+            )
+        ).all()
+    )
+    items = []
+    for material in set(stock) | set(used):
+        remaining = float(stock.get(material) or 0)
+        consumed = float(used.get(material) or 0)
+        if remaining <= 0 and consumed <= 0:
+            continue
+        items.append(
+            StockRangeMaterial(
+                material_type=material,
+                remaining_g=round(remaining, 1),
+                consumed_g=round(consumed, 1),
+                days_left=round(remaining / (consumed / days), 1) if consumed > 0 else None,
+            )
+        )
+    items.sort(key=lambda m: (m.days_left is None, m.days_left or 0, m.material_type))
+    return StockRangeResponse(days=days, items=items)
+
+
+class PrinterSlotOccupancy(BaseModel):
+    slot_no: int
+    name: str | None
+    spool_id: int | None
+    filament_designation: str | None
+    material_type: str | None
+    color_name: str | None
+    colors: list[str]
+    manufacturer_name: str | None
+    remaining_weight_g: float | None
+
+
+class PrinterOccupancy(BaseModel):
+    printer_id: int
+    printer_name: str
+    slots: list[PrinterSlotOccupancy]
+
+
+class PrinterSlotsResponse(BaseModel):
+    printers: list[PrinterOccupancy]
+
+
+@router.get("/printer-slots", response_model=PrinterSlotsResponse)
+async def get_printer_slots(db: DBSession, principal: PrincipalDep):
+    """Active printers with their active slots and the spool loaded in each."""
+    dialect = db.get_bind().dialect.name
+    weight = _weight_expression(dialect).label("weight")
+    rows = (
+        await db.execute(
+            select(
+                Printer.id,
+                Printer.name,
+                PrinterSlot.slot_no,
+                PrinterSlot.name,
+                Spool.id,
+                Filament.id,
+                Filament.designation,
+                Filament.material_type,
+                Filament.manufacturer_color_name,
+                Manufacturer.name,
+                weight,
+            )
+            .select_from(PrinterSlot)
+            .join(Printer, PrinterSlot.printer_id == Printer.id)
+            .outerjoin(PrinterSlotAssignment, PrinterSlotAssignment.slot_id == PrinterSlot.id)
+            .outerjoin(Spool, Spool.id == PrinterSlotAssignment.spool_id)
+            .outerjoin(Filament, Filament.id == Spool.filament_id)
+            .outerjoin(Manufacturer, Manufacturer.id == Filament.manufacturer_id)
+            .where(
+                Printer.deleted_at.is_(None),
+                Printer.is_active.is_(True),
+                PrinterSlot.is_active.is_(True),
+            )
+            .order_by(Printer.name, Printer.id, PrinterSlot.slot_no)
+        )
+    ).all()
+    colors = await _color_hexes(db, {row[5] for row in rows if row[5] is not None})
+    printers: dict[int, PrinterOccupancy] = {}
+    for row in rows:
+        printer = printers.setdefault(
+            row[0], PrinterOccupancy(printer_id=row[0], printer_name=row[1], slots=[])
+        )
+        printer.slots.append(
+            PrinterSlotOccupancy(
+                slot_no=row[2],
+                name=row[3],
+                spool_id=row[4],
+                filament_designation=row[6],
+                material_type=row[7],
+                color_name=row[8],
+                colors=colors.get(row[5], []) if row[5] is not None else [],
+                manufacturer_name=row[9],
+                remaining_weight_g=None if row[10] is None else round(float(row[10]), 1),
+            )
+        )
+    return PrinterSlotsResponse(printers=list(printers.values()))

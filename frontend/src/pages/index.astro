@@ -75,6 +75,23 @@ import FormDialog from '../components/FormDialog.astro'
       <FormSection widget="filamentStats" id="filament-stats-title" titleKey="dashboard.filamentStats" title="Filament statistics">
         <div id="filament-stats" class="dashboard-table dashboard-list" role="region" aria-labelledby="filament-stats-title" tabindex="0"><p data-i18n="common.loading">Loading...</p></div>
       </FormSection>
+      <FormSection widget="staleSpools" id="stale-spools-title" titleKey="dashboard.staleSpools" title="Dead stock" class="dashboard-wide">
+        <Fragment slot="actions"><div class="dashboard-chart-range" data-stale-range></div></Fragment>
+        <div id="stale-spools" class="dashboard-table dashboard-list" role="region" aria-labelledby="stale-spools-title" tabindex="0"><p data-i18n="common.loading">Loading...</p></div>
+      </FormSection>
+      <FormSection widget="printerSlots" id="printer-slots-title" titleKey="dashboard.printerSlots" title="Printer slots" class="dashboard-wide">
+        <div id="printer-slots" class="dashboard-table dashboard-list" role="region" aria-labelledby="printer-slots-title" tabindex="0"><p data-i18n="common.loading">Loading...</p></div>
+      </FormSection>
+      <FormSection widget="recentActivity" id="recent-activity-title" titleKey="dashboard.recentActivity" title="Recent Activity">
+        <div id="recent-activity" class="dashboard-table dashboard-list" role="region" aria-labelledby="recent-activity-title" tabindex="0"><p data-i18n="common.loading">Loading...</p></div>
+      </FormSection>
+      <FormSection widget="topConsumers" id="top-consumers-title" titleKey="dashboard.topConsumers" title="Top consumers" class="dashboard-wide">
+        <div id="top-consumers" class="dashboard-table dashboard-list" role="region" aria-labelledby="top-consumers-title" tabindex="0"><p data-i18n="common.loading">Loading...</p></div>
+      </FormSection>
+      <FormSection widget="stockRange" id="stock-range-title" titleKey="dashboard.stockRange" title="Range (forecast)">
+        <p class="dashboard-widget-note" data-i18n="dashboard.rangeNote">Extrapolated from the consumption of the last 90 days.</p>
+        <div id="stock-range" class="dashboard-table dashboard-list" role="region" aria-labelledby="stock-range-title" tabindex="0"><p data-i18n="common.loading">Loading...</p></div>
+      </FormSection>
       <FormSection widget="chartSpend" titleKey="dashboard.chartSpend" title="Spending per month" class="dashboard-wide dashboard-chart-card">
         <Fragment slot="actions"><div class="dashboard-chart-range" data-chart-range></div></Fragment>
         <div id="chart-spend" class="dashboard-chart"><p data-i18n="common.loading">Loading...</p></div>
@@ -209,6 +226,43 @@ import FormDialog from '../components/FormDialog.astro'
     #manufacturers-with-spools :global(th:last-child) { width: 64px; }
     #filament-stats :global(th:nth-child(2)) { width: 64px; }
     #filament-stats :global(th:last-child) { width: 78px; }
+    .dashboard-widget-note { margin: 0 0 8px; color: var(--text-muted); font-size: .75rem; }
+    .dashboard-table :global(.num) { text-align: right; font-family: monospace; }
+    .dashboard-table :global(tfoot td) { position: sticky; bottom: 0; background: var(--bg-soft); font-weight: 600; font-size: .8rem; }
+    .dashboard-table :global(.dash-muted) { color: var(--text-muted); }
+    .dashboard-table :global(.dash-note) { margin: 8px 0 0; font-size: .75rem; color: var(--text-muted); }
+    .dashboard-table :global(.dash-group td) { background: var(--bg-soft); font-weight: 600; }
+    .dashboard-table :global(.dash-dot) { display: inline-block; width: 12px; height: 12px; margin-inline-end: 6px; border-radius: 50%; border: 1px solid var(--border); vertical-align: -1px; }
+    .dashboard-table :global(.dash-dot.is-empty) { background: transparent; border-style: dashed; }
+    .dashboard-table :global(.is-critical) { color: var(--error-text); font-weight: 700; }
+    .dashboard-table :global(.dash-bar) { height: 8px; margin-top: 3px; border-radius: 4px; background: var(--bg-soft); border: 1px solid var(--border); overflow: hidden; }
+    .dashboard-table :global(.dash-bar > span) { display: block; height: 100%; background: var(--accent); }
+    .dashboard-table :global(.dash-line) { display: flex; align-items: center; gap: 4px; min-width: 0; }
+    .dashboard-table :global(.dash-line > *) { flex: 0 0 auto; }
+    .dashboard-table :global(.dash-line > .dash-name) { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .dashboard-table :global(.dash-dot) { margin-inline-end: 0; }
+    .dashboard-list :global(a.dash-link) { display: inline; }
+    .dashboard-list :global(a.dash-link.dash-name) { display: block; }
+    .dashboard-table :global(.dash-sub) { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-muted); font-size: .7rem; line-height: 1.2; }
+    .dashboard-table :global(.dash-pill) { display: inline-block; max-width: 100%; box-sizing: border-box; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: middle; font-size: .7rem; }
+    .dashboard-table :global(td.num), .dashboard-table :global(th.num) { padding-inline: 4px; }
+    .dashboard-table :global(tfoot td:first-child) { overflow: hidden; text-overflow: ellipsis; }
+    /* Narrow cards (masonry, 3 columns): fixed layout, number columns keep their width, text columns shrink. */
+    #stale-spools :global(.fm-table), #printer-slots :global(.fm-table), #top-consumers :global(.fm-table),
+    #recent-activity :global(.fm-table), #stock-range :global(.fm-table) { min-width: 0; table-layout: fixed; width: 100%; }
+    #stale-spools :global(th:nth-child(2)) { width: 62px; }
+    #stale-spools :global(th:nth-child(3)) { width: 78px; }
+    #stale-spools :global(th:nth-child(4)) { width: 62px; }
+    #printer-slots :global(th:first-child) { width: 64px; }
+    #printer-slots :global(th:nth-child(3)) { width: 62px; }
+    #top-consumers :global(th:nth-child(2)) { width: 84px; }
+    #top-consumers :global(th:nth-child(3)) { width: 46px; }
+    #recent-activity :global(th:first-child) { width: 86px; }
+    #recent-activity :global(th:nth-child(2)) { width: 80px; }
+    #recent-activity :global(th:nth-child(3)) { width: 66px; }
+    #recent-activity :global(th:nth-child(4)) { width: 58px; }
+    #stock-range :global(th:nth-child(2)) { width: 96px; }
+    #stock-range :global(th:nth-child(3)) { width: 88px; }
     .dashboard-table :global(a) { color: var(--accent); text-decoration: none; }
     .dashboard-table :global(a:hover) { text-decoration: underline; }
     .dashboard-table :global(p) { color: var(--text-muted); margin: 0; }
@@ -247,6 +301,7 @@ import FormDialog from '../components/FormDialog.astro'
     import { mountPanel } from '../lib/panel-navigation'
     import { mountSpoolLinkBanner } from '../lib/spool-link-banner'
     import { applyWidgetOrder, layoutGrid, layoutMasonry, masonryColumnCount, startWidgetDrag, type DashboardLayout } from '../lib/dashboard-layout'
+    import { renderPrinterSlots, renderRecentActivity, renderStaleSpools, renderStockRange, renderTopConsumers, type WidgetContext } from '../lib/dashboard-widgets'
     import { buildDonutSlices, hasChartData, renderChartSvg, renderDonutSvg, type ChartPoint } from '../lib/dashboard-charts'
 
     mountPanel('dashboard', async (panelSignal) => {
@@ -307,14 +362,14 @@ import FormDialog from '../components/FormDialog.astro'
       const scope = (localStorage.getItem('dashboard-filament-scope') || 'all') as 'all' | 'active' | 'used'
       const count = filamentCounts?.[scope] ?? filamentCounts?.all ?? '—'
       document.getElementById('stat-total-filaments')!.textContent = String(count)
-      document.querySelectorAll<HTMLButtonElement>('.fm-scope-pill').forEach(btn => {
+      document.querySelectorAll<HTMLButtonElement>('#filament-scope-toggle .fm-scope-pill').forEach(btn => {
         btn.classList.toggle('active', btn.dataset.scope === scope)
         btn.setAttribute('aria-pressed', String(btn.dataset.scope === scope))
       })
     }
 
     function initFilamentScopePills() {
-      document.querySelectorAll<HTMLButtonElement>('.fm-scope-pill').forEach(btn => {
+      document.querySelectorAll<HTMLButtonElement>('#filament-scope-toggle .fm-scope-pill').forEach(btn => {
         btn.addEventListener('click', (e) => {
           e.stopPropagation()
           localStorage.setItem('dashboard-filament-scope', btn.dataset.scope!)
@@ -450,6 +505,7 @@ import FormDialog from '../components/FormDialog.astro'
       if (visible) hiddenWidgets.delete(id)
       else hiddenWidgets.add(id)
       if (visible && chartSpecs.some(chart => chart.id === id)) void loadHistory()
+      if (visible && id in dataWidgets) void loadWidget(id)
       return saveHiddenWidgets(previous)
     }
 
@@ -636,6 +692,7 @@ import FormDialog from '../components/FormDialog.astro'
         renderLayout()
         renderCharts()
         void loadHistory()
+        loadWidgets()
         void savePreferences({ dashboard_hidden_widgets: [], dashboard_widget_order: [], dashboard_layout: 'grid' }, () => {
           hiddenWidgets = previous.hidden
           widgetOrder = previous.order
@@ -1151,6 +1208,93 @@ import FormDialog from '../components/FormDialog.astro'
       }
     }
 
+    // Data cards (dead stock, printer slots, activity, top consumers, range): each loads only while
+    // its card is visible, again when it is shown via the eye and on data changes.
+    const STALE_MONTHS = [3, 6, 12]
+    let staleMonths = 6
+    try {
+      const saved = Number(localStorage.getItem('dashboard-stale-months'))
+      if (STALE_MONTHS.includes(saved)) staleMonths = saved
+    } catch { /* storage unavailable */ }
+
+    interface DataWidget { mount: string; path: () => string; render: (data: any, ctx: WidgetContext) => string }
+    const dataWidgets: Record<string, DataWidget> = {
+      staleSpools: { mount: 'stale-spools', path: () => `/dashboard/stale-spools?months=${staleMonths}`, render: renderStaleSpools },
+      printerSlots: { mount: 'printer-slots', path: () => '/dashboard/printer-slots', render: renderPrinterSlots },
+      recentActivity: {
+        mount: 'recent-activity',
+        path: () => '/spools/all-events?page=1&page_size=10&sort_by=event_at&sort_order=desc',
+        render: (data, ctx) => renderRecentActivity(data?.items, ctx),
+      },
+      topConsumers: { mount: 'top-consumers', path: () => '/dashboard/top-consumers?days=90&limit=8', render: renderTopConsumers },
+      stockRange: { mount: 'stock-range', path: () => '/dashboard/stock-range?days=90', render: renderStockRange },
+    }
+    const widgetRequestIds: Record<string, number> = {}
+
+    function widgetContext(): WidgetContext {
+      return {
+        t, lang: getLang() || 'en',
+        formatPrice: value => formatPrice(value, getCurrency()),
+        formatWeight,
+      }
+    }
+
+    async function loadWidget(id: string) {
+      const spec = dataWidgets[id]
+      const mount = document.getElementById(spec.mount)
+      if (!mount || hiddenWidgets.has(id)) return
+      const requestId = (widgetRequestIds[id] ?? 0) + 1
+      widgetRequestIds[id] = requestId
+      try {
+        await currencyReady
+        const data = await api.get<unknown>(spec.path())
+        if (panelSignal.aborted || requestId !== widgetRequestIds[id]) return
+        mount.innerHTML = spec.render(data, widgetContext())
+        mount.dataset.loaded = 'true'
+        scheduleLayout()
+      } catch (error) {
+        if (panelSignal.aborted || isAbortError(error) || requestId !== widgetRequestIds[id]) return
+        console.error(`Failed to load dashboard card ${id}:`, error)
+        if (mount.dataset.loaded) return
+        mount.innerHTML = `<p style="color: var(--error-text);">${escapeHtml(t('dashboard.widgetLoadError'))}</p>`
+      }
+    }
+
+    function loadWidgets() {
+      for (const id of Object.keys(dataWidgets)) void loadWidget(id)
+    }
+
+    function initStaleRange() {
+      document.querySelectorAll<HTMLElement>('[data-stale-range]').forEach(group => {
+        group.setAttribute('role', 'group')
+        group.setAttribute('aria-label', t('dashboard.chartRange'))
+        for (const months of STALE_MONTHS) {
+          const pill = document.createElement('button')
+          pill.type = 'button'
+          pill.className = 'fm-scope-pill'
+          pill.dataset.months = String(months)
+          pill.textContent = t('dashboard.staleMonths', { count: months })
+          pill.addEventListener('click', () => {
+            if (staleMonths === months) return
+            staleMonths = months
+            try { localStorage.setItem('dashboard-stale-months', String(months)) } catch { /* storage unavailable */ }
+            syncStaleRange()
+            void loadWidget('staleSpools')
+          })
+          group.append(pill)
+        }
+      })
+      syncStaleRange()
+    }
+
+    function syncStaleRange() {
+      document.querySelectorAll<HTMLButtonElement>('[data-stale-range] .fm-scope-pill').forEach(pill => {
+        const active = Number(pill.dataset.months) === staleMonths
+        pill.classList.toggle('active', active)
+        pill.setAttribute('aria-pressed', String(active))
+      })
+    }
+
     function initHistoryRange() {
       document.querySelectorAll<HTMLElement>('[data-chart-range]').forEach(group => {
         group.setAttribute('role', 'group')
@@ -1188,9 +1332,10 @@ import FormDialog from '../components/FormDialog.astro'
       currencyReady = initCurrency()
       initFilamentScopePills()
       initHistoryRange()
+      initStaleRange()
       const preferencesReady = initWidgetVisibility()
       startLocationPolling()
-      void preferencesReady.then(() => loadHistory())
+      void preferencesReady.then(() => { void loadHistory(); loadWidgets() })
       await Promise.all([loadDashboardData(), preferencesReady])
       if (!panelSignal.aborted) showChangelogIfNeeded()
     }
@@ -1245,7 +1390,7 @@ import FormDialog from '../components/FormDialog.astro'
       const { event } = (e as CustomEvent<{ event?: string }>).detail ?? {}
       if (event === 'resync' || event === 'spools_changed' || event === 'filaments_changed') {
         if (_dashboardReloadTimer) clearTimeout(_dashboardReloadTimer)
-        _dashboardReloadTimer = setTimeout(() => { void loadDashboardData(); void loadHistory() }, 300)
+        _dashboardReloadTimer = setTimeout(() => { void loadDashboardData(); void loadHistory(); loadWidgets() }, 300)
       }
     }, { signal: panelSignal })
     })
