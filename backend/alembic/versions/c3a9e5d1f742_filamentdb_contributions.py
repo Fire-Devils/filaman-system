@@ -1,4 +1,4 @@
-"""FilaMan-DB community contributions: token columns, build_plate, contributions table
+"""FilaMan-DB community contributions: per-user token columns, build_plate, contributions table
 
 Revision ID: c3a9e5d1f742
 Revises: b7e2d94a1c58
@@ -17,7 +17,7 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
-    with op.batch_alter_table("app_settings") as batch_op:
+    with op.batch_alter_table("users") as batch_op:
         batch_op.add_column(sa.Column("filamentdb_token_enc", sa.Text(), nullable=True))
         batch_op.add_column(sa.Column("filamentdb_token_name", sa.String(length=255), nullable=True))
 
@@ -63,6 +63,6 @@ def downgrade() -> None:
     op.drop_table("filamentdb_contributions")
     with op.batch_alter_table("filament_printer_profiles") as batch_op:
         batch_op.drop_column("build_plate")
-    with op.batch_alter_table("app_settings") as batch_op:
+    with op.batch_alter_table("users") as batch_op:
         batch_op.drop_column("filamentdb_token_enc")
         batch_op.drop_column("filamentdb_token_name")

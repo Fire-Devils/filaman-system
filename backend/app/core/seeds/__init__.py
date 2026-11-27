@@ -278,6 +278,7 @@ USER_PERMISSIONS = [
     "user_api_keys:read_own",
     "user_api_keys:create_own",
     "user_api_keys:delete_own",
+    "filamentdb:contribute",
 ]
 
 ADMIN_PERMISSIONS = [p["key"] for p in PERMISSIONS]

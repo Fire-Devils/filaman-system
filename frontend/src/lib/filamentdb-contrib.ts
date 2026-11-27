@@ -22,6 +22,8 @@ export interface ContribRef {
   remote_entity_id?: number | null
   last_error?: string | null
   last_checked_at?: string | null
+  created_by?: number | null
+  created_by_name?: string | null
 }
 
 export interface ContribMatch {

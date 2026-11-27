@@ -74,6 +74,31 @@ import ColorModePicker from '../components/ColorModePicker.astro'
       <header class="fm-section-header"><h2 data-i18n="settings.slicerLink">Slicer-Link</h2><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m9 6 6 6-6 6" /></svg></header>
       <div class="fm-section-body"><p class="fm-field-hint" data-i18n="settings.slicerLinkDesc">Report sliced jobs to FilaMan automatically</p></div>
     </a>
+    <div id="fdb-token-wrap" class="fm-settings-stack" hidden>
+      <FormSection titleKey="fdbContrib.settings.title" title="FilaMan-DB community">
+        <div id="fdb-token-section">
+          <p class="fm-field-hint" data-i18n="fdbContrib.settings.intro">Send data to the FilaMan-DB and fetch community print profiles with your own API token.</p>
+          <p class="fm-field-hint" data-i18n="fdbContrib.settings.plugin">The FilamentDB Import plugin must be active to send.</p>
+          <p class="fm-field-hint fm-db-hint"><span data-i18n="fdbContrib.settings.tokenHelp">Du brauchst ein Konto auf der FilaMan-DB. Registriere dich dort und erstelle unter „Mein Konto → API-Tokens“ einen Token:</span> <a href="https://db.filaman.app" target="_blank" rel="noopener noreferrer">db.filaman.app</a></p>
+          <div class="fm-settings-row">
+            <label for="fdb-token-input" data-i18n="fdbContrib.settings.tokenLabel">API token</label>
+            <input type="password" id="fdb-token-input" class="fm-input" autocomplete="off" spellcheck="false" placeholder="fdb_…" data-fdb-token-input style="max-width: 420px;" />
+            <p class="fm-field-hint" data-i18n="fdbContrib.settings.hint">The token is stored encrypted and never shown again.</p>
+          </div>
+          <p data-fdb-token-status role="status" style="font-weight: 600;"></p>
+          <div class="fm-settings-row" style="display: flex; gap: 8px; flex-wrap: wrap;">
+            <button type="button" class="fm-btn fm-btn-primary" data-fdb-token-save data-i18n="fdbContrib.settings.save">Save token</button>
+            <button type="button" class="fm-btn" data-fdb-token-test data-i18n="fdbContrib.settings.test">Test connection</button>
+            <button type="button" class="fm-btn fm-btn-danger" data-fdb-token-remove data-i18n="fdbContrib.settings.remove">Remove token</button>
+          </div>
+          <p data-fdb-token-message role="status"></p>
+        </div>
+      </FormSection>
+      <a href="/settings/filamentdb-contributions" class="fm-settings-link fm-card fm-section">
+        <header class="fm-section-header"><h2 data-i18n="fdbContrib.list.cardTitle">My submissions</h2><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m9 6 6 6-6 6" /></svg></header>
+        <div class="fm-section-body"><p class="fm-field-hint" data-i18n="fdbContrib.list.cardDesc">Status of submissions to the FilaMan-DB</p></div>
+      </a>
+    </div>
     <FormSection titleKey="settings.tagScanner" title="Tag scanner">
       <p class="fm-field-hint" data-i18n="settings.browserOnly">Applies to this browser only.</p>
       <div class="fm-settings-row">
@@ -154,9 +179,11 @@ import ColorModePicker from '../components/ColorModePicker.astro'
       setBoundReaderId,
     } from '../lib/tag-scanner'
     import { mountPanel } from '../lib/panel-navigation'
+    import { initFdbTokenSettings } from '../lib/filamentdb-token-settings'
 
     mountPanel('settings', async () => {
     await initI18n()
+    void initFdbTokenSettings(document.getElementById('fdb-token-wrap')!)
 
     function getCsrfToken(): string {
       const match = document.cookie.match(/(?:^|;\s*)csrf_token=([^;]*)/)

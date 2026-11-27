@@ -2801,7 +2801,9 @@
     },
     "errors": {
       "filamentdb_token_missing": "Es ist kein FilaMan-DB-Token hinterlegt.",
-      "filamentdb_token_invalid": "Der FilaMan-DB-Token ist ungültig oder abgelaufen. Bitte in den Systemeinstellungen neu eingeben.",
+      "filamentdb_token_invalid": "Der FilaMan-DB-Token ist ungültig oder abgelaufen. Bitte in den Profileinstellungen neu eingeben.",
+      "filamentdb_token_user_required": "Der FilaMan-DB-Token gehört zu einem Benutzerkonto; mit einem API-Key oder Gerät ist er nicht verfügbar.",
+      "filamentdb_match_invalid": "Der gewählte Treffer passt nicht zu diesem Objekt. Bitte die Vorschau neu laden.",
       "filamentdb_token_undecryptable": "Der gespeicherte Token ist nicht lesbar (Schlüssel geändert). Bitte neu eingeben.",
       "filamentdb_insufficient_scope": "Dem Token fehlt die nötige Berechtigung.",
       "daily_limit_reached": "Das Tageslimit der FilaMan-DB ist erreicht. Bitte morgen erneut versuchen.",
@@ -2811,7 +2813,7 @@
       "own_profile": "Eigene Profile lassen sich nicht bewerten.",
       "generic": "Das hat nicht geklappt."
     },
-    "noToken": "Du hast noch keinen FilaMan-DB-Token hinterlegt. Registriere dich auf {link} und erstelle unter „Mein Konto → API-Tokens“ einen Token. Ein Administrator trägt ihn dann in den Systemeinstellungen ein.",
+    "noToken": "Du hast noch keinen FilaMan-DB-Token hinterlegt. Registriere dich auf {link} und erstelle unter „Mein Konto → API-Tokens“ einen Token. Trage ihn dann in deinen Profileinstellungen ein.",
     "community": {
       "title": "Community-Druckprofile",
       "empty": "Für diesen Drucker gibt es noch keine Community-Profile.",
@@ -2834,7 +2836,7 @@
     },
     "settings": {
       "title": "FilaMan-DB Community",
-      "intro": "Mit einem API-Token Ihres FilaMan-DB-Kontos sendet FilaMan Hersteller, Filamente, Druckermodelle und Druckprofile an die Community-Datenbank und holt Community-Druckprofile.",
+      "intro": "Mit einem API-Token deines FilaMan-DB-Kontos sendest du Hersteller, Filamente, Druckermodelle und Druckprofile an die Community-Datenbank, bewertest und meldest Community-Druckprofile. Der Token gehört nur dir.",
       "tokenHelp": "Du brauchst ein Konto auf der FilaMan-DB. Registriere dich dort und erstelle unter „Mein Konto → API-Tokens“ einen Token:",
       "tokenLabel": "API-Token",
       "tokenPlaceholder": "fdb_…",
@@ -2852,12 +2854,13 @@
     },
     "list": {
       "title": "Meine Einreichungen",
-      "subtitle": "Alles, was von dieser FilaMan-Instanz an die FilaMan-DB gesendet wurde.",
+      "subtitle": "Alles, was du an die FilaMan-DB gesendet hast.",
       "refresh": "Aktualisieren",
       "empty": "Noch nichts eingereicht.",
       "type": "Typ",
       "object": "Objekt",
       "status": "Status",
+      "sender": "Gesendet von",
       "checked": "Zuletzt geprüft",
       "note": "Hinweis",
       "failed": "Die Liste konnte nicht geladen werden.",

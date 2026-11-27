@@ -46,7 +46,7 @@ const dependencies = {
   hasPermission, getMe: async () => fixtureUser,
   bindColorCleanup, bindColorPickerPopup,
   fetchAllPages: async () => ({ items: [{ id: 2, name: 'Translucent blue', hex_code: fixtureColorHex, usage_count: 1 }] }),
-  initI18n: async () => {}, initCurrency: async () => {}, initMaterialPresets: () => {}, initColumnPicker: () => {}, initColumnResize: () => {},
+  initI18n: async () => {}, initFdbTokenSettings: async () => {}, initCurrency: async () => {}, initMaterialPresets: () => {}, initColumnPicker: () => {}, initColumnResize: () => {},
   invalidateCachePrefix: () => {}, CACHE_KEYS: { LOCATIONS: 'locations' },
   cachedFetchAllPages: async () => ({ items: [{ id: 3, name: 'Shelf "A" <blue>', identifier: 'UID', location_type: 'Storage', spool_count: 1 }] }),
 }

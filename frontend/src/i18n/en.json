@@ -2800,7 +2800,9 @@
     },
     "errors": {
       "filamentdb_token_missing": "No FilaMan-DB token is saved.",
-      "filamentdb_token_invalid": "The FilaMan-DB token is invalid or expired. Please enter it again in the system settings.",
+      "filamentdb_token_invalid": "The FilaMan-DB token is invalid or expired. Please enter it again in your profile settings.",
+      "filamentdb_token_user_required": "The FilaMan-DB token belongs to a user account and is not available with an API key or device.",
+      "filamentdb_match_invalid": "The selected match does not belong to this object. Please reload the preview.",
       "filamentdb_token_undecryptable": "The saved token cannot be read (key changed). Please enter it again.",
       "filamentdb_insufficient_scope": "The token lacks the required permission.",
       "daily_limit_reached": "The FilaMan-DB daily limit is reached. Please try again tomorrow.",
@@ -2810,7 +2812,7 @@
       "own_profile": "You cannot rate your own profiles.",
       "generic": "That did not work."
     },
-    "noToken": "You have not saved a FilaMan-DB token yet. Register at {link} and create a token under “My account → API tokens”. An administrator then enters it in the system settings.",
+    "noToken": "You have not saved a FilaMan-DB token yet. Register at {link} and create a token under “My account → API tokens”. Then enter it in your profile settings.",
     "community": {
       "title": "Community print profiles",
       "empty": "There are no community profiles for this printer yet.",
@@ -2833,7 +2835,7 @@
     },
     "settings": {
       "title": "FilaMan-DB community",
-      "intro": "With an API token from your FilaMan-DB account, FilaMan sends manufacturers, filaments, printer models and print profiles to the community database and fetches community print profiles.",
+      "intro": "With an API token from your FilaMan-DB account you send manufacturers, filaments, printer models and print profiles to the community database, and rate and report community print profiles. The token belongs to you alone.",
       "tokenHelp": "You need an account on the FilaMan-DB. Register there and create a token under “My account → API tokens”:",
       "tokenLabel": "API token",
       "tokenPlaceholder": "fdb_…",
@@ -2851,12 +2853,13 @@
     },
     "list": {
       "title": "My submissions",
-      "subtitle": "Everything this FilaMan instance has sent to the FilaMan-DB.",
+      "subtitle": "Everything you have sent to the FilaMan-DB.",
       "refresh": "Refresh",
       "empty": "Nothing submitted yet.",
       "type": "Type",
       "object": "Object",
       "status": "Status",
+      "sender": "Sent by",
       "checked": "Last checked",
       "note": "Note",
       "failed": "The list could not be loaded.",
