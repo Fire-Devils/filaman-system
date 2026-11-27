@@ -8,6 +8,9 @@ import {
   renderResult,
   runApply,
   sortMatches,
+  chunk,
+  mergeResponses,
+  runBulkCheck,
   type BulkCheckResponse,
   type BulkMatchItem,
 } from './filamentdb-bulk-match'
@@ -29,7 +32,7 @@ const items: BulkMatchItem[] = [
 ]
 
 describe('bulk match logic', () => {
-  beforeEach(() => post.mockReset())
+  beforeEach(() => { post.mockReset() })
 
   it('sorts matches by score descending and groups by category', () => {
     expect(sortMatches(items[1].matches).map(m => m.id)).toEqual([8, 7])
@@ -89,7 +92,7 @@ describe('bulk match logic', () => {
 
   it('renders sections, escapes labels and offers a "none of these" option', () => {
     const response: BulkCheckResponse = {
-      type: 'manufacturer', items, total: 4, truncated: true,
+      type: 'manufacturer', items, total: 4,
       counts: { linked: 1, suggested: 1, none: 1, blocked: 1 },
     }
     const html = renderResult(response, defaultSelection(items))
@@ -105,8 +108,105 @@ describe('bulk match logic', () => {
   })
 
   it('shows an empty note when nothing is left to match', () => {
-    const html = renderResult({ type: 'filament', items: [], total: 0, truncated: false, counts: { linked: 0, suggested: 0, none: 0, blocked: 0 } }, defaultSelection([]))
+    const html = renderResult({ type: 'filament', items: [], total: 0, counts: { linked: 0, suggested: 0, none: 0, blocked: 0 } }, defaultSelection([]))
     expect(html).toContain('role="status"')
     expect(html).not.toContain('data-bm-section')
+  })
+
+  describe('batched check', () => {
+    const part = (ids: number[]): BulkCheckResponse => ({
+      type: 'manufacturer',
+      items: ids.map(id => ({ local_id: id, label: `M${id}`, category: 'none' as const, matches: [], blockers: [] })),
+      counts: { linked: 0, suggested: 0, none: ids.length, blocked: 0 },
+      total: ids.length,
+    })
+    const candidates = (n: number) => ({ type: 'manufacturer', ids: Array.from({ length: n }, (_, i) => i + 1), total: n })
+    const serverError = () => new ApiError(502, 'bad_gateway', 'gateway')
+
+    it('splits into chunks of 20', () => {
+      expect(chunk([1, 2, 3, 4, 5], 2)).toEqual([[1, 2], [3, 4], [5]])
+      expect(chunk([], 20)).toEqual([])
+    })
+
+    it('merges counts and items', () => {
+      const merged = mergeResponses(mergeResponses({ ...part([]) }, part([1, 2])), part([3]))
+      expect(merged.total).toBe(3)
+      expect(merged.counts.none).toBe(3)
+      expect(merged.items.map(i => i.local_id)).toEqual([1, 2, 3])
+    })
+
+    it('runs all batches sequentially and reports progress', async () => {
+      post.mockImplementation(async (path: string, body: { ids?: number[] }) =>
+        path.endsWith('bulk-candidates') ? candidates(45) : part(body.ids ?? []))
+      const progress = vi.fn()
+      const run = await runBulkCheck('manufacturer', true, { onProgress: progress })
+      expect(post).toHaveBeenCalledTimes(4)
+      expect(post.mock.calls[1][1].ids).toHaveLength(20)
+      expect(post.mock.calls[3][1].ids).toHaveLength(5)
+      expect(post.mock.calls[1][1].auto_link_exact).toBe(true)
+      expect(run.response.total).toBe(45)
+      expect(run.incomplete).toBe(false)
+      expect(progress).toHaveBeenLastCalledWith(45, 45)
+    })
+
+    it('returns immediately when there are no candidates', async () => {
+      post.mockResolvedValueOnce(candidates(0))
+      const run = await runBulkCheck('manufacturer', false)
+      expect(post).toHaveBeenCalledTimes(1)
+      expect(run.candidateTotal).toBe(0)
+    })
+
+    it('keeps results so far when cancelled', async () => {
+      let cancelled = false
+      post.mockImplementation(async (path: string, body: { ids?: number[] }) => {
+        if (path.endsWith('bulk-candidates')) return candidates(45)
+        cancelled = true
+        return part(body.ids ?? [])
+      })
+      const run = await runBulkCheck('manufacturer', false, { isCancelled: () => cancelled })
+      expect(post).toHaveBeenCalledTimes(2)
+      expect(run.cancelled).toBe(true)
+      expect(run.incomplete).toBe(true)
+      expect(run.checked).toBe(20)
+      expect(run.response.total).toBe(20)
+    })
+
+    it('retries a failed batch once and then continues', async () => {
+      let calls = 0
+      post.mockImplementation(async (path: string, body: { ids?: number[] }) => {
+        if (path.endsWith('bulk-candidates')) return candidates(25)
+        if (++calls === 1) throw serverError()
+        return part(body.ids ?? [])
+      })
+      const run = await runBulkCheck('manufacturer', false)
+      expect(run.error).toBeUndefined()
+      expect(run.response.total).toBe(25)
+      expect(post).toHaveBeenCalledTimes(4)
+    })
+
+    it('aborts with partial results after a second failure', async () => {
+      let calls = 0
+      post.mockImplementation(async (path: string, body: { ids?: number[] }) => {
+        if (path.endsWith('bulk-candidates')) return candidates(45)
+        if (++calls <= 1) return part(body.ids ?? [])
+        throw serverError()
+      })
+      const run = await runBulkCheck('manufacturer', false)
+      expect(run.error).toBeInstanceOf(ApiError)
+      expect(run.incomplete).toBe(true)
+      expect(run.response.total).toBe(20)
+      expect(post).toHaveBeenCalledTimes(4)
+    })
+
+    it('does not retry token errors', async () => {
+      post.mockImplementation(async (path: string) => {
+        if (path.endsWith('bulk-candidates')) return candidates(5)
+        throw new ApiError(400, 'filamentdb_token_invalid', 'token')
+      })
+      const run = await runBulkCheck('manufacturer', false)
+      expect(post).toHaveBeenCalledTimes(2)
+      expect(run.error).toBeInstanceOf(ApiError)
+      expect(run.response.total).toBe(0)
+    })
   })
 })

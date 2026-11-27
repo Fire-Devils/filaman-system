@@ -1,7 +1,8 @@
 /**
  * Massenabgleich „Mit FilaMan-DB abgleichen“ (Hersteller- und Filamentliste):
  * unverknüpfte Objekte prüfen, Treffer wählen, Auswahl nacheinander übernehmen.
- * Gegenstück: POST /filamentdb/contributions/bulk-check (filamentdb_contributions.py).
+ * Gegenstück: POST /filamentdb/contributions/bulk-candidates und bulk-check (filamentdb_contributions.py);
+ * geprüft wird in Paketen à BULK_BATCH_SIZE, die nacheinander abgerufen werden.
  */
 
 import { ApiError, api } from './api'
@@ -27,7 +28,85 @@ export interface BulkCheckResponse {
   items: BulkMatchItem[]
   counts: Record<BulkCategory, number>
   total: number
-  truncated: boolean
+}
+
+export interface BulkCandidatesResponse {
+  type: BulkMatchType
+  ids: number[]
+  total: number
+}
+
+export const BULK_BATCH_SIZE = 20
+
+export function chunk<T>(list: T[], size: number): T[][] {
+  const out: T[][] = []
+  for (let i = 0; i < list.length; i += size) out.push(list.slice(i, i + size))
+  return out
+}
+
+export function emptyResponse(type: BulkMatchType): BulkCheckResponse {
+  return { type, items: [], counts: { linked: 0, suggested: 0, none: 0, blocked: 0 }, total: 0 }
+}
+
+/** Paket-Antwort in die Gesamtantwort einarbeiten (Zähler addieren, Items anhängen). */
+export function mergeResponses(into: BulkCheckResponse, part: BulkCheckResponse): BulkCheckResponse {
+  const counts = { ...into.counts }
+  for (const category of Object.keys(counts) as BulkCategory[]) counts[category] += part.counts[category] ?? 0
+  return { type: into.type, items: [...into.items, ...part.items], counts, total: into.total + part.total }
+}
+
+export interface BulkRunResult {
+  response: BulkCheckResponse
+  /** Anzahl bereits abgearbeiteter Kandidaten (auch übersprungene). */
+  checked: number
+  candidateTotal: number
+  /** true, wenn nicht alle Pakete geprüft wurden (Abbruch oder Fehler). */
+  incomplete: boolean
+  cancelled: boolean
+  error?: unknown
+}
+
+function isTokenError(error: unknown): boolean {
+  return error instanceof ApiError && error.code === 'filamentdb_token_invalid'
+}
+
+/**
+ * Kandidaten holen, in Pakete teilen und nacheinander prüfen.
+ * Ein fehlgeschlagenes Paket wird einmal wiederholt, danach bricht der Lauf mit den bisherigen
+ * Ergebnissen ab; Token-Fehler brechen sofort ab. ``isCancelled`` wird vor jedem Paket geprüft.
+ * Ein Fehler beim Holen der Kandidaten wird geworfen (noch nichts geprüft).
+ */
+export async function runBulkCheck(
+  type: BulkMatchType,
+  autoLink: boolean,
+  options: { isCancelled?: () => boolean; onProgress?: (done: number, total: number) => void } = {},
+): Promise<BulkRunResult> {
+  const candidates = await api.post<BulkCandidatesResponse>('/filamentdb/contributions/bulk-candidates', { type })
+  const total = candidates.ids.length
+  let response = emptyResponse(type)
+  let checked = 0
+  const result = (extra: Partial<BulkRunResult>): BulkRunResult => ({
+    response, checked, candidateTotal: total, incomplete: checked < total, cancelled: false, ...extra,
+  })
+  options.onProgress?.(0, total)
+  for (const ids of chunk(candidates.ids, BULK_BATCH_SIZE)) {
+    if (options.isCancelled?.()) return result({ cancelled: true })
+    let part: BulkCheckResponse | null = null
+    let lastError: unknown
+    for (let attempt = 0; attempt < 2 && !part; attempt++) {
+      try {
+        part = await api.post<BulkCheckResponse>('/filamentdb/contributions/bulk-check', { type, auto_link_exact: autoLink, ids })
+      } catch (error) {
+        lastError = error
+        if (isTokenError(error)) break
+      }
+    }
+    if (!part) return result({ error: lastError })
+    response = mergeResponses(response, part)
+    checked += ids.length
+    options.onProgress?.(checked, total)
+  }
+  return result({ incomplete: false })
 }
 
 /** Auswahl je Zeile: eine Treffer-ID oder 'new' (neu einreichen). */
@@ -144,7 +223,6 @@ export function renderResult(response: BulkCheckResponse, selection: BulkSelecti
   const groups = groupItems(response.items)
   const parts: string[] = []
   if (!response.total) return `<p class="fm-field-hint" role="status">${e(t('fdbContrib.bulkMatchNothing'))}</p>`
-  if (response.truncated) parts.push(`<div class="fm-alert-info" role="status">${e(t('fdbContrib.bulkMatchTruncated', { count: response.total }))}</div>`)
   if (groups.linked.length) {
     parts.push(`<section class="fdb-bm-section" data-bm-section="linked">${sectionHeader('linked', groups.linked.length, false)}<ul>${groups.linked.map(i => `<li>${e(i.label)}${i.matches[0]?.label ? ` <span class="fm-field-hint">→ ${e(i.matches[0].label)}</span>` : ''}</li>`).join('')}</ul></section>`)
   }
@@ -191,9 +269,9 @@ export async function openBulkMatchDialog(options: BulkMatchOptions): Promise<vo
     submit.disabled = count === 0
   }
 
-  function showResult() {
+  function showResult(notes = '') {
     if (!response) return
-    body.innerHTML = `<p role="status"><strong>${e(t('fdbContrib.bulkMatchSummary', { ...response.counts, total: response.total }))}</strong></p>${renderResult(response, selection)}`
+    body.innerHTML = `${notes}<p role="status"><strong>${e(t('fdbContrib.bulkMatchSummary', { ...response.counts, total: response.total }))}</strong></p>${renderResult(response, selection)}`
     if (response.counts.linked) changed = true
     const actionable = response.counts.suggested + response.counts.none
     submit.classList.toggle('hidden', actionable === 0)
@@ -202,19 +280,35 @@ export async function openBulkMatchDialog(options: BulkMatchOptions): Promise<vo
     updateApplyButton()
   }
 
+  let cancelRequested = false
+
   async function onStart() {
     const auto = (body.querySelector('[data-bm-auto]') as HTMLInputElement | null)?.checked ?? false
     submit.classList.add('hidden')
-    body.innerHTML = `<p class="fm-field-hint" role="status">${e(t('fdbContrib.bulkMatchRunning'))}</p>`
+    cancelRequested = false
+    const showProgress = (done: number, total: number) => {
+      body.innerHTML = `<p class="fm-field-hint" role="status">${e(total ? t('fdbContrib.bulkMatch.progress', { done, total }) : t('fdbContrib.bulkMatchRunning'))}</p>
+        <button type="button" class="fm-btn fm-btn-outline fm-btn-sm" data-bm-cancel>${e(t('fdbContrib.bulkMatch.cancel'))}</button>`
+    }
+    showProgress(0, 0)
+    let run: BulkRunResult
     try {
-      response = await api.post<BulkCheckResponse>('/filamentdb/contributions/bulk-check', { type: options.type, auto_link_exact: auto, limit: 200 })
+      run = await runBulkCheck(options.type, auto, { isCancelled: () => cancelRequested, onProgress: showProgress })
     } catch (error) {
       body.innerHTML = `<div class="fm-alert-error" role="alert">${e(contribErrorMessage(error))}</div>`
       submit.classList.remove('hidden')
       return
     }
+    if (!run.candidateTotal) {
+      body.innerHTML = `<p class="fm-field-hint" role="status">${e(t('fdbContrib.bulkMatch.allLinked'))}</p>`
+      return
+    }
+    response = run.response
     selection = defaultSelection(response.items)
-    showResult()
+    const notes: string[] = []
+    if (run.error) notes.push(`<div class="fm-alert-error" role="alert">${e(t('fdbContrib.bulkMatch.failed', { message: contribErrorMessage(run.error) }))}</div>`)
+    if (run.incomplete) notes.push(`<div class="fm-alert-info" role="status">${e(t('fdbContrib.bulkMatch.incomplete', { done: run.checked, total: run.candidateTotal }))}</div>`)
+    showResult(notes.join(''))
   }
 
   async function onApply() {
@@ -240,6 +334,12 @@ export async function openBulkMatchDialog(options: BulkMatchOptions): Promise<vo
 
   body.addEventListener('click', event => {
     const target = event.target as HTMLElement
+    if (target.closest('[data-bm-cancel]')) {
+      cancelRequested = true
+      const cancel = body.querySelector<HTMLButtonElement>('[data-bm-cancel]')
+      if (cancel) cancel.disabled = true
+      return
+    }
     const all = target.closest<HTMLElement>('[data-bm-all]')
     const none = target.closest<HTMLElement>('[data-bm-nothing]')
     const button = all ?? none

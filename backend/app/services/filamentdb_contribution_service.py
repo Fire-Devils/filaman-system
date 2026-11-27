@@ -576,7 +576,6 @@ async def preview(
 
 # ── Massenabgleich ───────────────────────────────────────────────────────
 
-BULK_MAX_LIMIT = 200
 
 
 def _bulk_matches(raw: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -597,25 +596,23 @@ def _bulk_matches(raw: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return out
 
 
-async def bulk_check(
-    db: AsyncSession,
-    user_id: int | None,
-    entity_type: str,
-    *,
-    auto_link_exact: bool,
-    limit: int = BULK_MAX_LIMIT,
-) -> dict[str, Any]:
-    """Prüft alle unverknüpften Hersteller bzw. Filamente gegen die FilaMan-DB.
+BULK_BATCH_MAX = 25
 
-    Übersprungen werden Objekte mit lokaler Verknüpfung oder aktiver Einreichung.
-    Je Objekt sequenziell ``build`` + ``check_matches``; ein Fehler eines Objekts
-    ergibt Kategorie ``blocked``, nur ein ungültiger Token bricht den Lauf ab.
+
+async def bulk_candidates(db: AsyncSession, user_id: int | None, entity_type: str) -> dict[str, Any]:
+    """Lokal unverknüpfte Hersteller bzw. Filamente (ohne Aufruf an die FilaMan-DB).
+
+    Kandidat: kein ``custom_fields.filamentdb_id`` und keine Einreichung in ACTIVE_STATUSES.
+    Der Token wird früh geprüft, damit das Frontend Token-Fehler vor dem ersten Paket sieht.
     """
     if entity_type not in ("manufacturer", "filament"):
         raise _err(422, "invalid_type", f"Bulk check is not available for {entity_type}")
-    limit = max(1, min(limit, BULK_MAX_LIMIT))
-    token = await require_token(db, user_id)
+    await require_token(db, user_id)
+    ids = await _candidate_ids(db, entity_type)
+    return {"type": entity_type, "ids": ids, "total": len(ids)}
 
+
+async def _candidate_ids(db: AsyncSession, entity_type: str) -> list[int]:
     model = Manufacturer if entity_type == "manufacturer" else Filament
     busy = set(
         await db.scalars(
@@ -626,9 +623,32 @@ async def bulk_check(
         )
     )
     objs = (await db.scalars(select(model).order_by(model.id))).all()
-    candidates = [o.id for o in objs if not _cf_id(o.custom_fields) and o.id not in busy]
-    truncated = len(candidates) > limit
-    candidates = candidates[:limit]
+    return [o.id for o in objs if not _cf_id(o.custom_fields) and o.id not in busy]
+
+
+async def bulk_check(
+    db: AsyncSession,
+    user_id: int | None,
+    entity_type: str,
+    *,
+    auto_link_exact: bool,
+    ids: list[int],
+) -> dict[str, Any]:
+    """Prüft ein Paket (max. ``BULK_BATCH_MAX``) unverknüpfter Objekte gegen die FilaMan-DB.
+
+    Ids, die inzwischen verknüpft, aktiv eingereicht oder gelöscht sind, werden still
+    übersprungen und nicht in ``total`` gezählt. Je Objekt sequenziell ``build`` +
+    ``check_matches``; ein Fehler eines Objekts ergibt Kategorie ``blocked``, nur ein
+    ungültiger Token bricht den Lauf ab.
+    """
+    if entity_type not in ("manufacturer", "filament"):
+        raise _err(422, "invalid_type", f"Bulk check is not available for {entity_type}")
+    if not ids or len(ids) > BULK_BATCH_MAX:
+        raise _err(422, "invalid_ids", f"ids must contain 1 to {BULK_BATCH_MAX} entries")
+    token = await require_token(db, user_id)
+
+    still_open = set(await _candidate_ids(db, entity_type))
+    candidates = [i for i in dict.fromkeys(ids) if i in still_open]
 
     items: list[dict[str, Any]] = []
     for local_id in candidates:
@@ -680,7 +700,6 @@ async def bulk_check(
         "items": items,
         "counts": counts,
         "total": len(items),
-        "truncated": truncated,
     }
 
 
