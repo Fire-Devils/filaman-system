@@ -94,3 +94,6 @@ data/locks/
 # Slicer-Link runtime contact cache and print job photos (created automatically)
 data/slicer_link_contacts.json
 data/print_jobs/
+
+# Impeccable design hook (local config/cache)
+.impeccable/
