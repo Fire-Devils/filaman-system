@@ -5,10 +5,10 @@
     "description": "Connects to Bambu Lab printers and manages AMS spool assignments.",
     "publisher": "Fire-Devils",
     "repository_url": "https://github.com/Fire-Devils/filaman-bambulab-plugin",
-    "version": "2.14.0",
+    "version": "2.14.1",
     "min_filaman_version": "2.0.3",
-    "zip_path": "bambulab-2.14.0.zip",
-    "sha256": "7fe855327a27d62c791dfd11f05152fb539df0d1babf865697edd2ee9ac17832"
+    "zip_path": "bambulab-2.14.1.zip",
+    "sha256": "eb20a3b55498bddafc82d6cb86c49d993316d3d124b81ebea763ce3847be130b"
   },
   {
     "plugin_key": "bambuddy",
