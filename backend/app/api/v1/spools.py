@@ -47,6 +47,11 @@ from app.api.v1.schemas_spool import (
 )
 from app.api.v1.schemas_filament import ColorFilterStop
 from app.core.event_bus import event_bus
+from app.services.custom_field_values import (
+    merge_custom_fields,
+    normalize_custom_field_values,
+    validate_custom_field_values,
+)
 from app.services.spool_deletion import SPOOL_DELETED_EVENT, preserve_spool_statistics
 from app.services.color_search import filament_color_filter, filament_has_named_color
 from app.models import (
@@ -59,6 +64,7 @@ from app.models import (
     Spool,
     SpoolEvent,
     SpoolStatus,
+    SystemExtraField,
 )
 from app.services.custom_field_search import (
     any_custom_field_matches,
@@ -1031,6 +1037,17 @@ async def update_spools_bulk(
         .options(selectinload(Spool.status))
     )
     spools = result.scalars().all()
+    if data.custom_fields:
+        definitions = (
+            await db.execute(select(SystemExtraField).where(SystemExtraField.target_type == "spool"))
+        ).scalars().all()
+        errors = validate_custom_field_values(data.custom_fields, definitions)
+        if errors:
+            raise HTTPException(
+                status_code=422,
+                detail={"code": "invalid_custom_fields", "errors": errors},
+            )
+        custom_fields = normalize_custom_field_values(data.custom_fields, definitions)
     new_status = (
         await db.get(SpoolStatus, data.status_id)
         if data.status_id is not None
@@ -1062,6 +1079,8 @@ async def update_spools_bulk(
             spool.spool_core_weight_g = data.spool_core_weight_g
         if data.purchase_price is not None:
             spool.purchase_price = data.purchase_price
+        if data.custom_fields:
+            spool.custom_fields = merge_custom_fields(spool.custom_fields, custom_fields)
         count += 1
 
     await db.commit()
