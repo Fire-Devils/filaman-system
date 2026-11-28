@@ -1,6 +1,18 @@
 {
   "versions": [
     {
+      "version": "UNRELEASED",
+      "date": "",
+      "changes": {
+        "de": [
+          { "type": "feature", "text": "Filament-Details: Bei Filamenten, die mit der FilaMan-DB verknüpft sind, zeigt die neue Karte \"Preise aus der FilaMan-DB\" die Angebote der Community mit Shop, aktuellem Preis und Preisverlauf. Du kannst dort einen Preis mit Shop-Link an die FilaMan-DB senden und falsche Angebote melden (toter Link, falscher Preis, nicht lieferbar). Ohne Shop-Link nimmt die DB keinen Preis an; dann speicherst Du ihn nur lokal an Deinem Filament. Senden und Melden brauchen Deinen FilaMan-DB-Token." }
+        ],
+        "en": [
+          { "type": "feature", "text": "Filament details: For filaments linked to the FilaMan-DB, the new \"Prices from the FilaMan-DB\" card shows community offers with shop, current price and price history. You can send a price with a shop link to the FilaMan-DB and report wrong offers (dead link, wrong price, unavailable). The DB only accepts prices with a shop link; without one, the price is saved locally on your filament only. Sending and reporting need your FilaMan-DB token." }
+        ]
+      }
+    },
+    {
       "version": "2.13.1",
       "date": "",
       "changes": {

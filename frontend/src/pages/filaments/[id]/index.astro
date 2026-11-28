@@ -90,6 +90,7 @@ export function getStaticPaths() {
     import { initPrinterSetup } from '../../../lib/printer-setup'
     import { initPrintProfiles } from '../../../lib/print-profiles'
     import { initCommunityProfiles } from '../../../lib/community-profiles'
+    import { initFilamentDbOffers } from '../../../lib/filamentdb-offers'
     import { mountContributeControl } from '../../../lib/filamentdb-contrib'
     import { buildFilamentExtraFieldsForPrint, buildFilamentPrintSearchParams } from '../../../lib/filament-label-data'
     import { writeScopedLabelFields } from '../../../lib/label-print-session'
@@ -200,6 +201,11 @@ export function getStaticPaths() {
           const filamentdbId = Number((filament as { custom_fields?: Record<string, unknown> | null }).custom_fields?.filamentdb_id)
           if (communityMount && filamentdbId > 0) {
             void initCommunityProfiles({ mount: communityMount, filamentId, filamentdbId, onAdopted: () => void profiles.then(controller => controller.reload()) })
+          }
+          const offersMount = document.getElementById('fdb-offers')
+          if (offersMount && filamentdbId > 0) {
+            const priced = filament as { price?: number | null; price_currency?: string | null; shop_url?: string | null }
+            void initFilamentDbOffers({ mount: offersMount, filamentId, filamentdbId, price: priced.price, priceCurrency: priced.price_currency, shopUrl: priced.shop_url })
           }
         }
         if (editMode) void filamentPluginHooks?.enterEdit()

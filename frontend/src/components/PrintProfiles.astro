@@ -25,6 +25,20 @@ import FormDialog from './FormDialog.astro'
   </details>
 </section>
 
+<section id="fdb-offers" class="print-profiles fm-detail-content hidden">
+  <details data-fo-details class="fm-card filament-spec-card cp-card">
+    <summary class="filament-spec-title cp-summary">
+      <h2 class="cp-summary-title"><span data-i18n="fdbOffers.title">Prices from FilaMan-DB</span></h2>
+      <svg class="cp-chevron" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6l4 4 4-4" /></svg>
+    </summary>
+    <div class="cp-body">
+      <p class="pp-muted" style="margin: 0 0 8px;" data-i18n="fdbOffers.intro">Prices reported by other users.</p>
+      <div data-fo-list></div>
+      <div data-fo-form></div>
+    </div>
+  </details>
+</section>
+
 <FormDialog id="community-search-dialog" handbook="communityProfiles" titleId="community-search-dialog-title" titleKey="fdbContrib.community.searchTitle" title="Search community profiles" wide>
   <div data-cs-body></div>
   <div class="pp-actions">
@@ -51,7 +65,8 @@ import FormDialog from './FormDialog.astro'
   .fdb-star.fdb-star-on { color: var(--warning-text); }
   .cp-printer { display: grid; gap: 8px; margin-top: 8px; }
   .cp-printer h3 { margin: 0; font-size: .95rem; font-weight: 600; }
-  #community-profiles.hidden { display: none; }
+  #community-profiles.hidden, #fdb-offers.hidden { display: none; }
+  .fdb-offer-inactive { opacity: .6; }
   .cp-summary { display: flex; align-items: center; justify-content: space-between; gap: 12px; cursor: pointer; list-style: none; user-select: none; }
   .cp-summary::-webkit-details-marker { display: none; }
   .cp-summary:hover { background: color-mix(in srgb, var(--accent) 6%, var(--bg-soft)); }

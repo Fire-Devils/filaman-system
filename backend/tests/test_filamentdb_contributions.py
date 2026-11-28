@@ -126,6 +126,12 @@ class FakeDB:
             return httpx.Response(200, json={})
         if path.endswith("/rating"):
             return httpx.Response(200, json={"rating_avg": 4.5, "rating_count": 2, "my_rating": body["stars"]})
+        if path.startswith("/offers/") and path.endswith("/report"):
+            return httpx.Response(201, json={"ok": True})
+        if path.endswith("/offers") and request.method == "GET":
+            return httpx.Response(200, json=[{"id": 7, "url": "https://s.example/a", "shop_name": "S", "prices": []}])
+        if path.endswith("/offers") and request.method == "POST":
+            return httpx.Response(201, json={"id": 8, **body, "shop_name": "S", "status": "active", "prices": []})
         if path.endswith("/report"):
             return httpx.Response(201, json={})
         if path.startswith("/print-profiles/") and request.method == "GET":
@@ -396,6 +402,12 @@ async def test_viewer_cannot_contribute_rate_report_or_import(viewer_auth_client
         client.post(f"{BASE}/contributions/refresh", headers=_h(csrf)),
         client.put(f"{BASE}/print-profiles/1/rating", json={"stars": 5}, headers=_h(csrf)),
         client.post(f"{BASE}/print-profiles/1/report", json={"reason": "x"}, headers=_h(csrf)),
+        client.post(
+            f"{BASE}/filaments/9/offers",
+            json={"url": "https://s.example/a", "price": 1, "currency": "EUR"},
+            headers=_h(csrf),
+        ),
+        client.post(f"{BASE}/offers/7/report", json={"reason": "dead_link"}, headers=_h(csrf)),
         client.post(
             f"{BASE}/print-profiles/1/import",
             json={"filament_id": entities["fil"].id, "printer_id": entities["printer"].id},
@@ -1492,3 +1504,62 @@ async def test_unlink_filament_and_missing_object(auth_client, fake_db, entities
 async def test_unlink_needs_permission(viewer_auth_client, fake_db, entities):  # noqa: F811
     viewer, viewer_csrf = viewer_auth_client
     assert (await _unlink(viewer, viewer_csrf, "manufacturer", entities["mfr"].id)).status_code == 403
+
+
+# ─── Preise aus der FilaMan-DB ────────────────────────────────────────────
+
+OFFER = {"url": "https://shop.example/pla", "price": 19.9, "currency": "eur"}
+
+
+@pytest.mark.asyncio
+async def test_offers_list_is_public_and_post_uses_token(auth_client, fake_db):
+    client, csrf = auth_client
+    listed = await client.get(f"{BASE}/filaments/9/offers")
+    assert listed.status_code == 200 and listed.json()[0]["id"] == 7
+    await _save_token(client, csrf)
+    created = await client.post(f"{BASE}/filaments/9/offers", json=OFFER, headers=_h(csrf))
+    assert created.status_code == 201
+    assert fake_db.sent("POST", "/filaments/9/offers")[0] == {**OFFER, "currency": "EUR"}
+
+
+@pytest.mark.asyncio
+async def test_offer_report_forwards_reason_and_comment(auth_client, fake_db):
+    client, csrf = auth_client
+    await _save_token(client, csrf)
+    resp = await client.post(
+        f"{BASE}/offers/7/report", json={"reason": "wrong_price", "comment": " zu teuer "}, headers=_h(csrf)
+    )
+    assert resp.status_code == 201 and resp.json() == {"ok": True}
+    assert fake_db.sent("POST", "/offers/7/report")[0] == {"reason": "wrong_price", "comment": "zu teuer"}
+    bad = await client.post(f"{BASE}/offers/7/report", json={"reason": "other"}, headers=_h(csrf))
+    assert bad.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_offer_invalid_token_and_validation(auth_client, fake_db):
+    client, csrf = auth_client
+    await _save_token(client, csrf)
+    for body in (
+        {"price": 1, "currency": "EUR"},
+        {**OFFER, "url": "ftp://x.example/a"},
+        {**OFFER, "price": 0},
+        {**OFFER, "currency": "EU"},
+    ):
+        resp = await client.post(f"{BASE}/filaments/9/offers", json=body, headers=_h(csrf))
+        assert resp.status_code == 422
+    assert fake_db.sent("POST", "/filaments/9/offers") == []
+    fake_db.fail["POST /filaments/9/offers"] = (401, {"code": "invalid_token", "message": "x"})
+    resp = await client.post(f"{BASE}/filaments/9/offers", json=OFFER, headers=_h(csrf))
+    assert resp.status_code == 400 and resp.json()["detail"]["code"] == "filamentdb_token_invalid"
+
+
+@pytest.mark.asyncio
+async def test_offer_errors_are_passed_through(auth_client, fake_db):
+    client, csrf = auth_client
+    await _save_token(client, csrf)
+    fake_db.fail["POST /filaments/9/offers"] = (409, {"code": "offer_invalid", "message": "blocked"})
+    resp = await client.post(f"{BASE}/filaments/9/offers", json=OFFER, headers=_h(csrf))
+    assert resp.status_code == 409 and resp.json()["detail"]["code"] == "offer_invalid"
+    fake_db.fail["POST /offers/7/report"] = (409, {"code": "already_reported", "message": "dup"})
+    resp = await client.post(f"{BASE}/offers/7/report", json={"reason": "dead_link"}, headers=_h(csrf))
+    assert resp.status_code == 409 and resp.json()["detail"]["code"] == "already_reported"

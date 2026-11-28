@@ -2970,6 +2970,35 @@
       "rejectedA": "L’état affiche « Refusé » ou « Modifications demandées ». Tu peux adapter l’entrée et la renvoyer."
     }
   },
+  "fdbOffers": {
+    "title": "Prix de FilaMan-DB",
+    "intro": "Prix signalés par d'autres utilisateurs pour ce filament.",
+    "empty": "Aucun prix n'est encore disponible pour ce filament.",
+    "unknownShop": "Boutique inconnue",
+    "inactive": "Inactive",
+    "lastReported": "Dernier signalement le {date}",
+    "history": "Historique : {prices}",
+    "report": "Signaler",
+    "reportTitle": "Signaler l'offre",
+    "reasonLabel": "Motif",
+    "comment": "Commentaire (facultatif, 500 caractères max.)",
+    "reportSend": "Signaler",
+    "reported": "Merci, votre signalement a bien été reçu.",
+    "formTitle": "Signaler un prix",
+    "shopUrl": "Lien de la boutique",
+    "price": "Prix",
+    "currency": "Devise",
+    "noLinkHint": "Sans lien de boutique, le prix ne peut être enregistré qu'en local.",
+    "send": "Envoyer à FilaMan-DB",
+    "saveLocal": "Enregistrer en local uniquement",
+    "sent": "Merci, le prix a été envoyé à FilaMan-DB.",
+    "savedLocal": "Le prix a été enregistré sur ce filament.",
+    "reasons": {
+      "dead_link": "Le lien ne fonctionne plus",
+      "wrong_price": "Le prix est incorrect",
+      "unavailable": "Le filament n'y est pas disponible"
+    }
+  },
   "fdbContrib": {
     "linkedYes": "Lié à FilaMan-DB – les données proviennent de la base communautaire ou y sont enregistrées.",
     "filterLinked": "Lié",
@@ -3077,6 +3106,9 @@
       "filament": "En attente de l'approbation du filament",
       "printer_model": "En attente de l'approbation du modèle d'imprimante",
       "print_profile": "En attente de l'approbation du profil d'impression",
+      "offer_invalid": "Ce lien de boutique a été bloqué par la modération et ne peut pas être utilisé.",
+      "already_reported": "Vous avez déjà signalé cette offre.",
+      "insufficient_scope": "Le jeton n'a pas l'autorisation de signaler des prix.",
       "generic": "En attente d'approbation"
     },
     "result": {

@@ -468,6 +468,52 @@ async def report_print_profile(
     return {"reported": True}
 
 
+# ── Preise aus der FilaMan-DB ────────────────────────────────────────────
+
+
+class OfferBody(BaseModel):
+    url: str = Field(..., min_length=1, max_length=1000, pattern=r"^https?://\S+$")
+    price: float = Field(..., gt=0, le=100000)
+    currency: str = Field(..., min_length=3, max_length=3, pattern=r"^[A-Za-z]{3}$")
+
+
+class OfferReportBody(BaseModel):
+    reason: Literal["dead_link", "wrong_price", "unavailable"]
+    comment: str | None = Field(None, max_length=500)
+
+
+@router.get("/filaments/{fdb_filament_id}/offers")
+async def list_filament_offers(fdb_filament_id: int, db: DBSession, principal: PrincipalDep):
+    """Öffentlich in der DB, daher ohne Token: ein ungültiger Token soll das Lesen nicht blockieren."""
+    return await _guard(fdb_request("GET", f"/filaments/{fdb_filament_id}/offers", token=None))
+
+
+@router.post("/filaments/{fdb_filament_id}/offers", status_code=201)
+async def create_filament_offer(
+    fdb_filament_id: int, data: OfferBody, db: DBSession, principal=_CONTRIBUTE
+):
+    token = await _guard(svc.require_token(db, principal.user_id))
+    return await _guard(
+        fdb_request(
+            "POST",
+            f"/filaments/{fdb_filament_id}/offers",
+            token=token,
+            json={"url": data.url, "price": data.price, "currency": data.currency.upper()},
+        )
+    )
+
+
+@router.post("/offers/{offer_id}/report", status_code=201)
+async def report_filament_offer(
+    offer_id: int, data: OfferReportBody, db: DBSession, principal=_CONTRIBUTE
+):
+    token = await _guard(svc.require_token(db, principal.user_id))
+    body: dict[str, Any] = {"reason": data.reason}
+    if data.comment and data.comment.strip():
+        body["comment"] = data.comment.strip()
+    return await _guard(fdb_request("POST", f"/offers/{offer_id}/report", token=token, json=body))
+
+
 class ImportProfileBody(BaseModel):
     filament_id: int = Field(..., gt=0)
     printer_id: int | None = Field(None, gt=0)

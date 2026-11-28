@@ -2970,6 +2970,35 @@
       "rejectedA": "The status shows “Rejected” or “Changes requested”. You can adjust the entry and send it again."
     }
   },
+  "fdbOffers": {
+    "title": "Prices from FilaMan-DB",
+    "intro": "Prices that other users have reported for this filament.",
+    "empty": "There are no prices for this filament yet.",
+    "unknownShop": "Unknown shop",
+    "inactive": "Inactive",
+    "lastReported": "Last reported on {date}",
+    "history": "History: {prices}",
+    "report": "Report",
+    "reportTitle": "Report offer",
+    "reasonLabel": "Reason",
+    "comment": "Comment (optional, max. 500 characters)",
+    "reportSend": "Report",
+    "reported": "Thanks, your report was received.",
+    "formTitle": "Report a price",
+    "shopUrl": "Shop link",
+    "price": "Price",
+    "currency": "Currency",
+    "noLinkHint": "Without a shop link the price can only be saved locally.",
+    "send": "Send to FilaMan-DB",
+    "saveLocal": "Save locally only",
+    "sent": "Thanks, the price was sent to FilaMan-DB.",
+    "savedLocal": "The price was saved on this filament.",
+    "reasons": {
+      "dead_link": "The link no longer works",
+      "wrong_price": "The price is wrong",
+      "unavailable": "The filament is not available there"
+    }
+  },
   "fdbContrib": {
     "linkedYes": "Linked to FilaMan-DB – the data comes from or is stored in the community database.",
     "filterLinked": "Linked",
@@ -3077,6 +3106,9 @@
       "filament": "Waiting for the filament to be approved",
       "printer_model": "Waiting for the printer model to be approved",
       "print_profile": "Waiting for the print profile to be approved",
+      "offer_invalid": "This shop link was blocked by moderation and cannot be used.",
+      "already_reported": "You have already reported this offer.",
+      "insufficient_scope": "The token is not allowed to report prices.",
       "generic": "Waiting for approval"
     },
     "result": {

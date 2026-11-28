@@ -2971,6 +2971,35 @@
       "rejectedA": "Der Status zeigt „Abgelehnt“ oder „Änderungen angefragt“. Du kannst den Eintrag anpassen und erneut senden."
     }
   },
+  "fdbOffers": {
+    "title": "Preise aus der FilaMan-DB",
+    "intro": "Preise, die andere Nutzer für dieses Filament gemeldet haben.",
+    "empty": "Zu diesem Filament gibt es noch keine Preise.",
+    "unknownShop": "Unbekannter Shop",
+    "inactive": "Nicht aktiv",
+    "lastReported": "Zuletzt gemeldet am {date}",
+    "history": "Verlauf: {prices}",
+    "report": "Melden",
+    "reportTitle": "Angebot melden",
+    "reasonLabel": "Grund",
+    "comment": "Kommentar (optional, max. 500 Zeichen)",
+    "reportSend": "Melden",
+    "reported": "Danke, die Meldung ist angekommen.",
+    "formTitle": "Preis melden",
+    "shopUrl": "Shop-Link",
+    "price": "Preis",
+    "currency": "Währung",
+    "noLinkHint": "Ohne Shop-Link kann der Preis nur lokal gespeichert werden.",
+    "send": "An FilaMan-DB senden",
+    "saveLocal": "Nur lokal speichern",
+    "sent": "Danke, der Preis wurde an die FilaMan-DB gesendet.",
+    "savedLocal": "Der Preis wurde an diesem Filament gespeichert.",
+    "reasons": {
+      "dead_link": "Der Link funktioniert nicht mehr",
+      "wrong_price": "Der Preis stimmt nicht",
+      "unavailable": "Das Filament ist dort nicht lieferbar"
+    }
+  },
   "fdbContrib": {
     "linkedYes": "Mit FilaMan-DB verknüpft – die Daten stammen aus der Community-Datenbank bzw. sind dort hinterlegt.",
     "filterLinked": "Verknüpft",
@@ -3078,6 +3107,9 @@
       "filament": "Wartet auf Freigabe des Filaments",
       "printer_model": "Wartet auf Freigabe des Druckermodells",
       "print_profile": "Wartet auf Freigabe des Druckprofils",
+      "offer_invalid": "Dieser Shop-Link wurde von der Moderation gesperrt und kann nicht verwendet werden.",
+      "already_reported": "Du hast dieses Angebot schon gemeldet.",
+      "insufficient_scope": "Dem Token fehlt die Berechtigung zum Melden von Preisen.",
       "generic": "Wartet auf Freigabe"
     },
     "result": {
