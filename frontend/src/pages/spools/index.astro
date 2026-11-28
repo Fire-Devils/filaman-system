@@ -120,6 +120,7 @@ import InventoryFilterReset from '../../components/InventoryFilterReset.astro'
       <button class="fm-btn fm-btn-outline" id="bulk-btn-empty-weight" data-i18n="spools.bulkSetEmptyWeight">Set Empty Spool Weight</button>
       <button class="fm-btn fm-btn-outline" id="bulk-btn-core-weight" data-i18n="spools.bulkSetCoreWeight">Set Core Weight</button>
       <button class="fm-btn fm-btn-outline" id="bulk-btn-price" data-i18n="spools.bulkSetPrice">Set Price</button>
+      <button class="fm-btn fm-btn-outline" id="bulk-btn-extra-field" data-i18n="spools.bulkSetExtraField">Set Extra Field</button>
       <button class="fm-btn fm-btn-outline" id="bulk-btn-dried" data-i18n="moisture.bulkMarkDried">Mark as dried</button>
       <button class="fm-btn fm-btn-outline" id="bulk-btn-labels" data-i18n="spools.bulkLabel">Print Labels</button>
       <button class="fm-btn fm-btn-danger bulk-btn-danger" id="bulk-btn-delete" data-i18n="spools.bulkDelete">Delete</button>
@@ -1625,6 +1626,100 @@ import InventoryFilterReset from '../../components/InventoryFilterReset.astro'
       )
       if (value === null) return
       await bulkPatch({ purchase_price: Number(value) })
+    })
+
+    // Set Extra Field
+    document.getElementById('bulk-btn-extra-field')?.addEventListener('click', () => {
+      if (selectedSpoolIds.size === 0) return
+      // Top-level keys only: bulk merge is flat, dotted paths are nested integration data.
+      // Range fields (min/max pair) are left to the spool form.
+      const fields = spoolExtraFields.filter(f => f.field_type !== 'formula' && f.field_type !== 'range' && !f.key.includes('.'))
+      if (fields.length === 0) {
+        void dialogWindow.__fmAlert(t('spools.bulkNoExtraFields'))
+        return
+      }
+
+      const modal = document.getElementById('bulk-prompt-modal')!
+      const titleEl = document.getElementById('bulk-prompt-title')!
+      const contentEl = document.getElementById('bulk-prompt-content')!
+      const okBtn = document.getElementById('bulk-prompt-ok')!
+      const cancelBtn = document.getElementById('bulk-prompt-cancel')!
+
+      titleEl.textContent = t('spools.bulkSetExtraField')
+      contentEl.innerHTML = `
+        <select id="bulk-extra-field-key" class="fm-select" style="width: 100%; margin-bottom: 12px;">
+          ${fields.map((f, i) => `<option value="${i}">${escapeHtml(f.label)}</option>`).join('')}
+        </select>
+        <div id="bulk-extra-field-value" style="margin-bottom: 12px;"></div>
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <input type="checkbox" id="bulk-extra-field-clear" style="width: 16px; height: 16px; cursor: pointer; flex-shrink: 0;" />
+          <label for="bulk-extra-field-clear" style="font-size: 0.875rem; cursor: pointer; margin: 0;">${t('spools.bulkClearExtraField')}</label>
+        </div>
+      `
+      const keySelect = document.getElementById('bulk-extra-field-key') as HTMLSelectElement
+      const valueDiv = document.getElementById('bulk-extra-field-value')!
+      const clearBox = document.getElementById('bulk-extra-field-clear') as HTMLInputElement
+      const selectedField = () => fields[Number(keySelect.value)]
+
+      function renderValueInput() {
+        const field = selectedField()
+        const options = field.options ?? []
+        const cfg = field.config ?? {}
+        const style = 'style="width: 100%;"'
+        if (field.field_type === 'dropdown') {
+          valueDiv.innerHTML = `<select class="fm-select" data-bulk-value ${style}>${options.map(o => `<option value="${escapeHtml(o)}">${escapeHtml(o)}</option>`).join('')}</select>`
+        } else if (field.field_type === 'multiselect') {
+          valueDiv.innerHTML = options.map(o => `<label style="display: flex; align-items: center; gap: 8px; font-size: 0.875rem; margin-bottom: 4px;"><input type="checkbox" data-bulk-multi value="${escapeHtml(o)}" />${escapeHtml(o)}</label>`).join('')
+        } else if (field.field_type === 'checkbox') {
+          valueDiv.innerHTML = `<label style="display: flex; align-items: center; gap: 8px; font-size: 0.875rem;"><input type="checkbox" data-bulk-value />${escapeHtml(field.label)}</label>`
+        } else if (field.field_type === 'number') {
+          const min = cfg.min_bound != null ? ` min="${cfg.min_bound}"` : ''
+          const max = cfg.max_bound != null ? ` max="${cfg.max_bound}"` : ''
+          valueDiv.innerHTML = `<input type="number" class="fm-input" data-bulk-value step="any"${min}${max} ${style} />`
+        } else {
+          const type = field.field_type === 'date' ? 'date' : field.field_type === 'url' ? 'url' : 'text'
+          valueDiv.innerHTML = `<input type="${type}" class="fm-input" data-bulk-value ${style} />`
+        }
+        valueDiv.style.display = clearBox.checked ? 'none' : 'block'
+      }
+      function readValue(): unknown {
+        const field = selectedField()
+        if (field.field_type === 'multiselect') {
+          return Array.from(valueDiv.querySelectorAll<HTMLInputElement>('input[data-bulk-multi]:checked'), i => i.value)
+        }
+        const input = valueDiv.querySelector<HTMLInputElement | HTMLSelectElement>('[data-bulk-value]')!
+        // Same format as the spool form (collectSystemFieldValues): the strings 'true'/'false'.
+        if (field.field_type === 'checkbox') return (input as HTMLInputElement).checked ? 'true' : 'false'
+        if (field.field_type === 'number') return input.value.trim() === '' ? undefined : Number(input.value)
+        return input.value.trim() === '' ? undefined : input.value.trim()
+      }
+
+      renderValueInput()
+      keySelect.addEventListener('change', renderValueInput)
+      clearBox.addEventListener('change', () => {
+        valueDiv.style.display = clearBox.checked ? 'none' : 'block'
+      })
+      modal.classList.add('open')
+      translatePage()
+
+      function cleanup() {
+        modal.classList.remove('open')
+        okBtn.removeEventListener('click', onOk)
+        cancelBtn.removeEventListener('click', onCancel)
+        modal.removeEventListener('click', onOverlay)
+      }
+      async function onOk() {
+        const field = selectedField()
+        const value = clearBox.checked ? null : readValue()
+        if (value === undefined) return // empty input: nothing to set, keep the dialog open
+        cleanup()
+        await bulkPatch({ custom_fields: { [field.key]: value } })
+      }
+      function onCancel() { cleanup() }
+      function onOverlay(e: Event) { if (e.target === modal) cleanup() }
+      okBtn.addEventListener('click', onOk)
+      cancelBtn.addEventListener('click', onCancel)
+      modal.addEventListener('click', onOverlay)
     })
 
     // RFID Modal Logic

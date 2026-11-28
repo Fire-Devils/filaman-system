@@ -8,7 +8,7 @@ import pytest_asyncio
 from app.api.mcp_plugin_tools import load_plugin_read_tools
 from app.core.security import generate_token_secret, hash_token
 from app.main import app
-from app.models import AppSettings, InstalledPlugin, Location, UserApiKey, UserRole
+from app.models import AppSettings, InstalledPlugin, Location, SystemExtraField, UserApiKey, UserRole
 from sqlalchemy import delete, select
 
 
@@ -630,3 +630,103 @@ async def test_request_label_print(client, db_session, admin_key):
     result = await _call(client, admin_key, "request_filament_label_print", {"filament_id": filament["id"]})
     assert result["isError"] is False, result
     assert _json(result)["filament_id"] == filament["id"]
+
+
+async def _add_spool_fields(db_session):
+    db_session.add_all([
+        SystemExtraField(target_type="spool", key="dry_state", label="Dry state", field_type="dropdown",
+                         options=["dry", "wet"]),
+        SystemExtraField(target_type="filament", key="fil_only", label="Fil only", field_type="text"),
+    ])
+    await db_session.commit()
+
+
+@pytest.mark.asyncio
+async def test_list_extra_fields_filters_by_target(client, db_session, admin_key):
+    await _set_flags(db_session, enabled=True, write=False)
+    await _add_spool_fields(db_session)
+    fields = _json(await _call(client, admin_key, "list_extra_fields", {"target_type": "spool"}))
+    assert {f["key"] for f in fields} == {"dry_state"}
+    assert fields[0]["options"] == ["dry", "wet"]
+
+
+@pytest.mark.asyncio
+async def test_update_spool_custom_fields_merge_remove_and_validate(client, db_session, admin_key):
+    await _set_flags(db_session, enabled=True, write=True)
+    await _add_spool_fields(db_session)
+    _, filament = await _make_filament(client, admin_key, tag="cf")
+    spool = _json(await _call(client, admin_key, "create_spool", {
+        "filament_id": filament["id"], "custom_fields": {"local": "x", "dry_state": "wet"},
+    }))
+    assert spool["custom_fields"] == {"local": "x", "dry_state": "wet"}
+
+    result = await _call(client, admin_key, "update_spool", {
+        "spool_id": spool["id"], "fields": {"custom_fields": {"dry_state": "dry", "extra": "y"}},
+    })
+    assert result["isError"] is False, result
+    assert _json(result)["custom_fields"] == {"local": "x", "dry_state": "dry", "extra": "y"}
+
+    result = await _call(client, admin_key, "update_spool", {
+        "spool_id": spool["id"], "fields": {"custom_fields": {"local": None}},
+    })
+    assert _json(result)["custom_fields"] == {"dry_state": "dry", "extra": "y"}
+
+    bad = await _call(client, admin_key, "update_spool", {
+        "spool_id": spool["id"], "fields": {"custom_fields": {"dry_state": "soggy"}},
+    })
+    assert bad["isError"] is True
+    assert "dry_state" in bad["content"][0]["text"]
+    fetched = _json(await _call(client, admin_key, "get_spool", {"spool_id": spool["id"]}))
+    assert fetched["custom_fields"]["dry_state"] == "dry"
+
+    bad_create = await _call(client, admin_key, "create_spool", {
+        "filament_id": filament["id"], "custom_fields": {"dry_state": "soggy"},
+    })
+    assert bad_create["isError"] is True
+
+
+@pytest.mark.asyncio
+async def test_update_spools_bulk_custom_fields(client, db_session, admin_key):
+    await _set_flags(db_session, enabled=True, write=True)
+    await _add_spool_fields(db_session)
+    _, filament = await _make_filament(client, admin_key, tag="cfb")
+    spools = _json(await _call(client, admin_key, "create_spools_bulk", {
+        "filament_id": filament["id"], "quantity": 2, "custom_fields": {"local": "x"},
+    }))
+    ids = [s["id"] for s in spools]
+    result = await _call(client, admin_key, "update_spools_bulk", {
+        "spool_ids": ids, "custom_fields": {"dry_state": "dry"},
+    })
+    assert result["isError"] is False, result
+    for spool_id in ids:
+        spool = _json(await _call(client, admin_key, "get_spool", {"spool_id": spool_id}))
+        assert spool["custom_fields"] == {"local": "x", "dry_state": "dry"}
+
+    bad = await _call(client, admin_key, "update_spools_bulk", {
+        "spool_ids": ids, "custom_fields": {"dry_state": "soggy"},
+    })
+    assert bad["isError"] is True
+
+
+@pytest.mark.asyncio
+async def test_update_spool_empty_custom_fields_keep_values_and_checkbox_as_string(client, db_session, admin_key):
+    await _set_flags(db_session, enabled=True, write=True)
+    db_session.add(SystemExtraField(target_type="spool", key="business", label="Business", field_type="checkbox"))
+    await db_session.commit()
+    _, filament = await _make_filament(client, admin_key, tag="cfe")
+    spool = _json(await _call(client, admin_key, "create_spool", {
+        "filament_id": filament["id"], "custom_fields": {"local": "x", "business": True},
+    }))
+    # Checkbox values are stored like the web UI does: 'true'/'false'.
+    assert spool["custom_fields"] == {"local": "x", "business": "true"}
+
+    result = await _call(client, admin_key, "update_spool", {
+        "spool_id": spool["id"], "fields": {"custom_fields": {}, "lot_number": "L1"},
+    })
+    assert result["isError"] is False, result
+    assert _json(result)["custom_fields"] == {"local": "x", "business": "true"}
+
+    result = await _call(client, admin_key, "update_spool", {
+        "spool_id": spool["id"], "fields": {"custom_fields": {"business": False}},
+    })
+    assert _json(result)["custom_fields"]["business"] == "false"

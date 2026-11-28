@@ -1593,6 +1593,43 @@ class TestSpoolBulkOperations:
         assert all(item["external_id"] is None for item in data)
 
     @pytest.mark.asyncio
+    async def test_bulk_update_custom_fields_merges_and_validates(self, auth_client, db_session):
+        client, csrf_token = auth_client
+        db_session.add(SystemExtraField(
+            target_type="spool", key="dry_state", label="Dry state", field_type="dropdown",
+            options=["dry", "wet"],
+        ))
+        await db_session.commit()
+        manufacturer = await _create_manufacturer(db_session)
+        filament = await _create_filament(db_session, manufacturer.id)
+        status = await _get_status(db_session, "new")
+        first = await _create_spool(db_session, filament.id, status.id, custom_fields={"keep": "me", "gone": 1})
+        second = await _create_spool(db_session, filament.id, status.id)
+        headers = {"X-CSRF-Token": csrf_token}
+
+        response = await client.patch(
+            "/api/v1/spools/bulk",
+            json={"spool_ids": [first.id, second.id], "custom_fields": {"dry_state": "dry", "gone": None}},
+            headers=headers,
+        )
+        assert response.status_code == 200
+        assert response.json()["count"] == 2
+        await db_session.refresh(first)
+        await db_session.refresh(second)
+        assert first.custom_fields == {"keep": "me", "dry_state": "dry"}
+        assert second.custom_fields == {"dry_state": "dry"}
+
+        response = await client.patch(
+            "/api/v1/spools/bulk",
+            json={"spool_ids": [first.id], "custom_fields": {"dry_state": "soggy"}},
+            headers=headers,
+        )
+        assert response.status_code == 422
+        assert response.json()["detail"]["code"] == "invalid_custom_fields"
+        await db_session.refresh(first)
+        assert first.custom_fields["dry_state"] == "dry"
+
+    @pytest.mark.asyncio
     async def test_bulk_update_spools(self, auth_client, db_session):
         client, csrf_token = auth_client
 

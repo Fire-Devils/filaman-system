@@ -40,6 +40,11 @@ from app.api.v1.schemas_filament import FilamentCreate, FilamentUpdate
 from app.core import database
 from app.core.config import settings
 from app.models import AppSettings
+from app.services.custom_field_values import (
+    merge_custom_fields,
+    normalize_custom_field_values,
+    validate_custom_field_values,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -170,8 +175,52 @@ def _post(path: str, *body_keys: str) -> Handler:
     return handler
 
 
+async def _checked_spool_custom_fields(
+    values: dict[str, Any], api: ApiCaller
+) -> tuple[dict[str, Any] | None, tuple[int, Any] | None]:
+    """Validate values against the spool system extra fields; return (normalized values, error response)."""
+    status_code, definitions = await api("GET", "/system-extra-fields", params={"target_type": "spool"})
+    if status_code >= 400:
+        return None, (status_code, definitions)
+    errors = validate_custom_field_values(values, definitions)
+    if errors:
+        return None, (400, {"detail": "Invalid custom_fields: " + "; ".join(errors)})
+    return normalize_custom_field_values(values, definitions), None
+
+
 async def _update_spool(args: dict[str, Any], api: ApiCaller) -> tuple[int, Any]:
-    return await api("PATCH", f"/spools/{args['spool_id']}", json_body=args.get("fields", {}))
+    fields = dict(args.get("fields", {}))
+    spool_path = f"/spools/{args['spool_id']}"
+    # An empty object would wipe every extra field (PATCH replaces custom_fields), so drop it.
+    incoming = fields.pop("custom_fields", None)
+    if incoming:
+        status_code, spool = await api("GET", spool_path)
+        if status_code >= 400:
+            return status_code, spool
+        values, error = await _checked_spool_custom_fields(incoming, api)
+        if error:
+            return error
+        # PATCH replaces custom_fields wholesale, so merge into the stored values first.
+        fields["custom_fields"] = merge_custom_fields(spool.get("custom_fields"), values)
+    return await api("PATCH", spool_path, json_body=fields)
+
+
+def _create_spool_with_custom_fields(path: str, *body_keys: str) -> Handler:
+    async def handler(args: dict[str, Any], api: ApiCaller) -> tuple[int, Any]:
+        body = _pick(args, *body_keys)
+        incoming = body.pop("custom_fields", None)
+        if incoming:
+            values, error = await _checked_spool_custom_fields(incoming, api)
+            if error:
+                return error
+            body["custom_fields"] = values
+        return await api("POST", path, json_body=body)
+
+    return handler
+
+
+async def _update_spools_bulk(args: dict[str, Any], api: ApiCaller) -> tuple[int, Any]:
+    return await api("PATCH", "/spools/bulk", json_body=_pick(args, "spool_ids", "custom_fields"))
 
 
 async def _update_filament(args: dict[str, Any], api: ApiCaller) -> tuple[int, Any]:
@@ -254,6 +303,13 @@ _SPOOL_FIELDS = {
     "remaining_weight_g": {"type": "number", "minimum": 0, "description": "Net filament weight left"},
 }
 
+_CUSTOM_FIELDS = {
+    "type": "object",
+    "description": "Extra field values keyed by field key (see list_extra_fields for keys and allowed options). "
+                   "Dropdown values must be one of the options, multiselect a list of options, checkbox a boolean, "
+                   "number/range a number within the bounds. Formula fields cannot be set.",
+}
+
 TOOLS: tuple[Tool, ...] = (
     # ---- read ----------------------------------------------------------------
     Tool(
@@ -304,6 +360,13 @@ TOOLS: tuple[Tool, ...] = (
          _get("/manufacturers", "page", "page_size")),
     Tool("list_locations", "List storage locations with their type and spool count.", _schema(_PAGING),
          _get("/locations", "page", "page_size")),
+    Tool(
+        "list_extra_fields",
+        "List the system extra field definitions (key, label, field_type, options, config) for spools and "
+        "filaments. Use it to find the keys and allowed options before setting custom_fields on a spool.",
+        _schema({"target_type": {"type": "string", "enum": ["filament", "spool"]}}),
+        _get("/system-extra-fields", "target_type"),
+    ),
     Tool("list_spool_statuses", "List spool statuses (id and key, e.g. new, opened, empty, archived).",
          _schema(), _get("/spools/statuses")),
     Tool("list_printers", "List printers.", _schema(_PAGING), _get("/printers", "page", "page_size")),
@@ -426,8 +489,10 @@ TOOLS: tuple[Tool, ...] = (
         "Create several identical spools of one filament at once (quantity 1-100). All spools get the same "
         "optional fields (status, location, lot, price, weights).",
         _schema({"filament_id": _INT, "quantity": {"type": "integer", "minimum": 1, "maximum": 100},
-                 **_SPOOL_FIELDS}, ["filament_id", "quantity"]),
-        _post("/spools/bulk", "filament_id", "quantity", *_SPOOL_FIELDS.keys()),
+                 **_SPOOL_FIELDS, "custom_fields": _CUSTOM_FIELDS}, ["filament_id", "quantity"]),
+        _create_spool_with_custom_fields(
+            "/spools/bulk", "filament_id", "quantity", "custom_fields", *_SPOOL_FIELDS.keys()
+        ),
         write=True,
     ),
     Tool(
@@ -500,19 +565,34 @@ TOOLS: tuple[Tool, ...] = (
         "Create a new spool for an existing filament. The colour is not a spool property: it lives on the "
         "filament, so set it when creating the filament (create_filament with colors) or later with "
         "set_filament_colors (colours via list_colors / create_color).",
-        _schema({"filament_id": _INT, **_SPOOL_FIELDS}, ["filament_id"]),
-        _post("/spools", "filament_id", *_SPOOL_FIELDS.keys()),
+        _schema({"filament_id": _INT, **_SPOOL_FIELDS, "custom_fields": _CUSTOM_FIELDS}, ["filament_id"]),
+        _create_spool_with_custom_fields("/spools", "filament_id", "custom_fields", *_SPOOL_FIELDS.keys()),
         write=True,
     ),
     Tool(
         "update_spool",
-        "Change spool master data (lot, price, weights, …). For weighing, consumption, status or "
+        "Change spool master data (lot, price, weights, extra fields, …). custom_fields values are merged "
+        "into the existing extra fields; null removes a key. For weighing, consumption, status or "
         "location use the dedicated tools so the spool history stays correct.",
         _schema({
             "spool_id": _INT,
-            "fields": _schema({k: v for k, v in _SPOOL_FIELDS.items() if k not in ("status_id", "location_id")}),
+            "fields": _schema({
+                **{k: v for k, v in _SPOOL_FIELDS.items() if k not in ("status_id", "location_id")},
+                "custom_fields": _CUSTOM_FIELDS,
+            }),
         }, ["spool_id", "fields"]),
         _update_spool,
+        write=True,
+    ),
+    Tool(
+        "update_spools_bulk",
+        "Set extra fields (custom_fields) on several spools at once (1-500). Values are merged into each "
+        "spool's existing extra fields; null removes a key. Use list_extra_fields for keys and options.",
+        _schema({
+            "spool_ids": {"type": "array", "items": _INT, "minItems": 1, "maxItems": 500},
+            "custom_fields": _CUSTOM_FIELDS,
+        }, ["spool_ids", "custom_fields"]),
+        _update_spools_bulk,
         write=True,
     ),
     Tool(

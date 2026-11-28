@@ -237,6 +237,7 @@ class BulkSpoolUpdateRequest(BaseModel):
     spool_core_weight_g: FiniteFloat | None = None
     clear_spool_core_weight: bool = False
     purchase_price: FiniteFloat | None = None
+    custom_fields: dict[str, Any] | None = None
 
 
 class BulkSpoolDeleteRequest(BaseModel):
