@@ -101,6 +101,13 @@ export function offerHistoryText(offer: FdbOffer, limit = 4): string {
   return prices.slice(0, limit).map(p => formatMoney(p.price, offer.currency)).join(' · ')
 }
 
+/** Die DB antwortet mit {"offers": [...]}; eine nackte Liste wird ebenfalls akzeptiert. */
+export function extractOffers(data: unknown): FdbOffer[] {
+  if (Array.isArray(data)) return data as FdbOffer[]
+  const offers = (data as { offers?: unknown } | null)?.offers
+  return Array.isArray(offers) ? (offers as FdbOffer[]) : []
+}
+
 export function renderOffer(offer: FdbOffer, options: { canReport: boolean }): string {
   const e = escapeHtml
   const active = isActiveOffer(offer)
@@ -198,8 +205,7 @@ async function loadOffers(options: FdbOffersOptions, user: NonNullable<Awaited<R
   const load = async () => {
     list.innerHTML = `<p class="pp-muted">${e(t('common.loading'))}</p>`
     try {
-      const offers = await api.get<FdbOffer[]>(`/filamentdb/filaments/${filamentdbId}/offers`)
-      const rows = Array.isArray(offers) ? offers : []
+      const rows = extractOffers(await api.get<unknown>(`/filamentdb/filaments/${filamentdbId}/offers`))
       list.innerHTML = rows.length
         ? rows.map(offer => renderOffer(offer, { canReport })).join('')
         : `<p class="pp-muted">${e(t('fdbOffers.empty'))}</p>`

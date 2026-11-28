@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest'
-import { canSaveLocally, canSendOffer, isValidShopUrl, offerHistoryText, renderOffer, type FdbOffer } from './filamentdb-offers'
+import { canSaveLocally, canSendOffer, extractOffers, isValidShopUrl, offerHistoryText, renderOffer, type FdbOffer } from './filamentdb-offers'
 
 beforeEach(() => {
   const store: Record<string, string> = { lang: 'de' }
@@ -57,5 +57,12 @@ describe('filamentdb-offers', () => {
     const html = renderOffer({ ...offer, url: 'javascript:alert(1)', shop_name: '<b>x</b>' }, { canReport: false })
     expect(html).not.toContain('href="javascript')
     expect(html).not.toContain('<b>x</b>')
+  })
+
+  it('unpacks the {"offers": [...]} response of the FilaMan-DB', () => {
+    expect(extractOffers({ offers: [offer] })).toEqual([offer])
+    expect(extractOffers([offer])).toEqual([offer])
+    expect(extractOffers({})).toEqual([])
+    expect(extractOffers(null)).toEqual([])
   })
 })

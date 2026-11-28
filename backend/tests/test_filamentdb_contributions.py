@@ -129,7 +129,7 @@ class FakeDB:
         if path.startswith("/offers/") and path.endswith("/report"):
             return httpx.Response(201, json={"ok": True})
         if path.endswith("/offers") and request.method == "GET":
-            return httpx.Response(200, json=[{"id": 7, "url": "https://s.example/a", "shop_name": "S", "prices": []}])
+            return httpx.Response(200, json={"offers": [{"id": 7, "url": "https://s.example/a", "shop_name": "S", "status": "active", "prices": []}]})
         if path.endswith("/offers") and request.method == "POST":
             return httpx.Response(201, json={"id": 8, **body, "shop_name": "S", "status": "active", "prices": []})
         if path.endswith("/report"):
@@ -1515,7 +1515,7 @@ OFFER = {"url": "https://shop.example/pla", "price": 19.9, "currency": "eur"}
 async def test_offers_list_is_public_and_post_uses_token(auth_client, fake_db):
     client, csrf = auth_client
     listed = await client.get(f"{BASE}/filaments/9/offers")
-    assert listed.status_code == 200 and listed.json()[0]["id"] == 7
+    assert listed.status_code == 200 and listed.json()["offers"][0]["id"] == 7
     await _save_token(client, csrf)
     created = await client.post(f"{BASE}/filaments/9/offers", json=OFFER, headers=_h(csrf))
     assert created.status_code == 201
